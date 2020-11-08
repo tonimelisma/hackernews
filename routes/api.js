@@ -6,6 +6,11 @@ const jwt = require("jsonwebtoken");
 const storyService = require("../services/storyService");
 const hackernewsService = require("../services/hackernews");
 
+const sanitary = (input) => {
+  if (input.match(/^[a-z0-9\d\-_\s]+$/i)) return true
+  return false
+}
+
 router.get("/get", async (req, res, next) => {
   const parseTimespan = timespan => {
     if (!timespan) return "All";
@@ -33,10 +38,10 @@ router.get("/get", async (req, res, next) => {
     const stories =
       !isNaN(req.query.skip) && req.query.skip > 0
         ? await storyService.getStories(
-            timespan,
-            limit,
-            parseInt(req.query.skip)
-          )
+          timespan,
+          limit,
+          parseInt(req.query.skip)
+        )
         : await storyService.getStories(timespan, limit);
 
     res.json(stories);
@@ -98,7 +103,7 @@ router.post("/login", async (req, res, next) => {
   const acct = req.body.acct;
   console.log("logging in: ", goto, pw, acct);
 
-  if (!goto || !pw || !acct) {
+  if (!goto || !pw || !acct || !sanitary(acct)) {
     res.status(400).json({ error: "missing fields" });
   } else {
     try {
