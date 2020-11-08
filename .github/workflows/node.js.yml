@@ -27,7 +27,9 @@ jobs:
     - run: npm ci
     - run: npm run build --if-present
     - run: npm test
-    - run: cd hackernews-frontend
-    - run: npm ci
-    - run: npm run build --if-present
-    - run: npm test
+    - working-directory: ./hackernews-frontend
+      run: npm ci
+    - working-directory: ./hackernews-frontend
+      run: npm run build --if-present
+    - working-directory: ./hackernews-frontend
+      run: npm test
