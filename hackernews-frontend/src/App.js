@@ -1,7 +1,7 @@
 /* eslint-disable jsx-a11y/anchor-is-valid */
 import React, { useState, useEffect } from "react";
-import $ from "jquery";
-import Popper from "popper.js";
+// import $ from "jquery";
+// import Popper from "popper.js";
 import "bootstrap/dist/js/bootstrap.bundle.min";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -28,12 +28,12 @@ const App = () => {
     setLoading(true);
     storyService
       .getAll(timespan)
-      .then(response => {
+      .then((response) => {
         console.log("...got them");
         setStories(response.data);
         setLoading(false);
       })
-      .catch(e => {
+      .catch((e) => {
         console.log("didn't get them: ", e);
         setLoading(false);
       });
@@ -51,18 +51,18 @@ const App = () => {
       console.log("fetching hidden...");
       storyService
         .getHidden(token)
-        .then(response => {
+        .then((response) => {
           console.log("...got hidden");
           setHidden(response.data);
         })
-        .catch(e => {
+        .catch((e) => {
           console.log("whoopsie:", e);
           setHidden(null);
         });
     }
   }, [token]);
 
-  const addHidden = id => {
+  const addHidden = (id) => {
     console.log("hiding: ", id, ":", hidden);
     const updatedHidden = hidden.concat(id);
     setHidden(updatedHidden);
@@ -71,13 +71,13 @@ const App = () => {
     }
   };
 
-  const handleLogin = async event => {
+  const handleLogin = async (event) => {
     event.preventDefault();
     try {
       const recvToken = await loginService.login({
         goto: "news",
         acct: username,
-        pw: password
+        pw: password,
       });
       recvToken.token ? setToken(recvToken.token) : setToken(null);
       setLoginError(false);
