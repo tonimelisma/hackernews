@@ -30,7 +30,7 @@ const Story = ({ story, addHidden }) => {
       <div className="px-3">
         <a href={story.url}> {story.title} </a> <br />
         <small>
-          <FontAwesomeIcon icon={faUser} /> {story.by}&nbsp;&nbsp;
+          <FontAwesomeIcon icon={faUser} /> {story.by} &nbsp;&nbsp;{" "}
           <FontAwesomeIcon icon={faClock} /> {moment(story.time).fromNow()}
         </small>{" "}
       </div>{" "}
@@ -40,14 +40,14 @@ const Story = ({ story, addHidden }) => {
       >
         <a href="#" role="button" className="btn btn-outline-secondary">
           <FontAwesomeIcon icon={faThumbsUp} />
-          &nbsp;{story.score}
+          &nbsp; {story.score}
         </a>{" "}
         <a
           href={originalDiscussionUrl(story.id)}
           className="btn btn-outline-secondary"
         >
           <FontAwesomeIcon icon={faComments} />
-          &nbsp;{story.descendants}
+          &nbsp; {story.descendants}
         </a>{" "}
         <a
           href="#"
