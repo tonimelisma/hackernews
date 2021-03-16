@@ -152,10 +152,33 @@ const main = async () => {
           ",",
           monthly.deletedCount
         );
+
+        const yearly = await Stories.deleteMany({
+          $and: [
+            { time: { $lt: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000) } },
+            { score: { $lt: config.minYearScore } }
+          ]
+        });
+        console.log(
+          "yearly: ",
+          yearly.n,
+          ",",
+          yearly.ok,
+          ",",
+          yearly.deletedCount
+        );
       } catch (e) {
         console.log("ei onnistunut: ", e);
       }
 
+      try {
+        global.gc();
+      } catch (e) {
+        console.log("gc error:", e);
+      }
+
+      console.log("memory usage:");
+      console.log(process.memoryUsage());
       console.log("");
 
       await sleep(10 * 60 * 1000);
