@@ -11,6 +11,19 @@ const sleep = time => {
   return new Promise(resolve => setTimeout(resolve, time));
 };
 
+const formatBytes = (bytes, decimals = 2) => {
+  if (bytes === 0) return '0 Bytes';
+
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+
 const main = async () => {
   try {
     console.log("Connecting to mongodb...");
@@ -171,14 +184,16 @@ const main = async () => {
         console.log("ei onnistunut: ", e);
       }
 
-      try {
-        global.gc();
-      } catch (e) {
-        console.log("gc error:", e);
-      }
-
-      console.log("memory usage:");
-      console.log(process.memoryUsage());
+      const memoryUsage = process.memoryUsage();
+      console.log("memory usage: rss:", formatBytes(memoryUsage.rss), "heapTotal:",
+        formatBytes(memoryUsage.heapTotal),
+        "heapUsed:",
+        formatBytes(memoryUsage.heapUsed),
+        "external:",
+        formatBytes(memoryUsage.external),
+        "arrayBuffers:",
+        formatBytes(memoryUsage.arrayBuffers)
+      );
       console.log("");
 
       await sleep(10 * 60 * 1000);
