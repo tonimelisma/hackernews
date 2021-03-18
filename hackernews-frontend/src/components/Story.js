@@ -40,14 +40,14 @@ const Story = ({ story, addHidden }) => {
       >
         <a href="#" role="button" className="btn btn-outline-secondary">
           <FontAwesomeIcon icon={faThumbsUp} />
-          &nbsp; {story.score}
+          {" "}{story.score}
         </a>{" "}
         <a
           href={originalDiscussionUrl(story.id)}
           className="btn btn-outline-secondary"
         >
           <FontAwesomeIcon icon={faComments} />
-          &nbsp; {story.descendants}
+          {" "}{story.descendants}
         </a>{" "}
         <a
           href="#"
