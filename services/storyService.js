@@ -6,10 +6,6 @@ const mongoose = require("mongoose");
 console.log("Connecting to mongodb...");
 mongoose
   .connect(config.DB_URI, {
-    useNewUrlParser: true,
-    useCreateIndex: true,
-    useFindAndModify: false,
-    useUnifiedTopology: true,
     family: 4
   })
   .then(result => {
@@ -74,76 +70,76 @@ const getStories = async (timespan, limit, skip = undefined) => {
     const ret =
       timespan === "All"
         ? await Stories.find(
-            {},
-            {
-              by: 1,
-              descendants: 1,
-              id: 1,
-              score: 1,
-              time: 1,
-              title: 1,
-              url: 1,
-              _id: 0
-            }
-          )
-            .sort({ score: -1 })
-            .limit(limit)
+          {},
+          {
+            by: 1,
+            descendants: 1,
+            id: 1,
+            score: 1,
+            time: 1,
+            title: 1,
+            url: 1,
+            _id: 0
+          }
+        )
+          .sort({ score: -1 })
+          .limit(limit)
         : await Stories.find(
-            {
-              time: { $gt: timespanDate }
-            },
-            {
-              by: 1,
-              descendants: 1,
-              id: 1,
-              score: 1,
-              time: 1,
-              title: 1,
-              url: 1,
-              _id: 0
-            }
-          )
-            .sort({ score: -1 })
-            .limit(limit);
+          {
+            time: { $gt: timespanDate }
+          },
+          {
+            by: 1,
+            descendants: 1,
+            id: 1,
+            score: 1,
+            time: 1,
+            title: 1,
+            url: 1,
+            _id: 0
+          }
+        )
+          .sort({ score: -1 })
+          .limit(limit);
 
     return ret;
   } else {
     const ret =
       timespan === "All"
         ? await Stories.find(
-            {},
-            {
-              by: 1,
-              descendants: 1,
-              id: 1,
-              score: 1,
-              time: 1,
-              title: 1,
-              url: 1,
-              _id: 0
-            }
-          )
-            .sort({ score: -1 })
-            .skip(skip)
-            .limit(limit)
+          {},
+          {
+            by: 1,
+            descendants: 1,
+            id: 1,
+            score: 1,
+            time: 1,
+            title: 1,
+            url: 1,
+            _id: 0
+          }
+        )
+          .sort({ score: -1 })
+          .skip(skip)
+          .limit(limit)
         : await Stories.find(
-            {
-              time: { $gt: timespanDate }
-            },
-            {
-              by: 1,
-              descendants: 1,
-              id: 1,
-              score: 1,
-              time: 1,
-              title: 1,
-              url: 1,
-              _id: 0
-            }
-          )
-            .sort({ score: -1 })
-            .skip(skip)
-            .limit(limit);
+          {
+            time: { $gt: timespanDate }
+          },
+          {
+            by: 1,
+            descendants: 1,
+            id: 1,
+            score: 1,
+            time: 1,
+            title: 1,
+            url: 1,
+            _id: 0
+          }
+        )
+          .sort({ score: -1 })
+          .skip(skip)
+          .limit(limit);
 
     return ret;
   }

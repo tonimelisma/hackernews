@@ -28,10 +28,6 @@ const main = async () => {
   try {
     console.log("Connecting to mongodb...");
     await mongoose.connect(config.DB_URI, {
-      useNewUrlParser: true,
-      useCreateIndex: true,
-      useFindAndModify: false,
-      useUnifiedTopology: true
     });
     console.log("Connected!");
   } catch (e) {
