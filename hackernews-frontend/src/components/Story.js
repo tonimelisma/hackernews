@@ -15,9 +15,14 @@ import { faTimes } from "@fortawesome/free-solid-svg-icons";
 // story.by, descendants, score, time, title, url
 
 const Story = ({ story, addHidden }) => {
-  const favicon = story.url
-    ? "https://www.google.com/s2/favicons?domain=" + new URL(story.url).hostname
-    : "https://www.google.com/s2/favicons?domain=news.ycombinator.com";
+  var favicon
+  try {
+    favicon = story.url
+      ? "https://www.google.com/s2/favicons?domain=" + new URL(story.url).hostname
+      : "https://www.google.com/s2/favicons?domain=news.ycombinator.com";
+  } catch (e) {
+    console.log("couldn't parse favicon", e)
+  }
 
   const originalDiscussionUrl = (id) =>
     `https://news.ycombinator.com/item?id=${id}`;
