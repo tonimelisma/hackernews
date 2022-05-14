@@ -34,7 +34,7 @@ const App = () => {
         setLoading(false);
       })
       .catch((e) => {
-        console.log("didn't get them: ", e);
+        console.log("didn't get them for timespan [", timespan, "] ", e);
         setLoading(false);
       });
   }, [timespan]);
