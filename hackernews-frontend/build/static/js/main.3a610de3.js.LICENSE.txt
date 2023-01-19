@@ -1,12 +1,12 @@
 /*!
-   * Sizzle CSS Selector Engine v2.3.6
+   * Sizzle CSS Selector Engine v2.3.9
    * https://sizzlejs.com/
    *
    * Copyright JS Foundation and other contributors
    * Released under the MIT license
    * https://js.foundation/
    *
-   * Date: 2021-02-16
+   * Date: 2022-12-19
    */
 
 /*!
@@ -16,13 +16,7 @@
   */
 
 /*!
- * Font Awesome Free 6.1.1 by @fontawesome - https://fontawesome.com
- * License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License)
- * Copyright 2022 Fonticons, Inc.
- */
-
-/*!
- * jQuery JavaScript Library v3.6.0
+ * jQuery JavaScript Library v3.6.3
  * https://jquery.com/
  *
  * Includes Sizzle.js
@@ -32,7 +26,7 @@
  * Released under the MIT license
  * https://jquery.org/license
  *
- * Date: 2021-03-02T17:08Z
+ * Date: 2022-12-20T21:28Z
  */
 
 /**
