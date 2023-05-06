@@ -1,7 +1,7 @@
 import axios from "axios";
 const baseUrl =
   process.env.NODE_ENV === "production"
-    ? "https://besthackernews.herokuapp.com/api/v1/"
+    ? "https://tonidemo.herokuapp.com/api/v1/"
     : "http://localhost:3000/api/v1/";
 
 const getAll = (timespan) => {
