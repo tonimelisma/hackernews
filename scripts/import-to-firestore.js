@@ -1,26 +1,23 @@
 /**
- * One-time migration: MongoDB → Firestore
+ * Import local JSON data into Firestore prod- collections.
  *
  * Usage:
- *   DB_URI_PROD="mongodb+srv://..." node scripts/migrate-to-firestore.js
- *   DB_URI_PROD="mongodb+srv://..." TARGET_PREFIX=dev node scripts/migrate-to-firestore.js
+ *   node scripts/import-to-firestore.js
+ *   TARGET_PREFIX=dev node scripts/import-to-firestore.js
  *
- * Requires: mongoose (install temporarily: npm install --no-save mongoose)
+ * Reads:
+ *   scripts/data/stories.json
+ *   scripts/data/users.json
  *
  * Idempotent: skips stories already in Firestore, safe to re-run after partial failure.
  * Handles Firestore RESOURCE_EXHAUSTED with exponential backoff.
  */
 
-const mongoose = require("mongoose");
 const { Firestore } = require("@google-cloud/firestore");
+const fs = require("fs");
+const path = require("path");
 
-const DB_URI = process.env.DB_URI_PROD;
 const TARGET_PREFIX = process.env.TARGET_PREFIX || "prod";
-
-if (!DB_URI) {
-  console.error("DB_URI_PROD environment variable is required");
-  process.exit(1);
-}
 
 const db = new Firestore({
   projectId: "melisma-essentials",
@@ -31,27 +28,6 @@ const storiesCol = db.collection(`${TARGET_PREFIX}-stories`);
 const usersCol = db.collection(`${TARGET_PREFIX}-users`);
 
 const padId = (id) => String(id).padStart(10, "0");
-
-// Mongoose schemas (temporary for migration)
-const storySchema = new mongoose.Schema({
-  by: String,
-  descendants: Number,
-  id: { type: Number, unique: true },
-  kids: [Number],
-  score: Number,
-  time: Date,
-  title: String,
-  type: String,
-  url: String,
-  updated: Date,
-});
-const Story = mongoose.model("Story", storySchema);
-
-const userSchema = new mongoose.Schema({
-  username: String,
-  hidden: [{ type: Number }],
-});
-const User = mongoose.model("User", userSchema);
 
 const BATCH_SIZE = 50;
 const BATCH_DELAY_MS = 5000;
@@ -94,15 +70,13 @@ async function getExistingDocIds(collection) {
   return existing;
 }
 
-async function migrateStories() {
-  console.log("Migrating stories...");
-  const stories = await Story.find({});
-  console.log(`Found ${stories.length} stories in MongoDB`);
+async function importStories(stories) {
+  console.log("Importing stories...");
+  console.log(`Loaded ${stories.length} stories from JSON`);
 
   const existingDocs = await getExistingDocIds(storiesCol);
   console.log(`Already in Firestore: ${existingDocs.size} stories`);
 
-  const storyIds = new Set();
   let batch = db.batch();
   let batchCount = 0;
   let total = 0;
@@ -110,26 +84,23 @@ async function migrateStories() {
 
   for (const story of stories) {
     const docId = padId(story.id);
-    storyIds.add(story.id);
 
     if (existingDocs.has(docId)) {
       skipped++;
       continue;
     }
 
-    const data = {
-      by: story.by || "",
-      descendants: story.descendants || 0,
+    batch.set(storiesCol.doc(docId), {
+      by: story.by,
+      descendants: story.descendants,
       id: story.id,
-      kids: story.kids || [],
-      score: story.score || 0,
-      time: story.time,
-      title: story.title || "",
-      url: story.url || "",
-      updated: story.updated || new Date(),
-    };
-
-    batch.set(storiesCol.doc(docId), data);
+      kids: story.kids,
+      score: story.score,
+      time: new Date(story.time),
+      title: story.title,
+      url: story.url,
+      updated: new Date(story.updated),
+    });
     batchCount++;
     total++;
 
@@ -145,22 +116,17 @@ async function migrateStories() {
   if (batchCount > 0) {
     await commitWithRetry(batch, `Stories final batch`);
   }
-  console.log(`Migrated ${total} new stories (skipped ${skipped} existing)`);
-  return storyIds;
+  console.log(`Imported ${total} new stories (skipped ${skipped} existing)`);
 }
 
-async function migrateUsers(existingStoryIds) {
-  console.log("Migrating users...");
-  const users = await User.find({});
-  console.log(`Found ${users.length} users in MongoDB`);
+async function importUsers(users) {
+  console.log("Importing users...");
+  console.log(`Loaded ${users.length} users from JSON`);
 
   let totalHidden = 0;
-  let orphanedHidden = 0;
 
   for (const user of users) {
-    if (!user.username) continue;
-
-    // Create user doc (with retry)
+    // Create user doc
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
         await usersCol.doc(user.username).set({});
@@ -177,14 +143,12 @@ async function migrateUsers(existingStoryIds) {
       }
     }
 
-    // Migrate hidden IDs — only those that reference existing stories
-    const validHidden = (user.hidden || []).filter((id) => existingStoryIds.has(id));
-    orphanedHidden += (user.hidden || []).length - validHidden.length;
-
+    // Import hidden IDs
+    const hidden = user.hidden || [];
     let batch = db.batch();
     let batchCount = 0;
 
-    for (const hiddenId of validHidden) {
+    for (const hiddenId of hidden) {
       batch.set(
         usersCol.doc(user.username).collection("hidden").doc(String(hiddenId)),
         { addedAt: Date.now() }
@@ -204,29 +168,37 @@ async function migrateUsers(existingStoryIds) {
       await commitWithRetry(batch, `User ${user.username} hidden final`);
     }
 
-    console.log(
-      `  User "${user.username}": ${validHidden.length} hidden migrated, ${(user.hidden || []).length - validHidden.length} orphaned purged`
-    );
+    console.log(`  User "${user.username}": ${hidden.length} hidden imported`);
   }
 
-  console.log(`Migrated ${totalHidden} hidden IDs total, purged ${orphanedHidden} orphaned`);
+  console.log(`Imported ${totalHidden} hidden IDs total`);
 }
 
 async function main() {
-  console.log(`Connecting to MongoDB...`);
-  await mongoose.connect(DB_URI);
-  console.log("Connected!");
+  const dataDir = path.join(__dirname, "data");
+
+  const storiesPath = path.join(dataDir, "stories.json");
+  const usersPath = path.join(dataDir, "users.json");
+
+  if (!fs.existsSync(storiesPath) || !fs.existsSync(usersPath)) {
+    console.error("Missing data files. Run export-from-mongodb.js first.");
+    console.error(`Expected: ${storiesPath}`);
+    console.error(`Expected: ${usersPath}`);
+    process.exit(1);
+  }
+
+  const stories = JSON.parse(fs.readFileSync(storiesPath, "utf-8"));
+  const users = JSON.parse(fs.readFileSync(usersPath, "utf-8"));
 
   console.log(`Target Firestore prefix: ${TARGET_PREFIX}-`);
 
-  const storyIds = await migrateStories();
-  await migrateUsers(storyIds);
+  await importStories(stories);
+  await importUsers(users);
 
-  await mongoose.connection.close();
-  console.log("Done! MongoDB connection closed.");
+  console.log("Done!");
 }
 
 main().catch((e) => {
-  console.error("Migration failed:", e);
+  console.error("Import failed:", e);
   process.exit(1);
 });
