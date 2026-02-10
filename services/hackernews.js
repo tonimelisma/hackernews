@@ -1,5 +1,5 @@
 const axios = require("axios");
-const Stories = require("../models/stories");
+const { storiesCollection, padId } = require("./firestore");
 const qs = require("qs");
 
 const newStoriesUrl =
@@ -111,10 +111,9 @@ const getItems = async itemIdList => {
 };
 
 const checkStoryExists = async storyIdList => {
-  // this function is kind of nasty, but you can't use async/await with map/filter
   const promiseArray = storyIdList.map(async storyId => {
-    const promise = Stories.countDocuments({ id: storyId });
-    return promise;
+    const doc = await storiesCollection().doc(padId(storyId)).get();
+    return doc.exists;
   });
   const results = await Promise.all(promiseArray);
 
@@ -131,19 +130,17 @@ const addStories = async storyIdList => {
   const promiseArray = latestRemoteStoryData.map(async storyData => {
     try {
       if (storyData) {
-        const newStory = new Stories({
+        return storiesCollection().doc(padId(storyData.id)).set({
           by: storyData.by,
           descendants: storyData.descendants,
           id: storyData.id,
           kids: storyData.kids,
           score: storyData.score,
-          time: storyData.time * 1000,
+          time: new Date(storyData.time * 1000),
           title: storyData.title,
-          type: storyData.type,
           url: storyData.url,
-          updated: Date.now()
+          updated: new Date()
         });
-        return newStory.save();
       }
     } catch (e) {
       console.log("oops3: ", e);
@@ -163,15 +160,12 @@ const updateStories = async storyIdList => {
   const promiseArray = latestRemoteStoryData.map(async storyData => {
     try {
       if (storyData) {
-        return Stories.findOneAndUpdate(
-          { id: storyData.id },
-          {
-            descendants: storyData.descendants,
-            kids: storyData.kids,
-            score: storyData.score,
-            updated: Date.now()
-          }
-        );
+        return storiesCollection().doc(padId(storyData.id)).update({
+          descendants: storyData.descendants,
+          kids: storyData.kids,
+          score: storyData.score,
+          updated: new Date()
+        });
       }
     } catch (e) {
       console.log("oops7: ", e);

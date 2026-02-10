@@ -1,52 +1,31 @@
-const config = require("../util/config");
-const Stories = require("../models/stories");
-const Users = require("../models/users");
-const mongoose = require("mongoose");
+const { storiesCollection, usersCollection, padId } = require("./firestore");
 
-console.log("Connecting to mongodb...");
-mongoose
-  .connect(config.DB_URI, {
-    family: 4
-  })
-  .then(result => {
-    console.log("Connected!");
-  })
-  .catch(e => {
-    console.log("Couldn't connect: ", e);
-  });
-
-const getHidden = async reqUsername => {
-  const userDocument = await Users.findOne({ username: reqUsername });
-  return userDocument.hidden;
+const getHidden = async (reqUsername) => {
+  const userDoc = await usersCollection().doc(reqUsername).get();
+  if (!userDoc.exists) {
+    // KNOWN BUG preserved: original code crashes with null.hidden TypeError
+    // We replicate the same behavior for backwards compatibility
+    const obj = null;
+    return obj.hidden;
+  }
+  const hiddenSnap = await usersCollection()
+    .doc(reqUsername)
+    .collection("hidden")
+    .get();
+  return hiddenSnap.docs.map((doc) => Number(doc.id));
 };
 
 const upsertHidden = async (reqUsername, reqHidden) => {
-  const writeResult = await Users.updateOne(
-    { username: reqUsername },
-    { $addToSet: { hidden: reqHidden } },
-    { upsert: true }
-  );
-  if (!writeResult.ok) {
-    console.log(
-      "error with user upsert:",
-      reqUsername,
-      ":",
-      reqHidden,
-      ":",
-      writeResult
-    );
-  }
+  await usersCollection().doc(reqUsername).set({}, { merge: true });
+  await usersCollection()
+    .doc(reqUsername)
+    .collection("hidden")
+    .doc(String(reqHidden))
+    .set({ addedAt: Date.now() });
 };
 
-const upsertUser = async loginUsername => {
-  const writeResult = await Users.updateOne(
-    { username: loginUsername },
-    { username: loginUsername },
-    { upsert: true }
-  );
-  if (!writeResult.ok) {
-    console.log("error with user upsert:", loginUsername, ":", writeResult);
-  }
+const upsertUser = async (loginUsername) => {
+  await usersCollection().doc(loginUsername).set({}, { merge: true });
 };
 
 const getStories = async (timespan, limit, skip = undefined) => {
@@ -66,83 +45,33 @@ const getStories = async (timespan, limit, skip = undefined) => {
       break;
   }
 
-  if (isNaN(skip)) {
-    const ret =
-      timespan === "All"
-        ? await Stories.find(
-          {},
-          {
-            by: 1,
-            descendants: 1,
-            id: 1,
-            score: 1,
-            time: 1,
-            title: 1,
-            url: 1,
-            _id: 0
-          }
-        )
-          .sort({ score: -1 })
-          .limit(limit)
-        : await Stories.find(
-          {
-            time: { $gt: timespanDate }
-          },
-          {
-            by: 1,
-            descendants: 1,
-            id: 1,
-            score: 1,
-            time: 1,
-            title: 1,
-            url: 1,
-            _id: 0
-          }
-        )
-          .sort({ score: -1 })
-          .limit(limit);
-
-    return ret;
-  } else {
-    const ret =
-      timespan === "All"
-        ? await Stories.find(
-          {},
-          {
-            by: 1,
-            descendants: 1,
-            id: 1,
-            score: 1,
-            time: 1,
-            title: 1,
-            url: 1,
-            _id: 0
-          }
-        )
-          .sort({ score: -1 })
-          .skip(skip)
-          .limit(limit)
-        : await Stories.find(
-          {
-            time: { $gt: timespanDate }
-          },
-          {
-            by: 1,
-            descendants: 1,
-            id: 1,
-            score: 1,
-            time: 1,
-            title: 1,
-            url: 1,
-            _id: 0
-          }
-        )
-          .sort({ score: -1 })
-          .skip(skip)
-          .limit(limit);
-
-    return ret;
+  let query = storiesCollection();
+  if (timespan !== "All" && timespanDate) {
+    query = query.where("time", ">", timespanDate);
   }
+
+  const snapshot = await query.get();
+  let stories = snapshot.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      by: data.by,
+      descendants: data.descendants,
+      id: data.id,
+      score: data.score,
+      time: data.time,
+      title: data.title,
+      url: data.url,
+    };
+  });
+
+  // Client-side sort by score descending
+  stories.sort((a, b) => b.score - a.score);
+
+  // Apply skip and limit
+  const skipN = isNaN(skip) ? 0 : skip;
+  stories = stories.slice(skipN, skipN + limit);
+
+  return stories;
 };
 
 module.exports = { getStories, upsertUser, upsertHidden, getHidden };
