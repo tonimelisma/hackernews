@@ -75,30 +75,27 @@ const authenticateToken = (req, res, next) => {
     req.user = decodedToken;
     next();
   } catch (e) {
-    console.log("auth error:", e);
+    console.error("auth error:", e);
     res.status(401).json({ error: "authentication error" });
   }
 };
 
 router.get("/hidden", authenticateToken, async (req, res, next) => {
   try {
-    console.log("getting hidden for username:", req.user.username);
     const hidden = await storyService.getHidden(req.user.username);
     res.status(200).json(hidden);
   } catch (e) {
-    console.log("GET /hidden error:", e);
+    console.error("GET /hidden error:", e);
     res.status(500).json({ error: "internal server error" });
   }
 });
 
 router.post("/hidden", authenticateToken, async (req, res, next) => {
   try {
-    console.log("adding body.hidden:", req.body.hidden);
-    console.log("for username:", req.user.username);
     await storyService.upsertHidden(req.user.username, req.body.hidden);
     res.status(200).json({ hidden: req.body.hidden });
   } catch (e) {
-    console.log("POST /hidden error:", e);
+    console.error("POST /hidden error:", e);
     res.status(500).json({ error: "internal server error" });
   }
 });
@@ -107,8 +104,6 @@ router.post("/login", loginLimiter, async (req, res, next) => {
   const goto = req.body.goto;
   const pw = req.body.pw;
   const acct = req.body.acct;
-  console.log("login attempt for:", acct);
-
   if (!goto || !pw || !acct || !isValidUsername(acct)) {
     res.status(400).json({ error: "missing fields" });
   } else {
@@ -122,7 +117,7 @@ router.post("/login", loginLimiter, async (req, res, next) => {
         res.status(401).json({ error: "False username or password" });
       }
     } catch (e) {
-      console.log("login error: ", e);
+      console.error("login error:", e);
       res.status(401).json({ error: "error occurred" });
     }
   }

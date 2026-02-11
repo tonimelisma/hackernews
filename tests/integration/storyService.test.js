@@ -103,12 +103,9 @@ describe("services/storyService", () => {
       expect(result.sort()).toEqual([123, 456]);
     });
 
-    it("throws when user does not exist (known bug: null pointer)", async () => {
-      // KNOWN BUG: getHidden does not check for null from findOne
-      // When user doesn't exist, it crashes with TypeError
-      await expect(storyService.getHidden("nonexistent")).rejects.toThrow(
-        TypeError
-      );
+    it("returns empty array when user does not exist", async () => {
+      const result = await storyService.getHidden("nonexistent");
+      expect(result).toEqual([]);
     });
   });
 

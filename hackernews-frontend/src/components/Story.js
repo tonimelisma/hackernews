@@ -29,8 +29,8 @@ const Story = ({ story, addHidden }) => {
     favicon = story.url
       ? "https://www.google.com/s2/favicons?domain=" + new URL(story.url).hostname
       : "https://www.google.com/s2/favicons?domain=news.ycombinator.com";
-  } catch (e) {
-    console.log("error parsing favicon", story.url, ":", e)
+  } catch {
+    favicon = "https://www.google.com/s2/favicons?domain=news.ycombinator.com";
   }
 
   const originalDiscussionUrl = (id) =>

@@ -71,7 +71,7 @@ describe("services/hackernews", () => {
       axios.get.mockRejectedValue(new Error("network error"));
 
       const consoleSpy = jest
-        .spyOn(console, "log")
+        .spyOn(console, "error")
         .mockImplementation(() => {});
       const result = await hackernews.getNewStories();
       expect(result).toBeUndefined();
@@ -85,16 +85,12 @@ describe("services/hackernews", () => {
         '<div class="score_12345"></div><div class="score_67890"></div>';
       axios.get.mockResolvedValueOnce({ data: htmlWithStories + "No more items" });
 
-      const consoleSpy = jest
-        .spyOn(console, "log")
-        .mockImplementation(() => {});
       const result = await hackernews.getTopStories("daily");
 
       expect(result).toEqual(["12345", "67890"]);
       expect(axios.get).toHaveBeenCalledWith(
         "https://www.hntoplinks.com/today/1"
       );
-      consoleSpy.mockRestore();
     });
 
     it("paginates until 'No more items' is found", async () => {
@@ -105,28 +101,20 @@ describe("services/hackernews", () => {
         .mockResolvedValueOnce({ data: page1 })
         .mockResolvedValueOnce({ data: page2 });
 
-      const consoleSpy = jest
-        .spyOn(console, "log")
-        .mockImplementation(() => {});
       const result = await hackernews.getTopStories("daily");
 
       expect(result).toEqual(["111", "222"]);
       expect(axios.get).toHaveBeenCalledTimes(2);
-      consoleSpy.mockRestore();
     });
 
     it("uses weekly URL for weekly timespan", async () => {
       axios.get.mockResolvedValueOnce({ data: "No more items" });
 
-      const consoleSpy = jest
-        .spyOn(console, "log")
-        .mockImplementation(() => {});
       await hackernews.getTopStories("weekly");
 
       expect(axios.get).toHaveBeenCalledWith(
         "https://www.hntoplinks.com/week/1"
       );
-      consoleSpy.mockRestore();
     });
   });
 
@@ -143,7 +131,7 @@ describe("services/hackernews", () => {
       axios.get.mockRejectedValue(new Error("not found"));
 
       const consoleSpy = jest
-        .spyOn(console, "log")
+        .spyOn(console, "error")
         .mockImplementation(() => {});
       const result = await hackernews.getItem(999);
       expect(result).toBeUndefined();

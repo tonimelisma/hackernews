@@ -91,7 +91,7 @@ hackernews/
 
 5. **No input validation on API**: The `/get` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint has `isValidUsername()` validation.
 
-6. **`getHidden` null pointer bug**: If username doesn't exist in Firestore, the code intentionally crashes with `null.hidden` TypeError. This preserves the original MongoDB behavior and is documented with a test.
+6. **`getHidden` returns empty array for missing users**: If username doesn't exist in Firestore, `getHidden` returns `[]` (no hidden stories). Fixed in Phase 15 — previously crashed with null pointer.
 
 7. **Node.js 25+ crashes the app**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. `SlowBuffer` was removed in Node 25. No upstream fix available. **Use Node.js 18 or 20.**
 
@@ -112,6 +112,7 @@ All of these must be kept current with every change:
 - [Testing Guide](docs/TESTING.md) — test architecture, mocks, running tests, technical details
 - [Known Issues](docs/KNOWN_ISSUES.md) — security issues, bugs, code quality issues
 - [Codebase Evaluation](EVALUATION.md) — initial full-stack assessment
+- [Backlog](BACKLOG.md) — future work items
 - [Migration Plan](MIGRATION_PLAN.md) — Heroku to VPS migration plan
 
 ## Test Counts
@@ -256,4 +257,16 @@ All of these must be kept current with every change:
 - `var` → `const` in `services/hackernews.js:71` (articles regex match)
 - `var` → `let` in `Story.js:27` (favicon, conditionally assigned)
 - Resolved TODO: `getTopStories()` now deduplicates IDs with `[...new Set(ids)]`
+- 87 total tests: 58 backend + 29 frontend (unchanged)
+
+### Phase 15 — Logging Cleanup, Error Handling, Bug Fix, CI Audit
+- `console.log` → `console.error` for all error catch blocks in `hackernews.js`, `worker.js`, `api.js`
+- Removed debug/request logging: `getting url`, per-page URL, `getting hidden for username`, `adding body.hidden`, `login attempt for`
+- Worker logging consolidated: removed tier announcements and "none to update" messages, single-line memory summary
+- Removed favicon parse `console.log` from Story.js — catch block now sets fallback favicon silently
+- Fixed `getHidden` null pointer bug: returns `[]` when user doesn't exist instead of crashing
+- Added `npm audit` to CI: `--audit-level=moderate` for backend, `--audit-level=critical` for frontend
+- `tests/setup.js` now suppresses both `console.log` and `console.error` globally — individual test spies are optional
+- Created `BACKLOG.md` with all remaining future work items
+- Convention: `console.error` for errors, `console.log` for operational info (startup, sync progress)
 - 87 total tests: 58 backend + 29 frontend (unchanged)

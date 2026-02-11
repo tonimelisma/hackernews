@@ -5,6 +5,7 @@ const { getDb } = require("../services/firestore");
  */
 const connect = async () => {
   jest.spyOn(console, "log").mockImplementation(() => {});
+  jest.spyOn(console, "error").mockImplementation(() => {});
 };
 
 /**
@@ -20,6 +21,9 @@ const clearDatabase = async () => {
 const closeDatabase = async () => {
   if (console.log.mockRestore) {
     console.log.mockRestore();
+  }
+  if (console.error.mockRestore) {
+    console.error.mockRestore();
   }
 };
 

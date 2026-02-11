@@ -57,8 +57,6 @@ const getTopStories = async time => {
         url = dailyTopStoriesUrl;
         break;
     }
-    console.log("getting url: ", url);
-
     let moreItems = true;
     let i = 0;
     let ids = [];
@@ -70,13 +68,11 @@ const getTopStories = async time => {
 
       const articles = page.data.match(/score_[0-9]+/g);
       if (articles) ids.push(...articles.map(x => x.replace(/^\D+/g, "")));
-
-      console.log("url: ", url + i);
     }
 
     return [...new Set(ids)];
   } catch (e) {
-    console.log("getTopStories error:", e);
+    console.error("getTopStories error:", e);
   }
 };
 
@@ -85,7 +81,7 @@ const getNewStories = async () => {
     const newStories = await axios.get(newStoriesUrl);
     return newStories.data;
   } catch (e) {
-    console.log("getNewStories error:", e);
+    console.error("getNewStories error:", e);
   }
 };
 
@@ -94,7 +90,7 @@ const getItem = async itemId => {
     const itemData = await axios.get(String(await itemUrl(itemId)));
     return itemData.data;
   } catch (e) {
-    console.log("getItem error:", e);
+    console.error("getItem error:", e);
   }
 };
 
@@ -142,13 +138,13 @@ const addStories = async storyIdList => {
         });
       }
     } catch (e) {
-      console.log("addStories set error:", e, storyData);
+      console.error("addStories set error:", e, storyData);
     }
   });
   try {
     await Promise.all(promiseArray);
   } catch (e) {
-    console.log("addStories batch error:", e);
+    console.error("addStories batch error:", e);
   }
 };
 
@@ -166,13 +162,13 @@ const updateStories = async storyIdList => {
         });
       }
     } catch (e) {
-      console.log("updateStories update error:", e, storyData);
+      console.error("updateStories update error:", e, storyData);
     }
   });
   try {
     await Promise.all(promiseArray);
   } catch (e) {
-    console.log("updateStories batch error:", e);
+    console.error("updateStories batch error:", e);
   }
 };
 

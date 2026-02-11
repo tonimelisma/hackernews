@@ -12,7 +12,7 @@ A Hacker News aggregator that filters stories by score thresholds across time pe
 
 The app achieves its stated goal — it works. The architecture is sensible for a project of this size: clear separation into routes/services, a separate worker process, and a clean React component hierarchy. Since the initial evaluation, significant improvements have been made: comprehensive test coverage (87 tests), CI pipeline, security hardening (helmet, CORS, rate limiting, JWT expiration), migration from MongoDB to Firestore, auth middleware extraction, and thorough documentation.
 
-**Overall: B** — Working application with solid test coverage and good documentation, improved security posture and code quality. Remaining gaps: unmaintained CRA and frontend performance.
+**Overall: B** — Working application with solid test coverage and good documentation, improved security posture and code quality. Remaining gaps: unmaintained CRA, frontend performance, and no end-to-end tests.
 
 ---
 
@@ -20,13 +20,13 @@ The app achieves its stated goal — it works. The architecture is sensible for 
 
 | # | Category | Grade | Weight | Notes |
 |---|----------|-------|--------|-------|
-| 1 | Functionality | B- | 15% | Core features work; `getHidden` null pointer preserved intentionally |
+| 1 | Functionality | B | 15% | Core features work; `getHidden` null pointer fixed (Phase 15) |
 | 2 | Security | B+ | 20% | Helmet, CORS, rate limiting, JWT expiry, SECRET validation on startup |
 | 3 | Testing | A- | 15% | 87 tests (58 backend + 29 frontend), in-memory mock, ~1s backend runs |
-| 4 | Code Quality | B | 15% | Dead code removed, debug logging removed, var→const/let, deduplication TODO resolved |
+| 4 | Code Quality | B+ | 15% | Logging standardized (console.error for errors), debug logs removed, dead code removed |
 | 5 | Architecture | B | 10% | Firestore migration, lazy singleton, auth middleware, env-prefixed collections |
 | 6 | Documentation | B+ | 10% | CLAUDE.md, 6 docs/ files, EVALUATION.md, KNOWN_ISSUES.md, proper README |
-| 7 | DevOps / CI | C+ | 5% | GitHub Actions CI with Node 18+20 matrix; no Docker, no linting |
+| 7 | DevOps / CI | B- | 5% | GitHub Actions CI with Node 18+20 matrix, npm audit in CI; no Docker, no linting |
 | 8 | Performance | C+ | 5% | Client-side sort for Firestore constraint; no virtualization |
 | 9 | Dependencies | B | 5% | 0 backend vulns, frontend vulns all locked behind CRA; stale scripts removed |
 
@@ -44,7 +44,6 @@ The app achieves its stated goal — it works. The architecture is sensible for 
 - Auth middleware for JWT verification on protected routes
 
 **What's broken or fragile:**
-- `services/storyService.js` — `getHidden()` crashes with null pointer when username doesn't exist in Firestore (preserved intentionally from original code)
 - `services/hackernews.js:71` — `getTopStories()` scrapes hntoplinks.com with a regex (`/score_[0-9]+/g`) to extract story IDs — extremely brittle, will break on any HTML change
 
 ---
@@ -134,7 +133,6 @@ Readable and well-structured. Naming improvements, bug fixes, auth middleware ex
 
 ### Remaining issues
 
-- **Silent failures**: catch blocks in `hackernews.js` and `worker.js` only `console.log()` and continue
 - Abbreviated variable names: `acct`, `pw`, `goto`
 
 ---
@@ -195,6 +193,10 @@ Readable and well-structured. Naming improvements, bug fixes, auth middleware ex
 - **No Prettier or code formatting** enforcement
 - **No automated deployment pipeline**
 
+### Added (Phase 15)
+
+- `npm audit` in CI — `--audit-level=moderate` for backend, `--audit-level=critical` for frontend
+
 ---
 
 ## 8. Performance — C+
@@ -235,7 +237,7 @@ Adequate for current scale. Firestore migration simplified some concerns.
 ### Remaining concerns
 - `moment ^2.29.4` — in maintenance mode; `date-fns` or `dayjs` recommended
 - `react-scripts@5.0.1` (CRA) — unmaintained, no upstream fixes; 9 transitive vulnerabilities locked behind it
-- No `npm audit` in CI pipeline
+- ~~No `npm audit` in CI pipeline~~ — **RESOLVED** (Phase 15)
 - No license file
 
 ---
@@ -297,11 +299,14 @@ As of Phase 13:
 - ~~Remove debug console.log statements~~ ✓ (Phase 14)
 - ~~Fix var→const/let~~ ✓ (Phase 14)
 - ~~Resolve TODO: deduplicate story IDs~~ ✓ (Phase 14)
+- ~~Fix getHidden null pointer bug~~ ✓ (Phase 15)
+- ~~Standardize error logging (console.error)~~ ✓ (Phase 15)
+- ~~Remove debug/request logging from backend~~ ✓ (Phase 15)
+- ~~Add npm audit to CI~~ ✓ (Phase 15)
 
 ### Remaining
-1. **Consider CRA replacement** — react-scripts is unmaintained (9 unfixable vulnerabilities)
-2. **Add frontend virtualization** — for rendering large story lists
-3. **Add end-to-end tests**
+
+See `BACKLOG.md` for the full list of future work items.
 
 ---
 
@@ -321,8 +326,9 @@ This is a well-scoped personal project that solves a real problem. Since the ini
 - **Testing (F → A-)**: 87 tests with in-memory mock, ~1s backend runtime
 - **Documentation (F → B+)**: CLAUDE.md, 6 docs/ files, KNOWN_ISSUES, EVALUATION, proper README
 - **DevOps (D- → C+)**: GitHub Actions CI with Node 18+20 matrix
-- **Code Quality (D → B)**: Auth middleware, descriptive logging, createRoot migration, dead code removal, debug log cleanup
+- **Code Quality (D → B+)**: Auth middleware, descriptive logging, standardized error logging (`console.error`), debug logs removed, dead code removed
 - **Architecture (C+ → B)**: Firestore migration, lazy singleton, auth middleware, env-prefixed collections
+- **DevOps (D- → B-)**: GitHub Actions CI, npm audit enforcement
 - **Dependencies (D- → B)**: 0 backend vulnerabilities, stale scripts removed, all fixable frontend vulns resolved
 
 The remaining gaps are: unmaintained CRA (react-scripts, 9 unfixable transitive vulnerabilities) and frontend performance (no virtualization). The overall grade has improved from **C- to B**.

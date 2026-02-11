@@ -31,7 +31,7 @@
 
 | Location | Description | Test Coverage | Status |
 |----------|-------------|---------------|--------|
-| `services/storyService.js:4-9` | `getHidden` crashes with `TypeError: Cannot read properties of null` when username doesn't exist in DB. The Firestore doc doesn't exist, so `obj` is set to `null`, then `null.hidden` throws. (Preserved from original MongoDB code for backwards compatibility.) | `tests/integration/storyService.test.js` — "throws when user does not exist" | Open (intentional) |
+| ~~`services/storyService.js:4-9`~~ | ~~`getHidden` crashes with `TypeError: Cannot read properties of null` when username doesn't exist in DB.~~ | `tests/integration/storyService.test.js` — "returns empty array when user does not exist" | **RESOLVED** (Phase 15) — returns `[]` instead of crashing |
 | ~~`routes/api.js:101`~~ | ~~`upsertHidden()` called without `await` — errors are silently lost, response sent before write completes.~~ | `tests/integration/api.test.js` | **RESOLVED** (Phase 12) — added `await` |
 | ~~`routes/api.js:123`~~ | ~~`upsertUser()` called without `await` — same fire-and-forget issue.~~ | `tests/integration/api.test.js` — "creates user in DB" (setTimeout workaround removed) | **RESOLVED** (Phase 12) — added `await`, reordered before response |
 | ~~`routes/api.js:48-50`~~ | ~~GET `/get` catches DB errors but doesn't send a response — request hangs until client timeout.~~ | `tests/integration/api.test.js` — "returns 500 when storyService throws" | **RESOLVED** (Phase 10) — now returns 500 |
@@ -43,6 +43,8 @@
 |----------|-------------|--------|
 | ~~`hackernews-frontend/src/index.js:14`~~ | ~~Uses deprecated `ReactDOM.render` API (React 16) instead of `createRoot` (React 18)~~ | **RESOLVED** (Phase 13) — migrated to `createRoot` |
 | `hackernews-frontend/src/App.js:6` | Imports `bootstrap.bundle.min` for JS side effects | Open |
+| ~~Backend `console.log` in catch blocks~~ | ~~Error catch blocks in `hackernews.js`, `worker.js`, `api.js` used `console.log` instead of `console.error`~~ | **RESOLVED** (Phase 15) — all error logging uses `console.error` |
+| ~~Debug logging in production code~~ | ~~`hackernews.js` and `api.js` had debug/request logging (`console.log`) mixed with error logging~~ | **RESOLVED** (Phase 15) — debug logs removed |
 | ~~`services/hackernews.js:77`~~ | ~~`// TODO deduplicate ids` — acknowledged but unfixed~~ | **RESOLVED** (Phase 14) — `[...new Set(ids)]` deduplication added |
 | Dependencies | `react-scripts@5.0.1` (CRA) is unmaintained | Open |
 | ~~Dependencies~~ | ~~Dead frontend deps: `jquery`, `popper.js`, `react-icons`, `typescript`~~ | **RESOLVED** (Phase 10) — removed |
@@ -61,5 +63,5 @@
 
 | Scope | Status | Details |
 |-------|--------|---------|
-| Backend | 0 vulnerabilities | Clean after `npm audit fix` (Phase 14) |
-| Frontend | 9 vulnerabilities (unfixable) | All locked behind `react-scripts@5.0.1`: `nth-check`, `postcss` (resolve-url-loader), `webpack-dev-server`. Requires CRA replacement to fix. |
+| Backend | 0 vulnerabilities | Clean after `npm audit fix` (Phase 14). `npm audit` enforced in CI at `moderate` level. |
+| Frontend | 9 vulnerabilities (unfixable) | All locked behind `react-scripts@5.0.1`: `nth-check`, `postcss` (resolve-url-loader), `webpack-dev-server`. `npm audit` enforced in CI at `critical` level. Requires CRA replacement to fix. |

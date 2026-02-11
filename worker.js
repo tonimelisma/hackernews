@@ -41,12 +41,7 @@ const main = async () => {
         } else {
           const latestLocalId = latestSnap.docs[0].data().id;
           if (latestLocalId < latestRemoteStoryIds[0]) {
-            console.log(
-              "updates available: ",
-              latestLocalId,
-              "<",
-              latestRemoteStoryIds[0]
-            );
+            console.log("new stories available: local=%d remote=%d", latestLocalId, latestRemoteStoryIds[0]);
             const newStoryIds = latestRemoteStoryIds.filter(
               checkStoryId => checkStoryId > latestLocalId
             );
@@ -56,73 +51,52 @@ const main = async () => {
           }
         }
       } catch (e) {
-        console.log("Error loading stories:", e);
+        console.error("error loading stories:", e);
       }
 
       // UPDATE SCORES FOR TRENDING STORIES
       try {
-        console.log("updating all stories updated more than 14d ago");
         const lastEverSnap = await storiesCollection()
           .where("updated", "<", new Date(Date.now() - 14 * 24 * 60 * 60 * 1000))
           .get();
         if (!lastEverSnap.empty) {
           await Remote.updateStories(lastEverSnap.docs.map(d => d.data().id));
-        } else {
-          console.log("...none to update");
         }
 
-        console.log("updating last month stories updated more than 24h ago");
         const lastMonthSnap = await storiesCollection()
           .where("time", ">", new Date(Date.now() - 28 * 24 * 60 * 60 * 1000))
           .where("updated", "<", new Date(Date.now() - 24 * 60 * 60 * 1000))
           .get();
         if (!lastMonthSnap.empty) {
           await Remote.updateStories(lastMonthSnap.docs.map(d => d.data().id));
-        } else {
-          console.log("...none to update");
         }
 
-        console.log("updating weekly stories updated more than 60m ago");
         const lastWeekSnap = await storiesCollection()
           .where("time", ">", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
           .where("updated", "<", new Date(Date.now() - 60 * 60 * 1000))
           .get();
         if (!lastWeekSnap.empty) {
           await Remote.updateStories(lastWeekSnap.docs.map(d => d.data().id));
-        } else {
-          console.log("...none to update");
         }
 
-        console.log("updating daily stories updated more than 15m ago");
         const last24hSnap = await storiesCollection()
           .where("time", ">", new Date(Date.now() - 24 * 60 * 60 * 1000))
           .where("updated", "<", new Date(Date.now() - 15 * 60 * 1000))
           .get();
         if (!last24hSnap.empty) {
           await Remote.updateStories(last24hSnap.docs.map(d => d.data().id));
-        } else {
-          console.log("...none to update");
         }
       } catch (e) {
-        console.log("Error updating stories:", e);
+        console.error("error updating stories:", e);
       }
 
       const memoryUsage = process.memoryUsage();
-      console.log("memory usage: rss:", formatBytes(memoryUsage.rss), "heapTotal:",
-        formatBytes(memoryUsage.heapTotal),
-        "heapUsed:",
-        formatBytes(memoryUsage.heapUsed),
-        "external:",
-        formatBytes(memoryUsage.external),
-        "arrayBuffers:",
-        formatBytes(memoryUsage.arrayBuffers)
-      );
-      console.log("");
+      console.log("sync complete | rss: %s, heap: %s", formatBytes(memoryUsage.rss), formatBytes(memoryUsage.heapUsed));
 
       await sleep(10 * 60 * 1000);
     }
   } catch (e) {
-    console.log("Fatal error: ", e);
+    console.error("fatal error:", e);
   }
 };
 

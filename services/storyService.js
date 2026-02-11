@@ -3,10 +3,7 @@ const { storiesCollection, usersCollection, padId } = require("./firestore");
 const getHidden = async (reqUsername) => {
   const userDoc = await usersCollection().doc(reqUsername).get();
   if (!userDoc.exists) {
-    // KNOWN BUG preserved: original code crashes with null.hidden TypeError
-    // We replicate the same behavior for backwards compatibility
-    const obj = null;
-    return obj.hidden;
+    return [];
   }
   const hiddenSnap = await usersCollection()
     .doc(reqUsername)
