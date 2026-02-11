@@ -1,4 +1,4 @@
-const { storiesCollection, usersCollection, padId } = require("./firestore");
+const { storiesCollection, usersCollection } = require("./firestore");
 
 const getHidden = async (reqUsername) => {
   const userDoc = await usersCollection().doc(reqUsername).get();

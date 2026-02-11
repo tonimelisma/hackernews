@@ -1,4 +1,4 @@
-const { storiesCollection, padId } = require("./services/firestore");
+const { storiesCollection } = require("./services/firestore");
 const Remote = require("./services/hackernews");
 
 const throng = require("throng");

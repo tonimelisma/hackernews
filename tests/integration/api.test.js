@@ -10,7 +10,7 @@ jest.mock("jsonwebtoken", () => ({
     mockTokens[token] = { ...payload, options };
     return token;
   },
-  verify: (token, secret) => {
+  verify: (token, _secret) => {
     const payload = mockTokens[token];
     if (!payload) throw new Error("invalid token");
     return payload;

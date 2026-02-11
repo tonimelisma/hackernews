@@ -55,7 +55,7 @@ const getTopStories = async time => {
     }
     let moreItems = true;
     let i = 0;
-    let ids = [];
+    const ids = [];
     while (moreItems && i < 15) {
       i++;
       const page = await axios.get(url + i);
@@ -108,7 +108,7 @@ const checkStoryExists = async storyIdList => {
   });
   const results = await Promise.all(promiseArray);
 
-  let missingStories = [];
+  const missingStories = [];
   for (let i = 0; i < storyIdList.length; i++) {
     if (!results[i]) missingStories.push(storyIdList[i]);
   }
