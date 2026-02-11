@@ -76,8 +76,7 @@ describe("Story", () => {
   it("calls addHidden when hide button is clicked", () => {
     render(<Story story={mockStory} addHidden={mockAddHidden} />);
 
-    const buttons = document.querySelectorAll('a[role="button"]');
-    const hideButton = buttons[buttons.length - 1];
+    const hideButton = screen.getByRole("button", { name: "Hide story" });
     fireEvent.click(hideButton);
 
     expect(mockAddHidden).toHaveBeenCalledWith(12345);

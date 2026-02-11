@@ -13,12 +13,12 @@ describe("middleware", () => {
       unknownEndpoint(req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(404);
-      expect(res.send).toHaveBeenCalledWith({ error: "unknown endpoint " });
+      expect(res.send).toHaveBeenCalledWith({ error: "unknown endpoint" });
     });
   });
 
   describe("errorHandler", () => {
-    it("responds with 500 and error message, then calls next", () => {
+    it("responds with 500 and error message", () => {
       jest.spyOn(console, "error").mockImplementation(() => {});
 
       const error = new Error("test error");
@@ -33,7 +33,7 @@ describe("middleware", () => {
 
       expect(res.status).toHaveBeenCalledWith(500);
       expect(res.json).toHaveBeenCalledWith({ error: "test error" });
-      expect(next).toHaveBeenCalledWith(error);
+      expect(next).not.toHaveBeenCalled();
 
       console.error.mockRestore();
     });

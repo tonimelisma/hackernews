@@ -1,4 +1,3 @@
-/* eslint-disable jsx-a11y/anchor-is-valid */
 import React, { useState, useEffect } from "react";
 import "bootstrap/dist/js/bootstrap.bundle.min";
 
@@ -49,7 +48,7 @@ const App = () => {
           setHidden(response.data);
         })
         .catch(() => {
-          setHidden(null);
+          setHidden([]);
         });
     }
   }, [token]);
@@ -84,8 +83,9 @@ const App = () => {
     return (
       <form className="px-2" onSubmit={handleLogin}>
         <div className="mb-3 form-group">
-          Username
+          <label htmlFor="login-username">Username</label>
           <input
+            id="login-username"
             type="text"
             value={username}
             name="Username"
@@ -93,8 +93,9 @@ const App = () => {
           />
         </div>
         <div className="mb-3 form-group">
-          Password
+          <label htmlFor="login-password">Password</label>
           <input
+            id="login-password"
             type="password"
             value={password}
             name="Password"
@@ -132,11 +133,11 @@ const App = () => {
           <button
             className="btn btn-sm btn-light"
             type="button"
-            data-toggle="dropdown"
+            data-bs-toggle="dropdown"
           >
             {timespan}
           </button>
-          <div className="dropdown-menu dropdown-menu-right">
+          <div className="dropdown-menu dropdown-menu-end">
             <div className="btn-group btn-group-sm">{timespanButtons()}</div>
           </div>
         </div>
@@ -144,7 +145,7 @@ const App = () => {
           {timespanButtons()}
         </div>
         <div className="btn-group">
-          <a className="btn" data-toggle="dropdown" href="#">
+          <button type="button" className="btn" data-bs-toggle="dropdown">
             {token ? (
               <FontAwesomeIcon
                 icon={faUserCircle}
@@ -160,9 +161,9 @@ const App = () => {
                 inverse
               />
             )}
-          </a>
+          </button>
           <div
-            className="dropdown-menu dropdown-menu-right"
+            className="dropdown-menu dropdown-menu-end"
             id="loginDropdownMenu"
           >
             {token ? <div className="m-3">Logged in</div> : loginForm()}

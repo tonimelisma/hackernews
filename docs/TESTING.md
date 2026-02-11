@@ -22,10 +22,11 @@ npm test && cd hackernews-frontend && npm test -- --watchAll=false && cd ..
 | `tests/unit/middleware.test.js` | Unit | 3 | `unknownEndpoint` (404), `errorHandler` (500 + next) |
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
 | `tests/unit/hackernewsService.test.js` | Unit+DB | 15 | All HN API functions (axios mocked), Firestore operations |
+| `tests/unit/firestore.test.js` | Unit | 10 | getCollectionPrefix, padId, storiesCollection, usersCollection, getDb/setDb |
 | `tests/integration/storyService.test.js` | Integration | 14 | All storyService CRUD against MockFirestore |
 | `tests/integration/api.test.js` | Integration | 18 | Full HTTP request/response via supertest |
 | `tests/integration/worker.test.js` | Integration | 7 | Worker staleness queries + latest story lookup |
-| **Total** | | **58** | |
+| **Total** | | **68** | |
 
 ### Frontend (Jest + React Testing Library)
 

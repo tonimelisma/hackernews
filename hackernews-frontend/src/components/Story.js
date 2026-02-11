@@ -1,4 +1,3 @@
-/* eslint-disable jsx-a11y/anchor-is-valid */
 import React from "react";
 import moment from "moment";
 
@@ -56,10 +55,10 @@ const Story = ({ story, addHidden }) => {
         className="btn-group btn-group-sm d-flex align-items-center"
         role="group"
       >
-        <a href="#" role="button" className="btn btn-outline-secondary">
+        <span className="btn btn-outline-secondary">
           <FontAwesomeIcon icon={faThumbsUp} />
           {" "}{story.score}
-        </a>{" "}
+        </span>{" "}
         <a
           href={originalDiscussionUrl(story.id)}
           className="btn btn-outline-secondary"
@@ -67,14 +66,14 @@ const Story = ({ story, addHidden }) => {
           <FontAwesomeIcon icon={faComments} />
           {" "}{story.descendants}
         </a>{" "}
-        <a
-          href="#"
-          role="button"
+        <button
+          type="button"
           className="btn btn-outline-secondary"
           onClick={() => addHidden(story.id)}
+          aria-label="Hide story"
         >
           <FontAwesomeIcon icon={faTimes} />{" "}
-        </a>{" "}
+        </button>{" "}
       </div>{" "}
     </div>
   );

@@ -115,11 +115,11 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews) | 19 |
+| Backend unit (middleware, config, hackernews, firestore) | 29 |
 | Backend integration (storyService, api, worker) | 39 |
 | Frontend component (App, StoryList, Story) | 23 |
 | Frontend service (storyService, loginService) | 6 |
-| **Total** | **87** |
+| **Total** | **97** |
 
 ## Project Health
 
@@ -129,11 +129,11 @@ All of these must be kept current with every change:
 |----------|-------|---------|
 | Functionality | B | Core features work; hntoplinks scraper is brittle (regex) |
 | Security | B+ | Helmet, CORS, rate limiting, JWT expiry, SECRET validation |
-| Testing | A- | 87 tests, in-memory mock, ~1s backend runs |
-| Code Quality | B+ | Standardized logging, dead code removed, auth middleware extracted |
+| Testing | A- | 97 tests, in-memory mock, ~1s backend runs |
+| Code Quality | A- | Modernized boilerplate, a11y fixes, bug fixes, dead code removed |
 | Architecture | B | Firestore migration, lazy singleton, env-prefixed collections |
 | Documentation | B+ | CLAUDE.md + 4 reference docs, proper README |
-| DevOps / CI | B- | GitHub Actions Node 18+20 matrix, npm audit in CI; no Docker/linting |
+| DevOps / CI | B | GitHub Actions Node 18+20+22 matrix, npm audit + build in CI, npm caching; no Docker/linting |
 | Performance | C+ | Client-side sort for Firestore constraint; no virtualization |
 | Dependencies | B | 0 backend vulns; 9 frontend vulns locked behind react-scripts |
 
@@ -189,3 +189,6 @@ All of these must be kept current with every change:
 - **`bin/www` for startup checks**: SECRET validation lives in `bin/www` (not `app.js`) so tests can `require('../../app')` without triggering exit.
 - **Logging convention**: `console.error` for errors (catch blocks), `console.log` for operational info (startup, sync progress). `tests/setup.js` suppresses both globally.
 - **Frontend `npm install` needs `--legacy-peer-deps`** due to react-scripts@5.0.1 peer dep conflicts.
+- **Bootstrap 5 data attributes**: Use `data-bs-toggle`/`data-bs-dismiss` (not `data-toggle`/`data-dismiss`). Class `dropdown-menu-right` was renamed to `dropdown-menu-end`.
+- **`errorHandler` must not call `next()`**: Calling `next(error)` after `res.status().json()` triggers "headers already sent" errors if another error handler exists downstream.
+- **SCSS in `.css` files is silently ignored**: CRA compiles `.css` files as plain CSS — `@include media-breakpoint-up()` is SCSS syntax and was silently dropped. Use standard `@media` queries instead.

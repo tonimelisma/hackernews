@@ -2,19 +2,19 @@ html {
   font-size: 1rem;
 }
 
-@include media-breakpoint-up(sm) {
+@media (min-width: 576px) {
   html {
     font-size: 1.2rem;
   }
 }
 
-@include media-breakpoint-up(md) {
+@media (min-width: 768px) {
   html {
     font-size: 1.4rem;
   }
 }
 
-@include media-breakpoint-up(lg) {
+@media (min-width: 992px) {
   html {
     font-size: 1.6rem;
   }

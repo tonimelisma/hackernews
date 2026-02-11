@@ -5,11 +5,8 @@ const qs = require("qs");
 const newStoriesUrl =
   "https://hacker-news.firebaseio.com/v0/newstories.json?print=pretty";
 
-const itemUrl = async item => {
-  return String(
-    `https://hacker-news.firebaseio.com/v0/item/${item}.json?print=pretty`
-  );
-};
+const itemUrl = item =>
+  `https://hacker-news.firebaseio.com/v0/item/${item}.json?print=pretty`;
 
 const loginUrl = "https://news.ycombinator.com/login";
 
@@ -27,7 +24,7 @@ const login = async (goto, acct, pw) => {
   );
   if (response.status === 200) {
     if (response.request.path === "/login") {
-      console.log("login failed (redirected to /login):", response.status);
+      console.error("login failed (redirected to /login):", response.status);
       return false;
     } else if (response.request.path === "/news") {
       return true;
@@ -87,7 +84,7 @@ const getNewStories = async () => {
 
 const getItem = async itemId => {
   try {
-    const itemData = await axios.get(String(await itemUrl(itemId)));
+    const itemData = await axios.get(itemUrl(itemId));
     return itemData.data;
   } catch (e) {
     console.error("getItem error:", e);
@@ -97,12 +94,12 @@ const getItem = async itemId => {
 const getItems = async itemIdList => {
   const promiseArray = itemIdList.map(async storyId => {
     const storyData = await getItem(storyId);
-    if (storyData !== null) {
+    if (storyData) {
       return storyData;
     }
   });
   const itemDataList = await Promise.all(promiseArray);
-  return itemDataList;
+  return itemDataList.filter(Boolean);
 };
 
 const checkStoryExists = async storyIdList => {

@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18, 20]
+        node-version: [18, 20, 22]
 
     steps:
       - uses: actions/checkout@v4
@@ -20,6 +20,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -36,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18, 20]
+        node-version: [18, 20, 22]
 
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +46,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: hackernews-frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
@@ -52,6 +55,12 @@ jobs:
 
       - name: Run frontend tests
         run: npm test -- --watchAll=false
+        working-directory: hackernews-frontend
+        env:
+          CI: true
+
+      - name: Build frontend
+        run: npm run build
         working-directory: hackernews-frontend
         env:
           CI: true

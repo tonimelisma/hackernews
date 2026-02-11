@@ -5,7 +5,6 @@ const cors = require("cors");
 const helmet = require("helmet");
 
 const path = require("path");
-const cookieParser = require("cookie-parser");
 const logger = require("morgan");
 
 const apiRouter = require("./routes/api");
@@ -23,7 +22,6 @@ app.use(cors({ origin: corsOrigin }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
 
 // STATIC
 app.use(express.static(path.join(__dirname, "hackernews-frontend/build")));

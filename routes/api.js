@@ -27,10 +27,8 @@ router.get("/get", async (req, res, next) => {
       case "Month":
       case "Year":
         return timespan;
-        break;
       default:
         return "All";
-        break;
     }
   };
 
@@ -69,7 +67,7 @@ const authenticateToken = (req, res, next) => {
   const token = getTokenFromReq(req);
   try {
     const decodedToken = jwt.verify(token, process.env.SECRET);
-    if (!token || !decodedToken.username) {
+    if (!decodedToken.username) {
       return res.status(401).json({ error: "invalid token" });
     }
     req.user = decodedToken;
@@ -114,11 +112,11 @@ router.post("/login", loginLimiter, async (req, res, next) => {
         await storyService.upsertUser(acct);
         res.status(200).json({ token });
       } else {
-        res.status(401).json({ error: "False username or password" });
+        res.status(401).json({ error: "invalid credentials" });
       }
     } catch (e) {
       console.error("login error:", e);
-      res.status(401).json({ error: "error occurred" });
+      res.status(401).json({ error: "internal server error" });
     }
   }
 });
