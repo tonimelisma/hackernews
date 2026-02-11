@@ -3,9 +3,7 @@ const unknownEndpoint = (req, res, next) => {
 };
 
 const errorHandler = (error, req, res, next) => {
-  console.log("error! ", error);
-
-  // if(error.name === "XXXError" && error.kind === "ObjectId")
+  console.error("unhandled error:", error);
 
   res.status(500).json({ error: error.message });
 

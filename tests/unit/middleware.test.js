@@ -19,7 +19,7 @@ describe("middleware", () => {
 
   describe("errorHandler", () => {
     it("responds with 500 and error message, then calls next", () => {
-      jest.spyOn(console, "log").mockImplementation(() => {});
+      jest.spyOn(console, "error").mockImplementation(() => {});
 
       const error = new Error("test error");
       const req = {};
@@ -35,12 +35,12 @@ describe("middleware", () => {
       expect(res.json).toHaveBeenCalledWith({ error: "test error" });
       expect(next).toHaveBeenCalledWith(error);
 
-      console.log.mockRestore();
+      console.error.mockRestore();
     });
 
     it("logs the error to console", () => {
       const consoleSpy = jest
-        .spyOn(console, "log")
+        .spyOn(console, "error")
         .mockImplementation(() => {});
 
       const error = new Error("logged error");
@@ -53,7 +53,7 @@ describe("middleware", () => {
 
       errorHandler(error, req, res, next);
 
-      expect(consoleSpy).toHaveBeenCalledWith("error! ", error);
+      expect(consoleSpy).toHaveBeenCalledWith("unhandled error:", error);
 
       consoleSpy.mockRestore();
     });

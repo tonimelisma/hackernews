@@ -22,17 +22,14 @@ const App = () => {
   const [token, setToken] = useState(null);
 
   useEffect(() => {
-    console.log("fetching stories...");
     setLoading(true);
     storyService
       .getAll(timespan)
       .then((response) => {
-        console.log("...got them");
         setStories(response.data);
         setLoading(false);
       })
-      .catch((e) => {
-        console.log("didn't get them for timespan [", timespan, "] ", e);
+      .catch(() => {
         setLoading(false);
       });
   }, [timespan]);
@@ -46,22 +43,18 @@ const App = () => {
 
   useEffect(() => {
     if (token) {
-      console.log("fetching hidden...");
       storyService
         .getHidden(token)
         .then((response) => {
-          console.log("...got hidden");
           setHidden(response.data);
         })
-        .catch((e) => {
-          console.log("getHidden error:", e);
+        .catch(() => {
           setHidden(null);
         });
     }
   }, [token]);
 
   const addHidden = (id) => {
-    console.log("hiding: ", id, ":", hidden);
     const updatedHidden = hidden.concat(id);
     setHidden(updatedHidden);
     if (token) {
@@ -84,8 +77,6 @@ const App = () => {
       window.localStorage.setItem("loginToken", recvToken.token);
     } catch (error) {
       setLoginError(true);
-      // TODO FIXME
-      //$("#loginDropdownMenu").dropdown("toggle");
     }
   };
 

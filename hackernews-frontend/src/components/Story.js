@@ -24,7 +24,7 @@ const isSafeUrl = (url) => {
 };
 
 const Story = ({ story, addHidden }) => {
-  var favicon
+  let favicon
   try {
     favicon = story.url
       ? "https://www.google.com/s2/favicons?domain=" + new URL(story.url).hostname

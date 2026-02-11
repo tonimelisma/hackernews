@@ -76,8 +76,6 @@ hackernews/
 │       └── services/
 │           ├── storyService.js  # API client for stories/hidden
 │           └── loginService.js  # API client for login
-├── scripts/
-│   └── migrate-to-firestore.js  # One-time MongoDB → Firestore migration
 └── docs/                   # LLM-geared documentation
 ```
 
@@ -241,4 +239,21 @@ All of these must be kept current with every change:
 - Fixed stale EVALUATION.md: removed MongoDB references (`$addToSet`, `findOne`, `models/comments.js`), updated dependency versions (React 19, Express 5), cleared resolved Dependabot PRs, updated recommendations
 - Updated KNOWN_ISSUES.md: marked SECRET validation and ReactDOM.render as resolved
 - Overall grade improved from B- to B
+- 87 total tests: 58 backend + 29 frontend (unchanged)
+
+### Phase 14 — Security Fixes, Dead Code Removal, Code Quality Cleanup
+- Backend: `npm audit fix` — 0 vulnerabilities (lodash, brace-expansion already fixed upstream)
+- Frontend: `npm audit fix` — reduced from 27 to 9 vulnerabilities; remaining 9 locked behind `react-scripts` (nth-check, postcss, webpack-dev-server)
+- Added `@babel/plugin-proposal-private-property-in-object` as frontend devDep — silences CRA build warning
+- Removed commented try-catch in `loginService.js` (caller handles errors)
+- Removed 7 debug `console.log` statements from `App.js`
+- Removed dead jQuery code (`// TODO FIXME` + `//$("#loginDropdownMenu").dropdown("toggle")`) from `App.js`
+- Removed commented MongoDB error check from `util/middleware.js`
+- Fixed error handler: `console.log` → `console.error` with descriptive message
+- Deleted `hackernews-frontend/src/serviceWorker.js` (unused CRA boilerplate), removed import from `index.js`
+- Deleted `topdump.js` (stale database population script)
+- Deleted `scripts/` directory: `export-from-mongodb.js`, `import-to-firestore.js`, and `data/` (12MB migration artifacts)
+- `var` → `const` in `services/hackernews.js:71` (articles regex match)
+- `var` → `let` in `Story.js:27` (favicon, conditionally assigned)
+- Resolved TODO: `getTopStories()` now deduplicates IDs with `[...new Set(ids)]`
 - 87 total tests: 58 backend + 29 frontend (unchanged)

@@ -68,14 +68,13 @@ const getTopStories = async time => {
 
       if (page.data.includes("No more items")) moreItems = false;
 
-      var articles = page.data.match(/score_[0-9]+/g);
+      const articles = page.data.match(/score_[0-9]+/g);
       if (articles) ids.push(...articles.map(x => x.replace(/^\D+/g, "")));
 
       console.log("url: ", url + i);
     }
 
-    // TODO deduplicate ids
-    return ids;
+    return [...new Set(ids)];
   } catch (e) {
     console.log("getTopStories error:", e);
   }

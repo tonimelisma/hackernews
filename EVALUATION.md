@@ -23,12 +23,12 @@ The app achieves its stated goal — it works. The architecture is sensible for 
 | 1 | Functionality | B- | 15% | Core features work; `getHidden` null pointer preserved intentionally |
 | 2 | Security | B+ | 20% | Helmet, CORS, rate limiting, JWT expiry, SECRET validation on startup |
 | 3 | Testing | A- | 15% | 87 tests (58 backend + 29 frontend), in-memory mock, ~1s backend runs |
-| 4 | Code Quality | B- | 15% | Auth middleware extracted, informal logging fixed, fire-and-forget fixed |
+| 4 | Code Quality | B | 15% | Dead code removed, debug logging removed, var→const/let, deduplication TODO resolved |
 | 5 | Architecture | B | 10% | Firestore migration, lazy singleton, auth middleware, env-prefixed collections |
 | 6 | Documentation | B+ | 10% | CLAUDE.md, 6 docs/ files, EVALUATION.md, KNOWN_ISSUES.md, proper README |
 | 7 | DevOps / CI | C+ | 5% | GitHub Actions CI with Node 18+20 matrix; no Docker, no linting |
 | 8 | Performance | C+ | 5% | Client-side sort for Firestore constraint; no virtualization |
-| 9 | Dependencies | B- | 5% | All deps current, Dependabot PRs resolved; CRA unmaintained |
+| 9 | Dependencies | B | 5% | 0 backend vulns, frontend vulns all locked behind CRA; stale scripts removed |
 
 ---
 
@@ -108,11 +108,11 @@ Significant improvements since initial evaluation. Most critical and high vulner
 
 ---
 
-## 4. Code Quality — C+
+## 4. Code Quality — B
 
-Readable and well-structured. Naming improvements, bug fixes, and auth middleware extraction applied in Phases 10-13.
+Readable and well-structured. Naming improvements, bug fixes, auth middleware extraction, dead code removal, and debug logging cleanup applied in Phases 10-14.
 
-### Resolved (Phases 10-13)
+### Resolved (Phases 10-14)
 
 - Finnish strings replaced with English log messages
 - `sanitary()` renamed to `isValidUsername()` with proper regex
@@ -124,6 +124,13 @@ Readable and well-structured. Naming improvements, bug fixes, and auth middlewar
 - Informal logging (`"oops"`, `"whoops"`) replaced with descriptive error messages (Phase 13)
 - Auth middleware extracted — JWT verification is no longer duplicated inline (Phase 13)
 - `ReactDOM.render` migrated to `createRoot` (Phase 13)
+- All debug `console.log` statements removed from frontend (Phase 14)
+- Dead commented-out code removed: loginService try-catch, jQuery toggle, MongoDB error check (Phase 14)
+- `var` → `const`/`let` in hackernews.js and Story.js (Phase 14)
+- TODO resolved: story ID deduplication with `[...new Set(ids)]` (Phase 14)
+- Unused serviceWorker.js deleted (Phase 14)
+- Stale scripts and migration data deleted (Phase 14)
+- Error handler uses `console.error` instead of `console.log` (Phase 14)
 
 ### Remaining issues
 
@@ -213,7 +220,7 @@ Adequate for current scale. Firestore migration simplified some concerns.
 
 ---
 
-## 9. Dependencies — C+
+## 9. Dependencies — B
 
 ### Positives
 - Dependabot is enabled and actively creating PRs
@@ -221,10 +228,13 @@ Adequate for current scale. Firestore migration simplified some concerns.
 - Core dependencies are current (React 19, Express 5, Firestore)
 - `package-lock.json` committed for deterministic builds
 - Dead deps removed (jquery, popper.js, react-icons, typescript, mongoose)
+- Backend: 0 npm vulnerabilities (Phase 14)
+- Frontend: fixable vulnerabilities resolved via `npm audit fix` (Phase 14)
+- `@babel/plugin-proposal-private-property-in-object` added as devDep to silence CRA build warning
 
 ### Remaining concerns
 - `moment ^2.29.4` — in maintenance mode; `date-fns` or `dayjs` recommended
-- `react-scripts@5.0.1` (CRA) — unmaintained, no upstream fixes
+- `react-scripts@5.0.1` (CRA) — unmaintained, no upstream fixes; 9 transitive vulnerabilities locked behind it
 - No `npm audit` in CI pipeline
 - No license file
 
@@ -282,9 +292,14 @@ As of Phase 13:
 - ~~Validate SECRET env var on startup~~ ✓ (Phase 13)
 - ~~Fix informal logging~~ ✓ (Phase 13)
 - ~~Migrate ReactDOM.render → createRoot~~ ✓ (Phase 13)
+- ~~Fix npm vulnerabilities~~ ✓ (Phase 14)
+- ~~Remove dead code and stale files~~ ✓ (Phase 14)
+- ~~Remove debug console.log statements~~ ✓ (Phase 14)
+- ~~Fix var→const/let~~ ✓ (Phase 14)
+- ~~Resolve TODO: deduplicate story IDs~~ ✓ (Phase 14)
 
 ### Remaining
-1. **Consider CRA replacement** — react-scripts is unmaintained
+1. **Consider CRA replacement** — react-scripts is unmaintained (9 unfixable vulnerabilities)
 2. **Add frontend virtualization** — for rendering large story lists
 3. **Add end-to-end tests**
 
@@ -306,7 +321,8 @@ This is a well-scoped personal project that solves a real problem. Since the ini
 - **Testing (F → A-)**: 87 tests with in-memory mock, ~1s backend runtime
 - **Documentation (F → B+)**: CLAUDE.md, 6 docs/ files, KNOWN_ISSUES, EVALUATION, proper README
 - **DevOps (D- → C+)**: GitHub Actions CI with Node 18+20 matrix
-- **Code Quality (D → B-)**: Auth middleware, descriptive logging, createRoot migration
+- **Code Quality (D → B)**: Auth middleware, descriptive logging, createRoot migration, dead code removal, debug log cleanup
 - **Architecture (C+ → B)**: Firestore migration, lazy singleton, auth middleware, env-prefixed collections
+- **Dependencies (D- → B)**: 0 backend vulnerabilities, stale scripts removed, all fixable frontend vulns resolved
 
-The remaining gaps are: unmaintained CRA (react-scripts) and frontend performance (no virtualization). The overall grade has improved from **C- to B**.
+The remaining gaps are: unmaintained CRA (react-scripts, 9 unfixable transitive vulnerabilities) and frontend performance (no virtualization). The overall grade has improved from **C- to B**.

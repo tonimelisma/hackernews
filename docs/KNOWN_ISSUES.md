@@ -43,6 +43,23 @@
 |----------|-------------|--------|
 | ~~`hackernews-frontend/src/index.js:14`~~ | ~~Uses deprecated `ReactDOM.render` API (React 16) instead of `createRoot` (React 18)~~ | **RESOLVED** (Phase 13) — migrated to `createRoot` |
 | `hackernews-frontend/src/App.js:6` | Imports `bootstrap.bundle.min` for JS side effects | Open |
-| `services/hackernews.js:77` | `// TODO deduplicate ids` — acknowledged but unfixed | Open |
+| ~~`services/hackernews.js:77`~~ | ~~`// TODO deduplicate ids` — acknowledged but unfixed~~ | **RESOLVED** (Phase 14) — `[...new Set(ids)]` deduplication added |
 | Dependencies | `react-scripts@5.0.1` (CRA) is unmaintained | Open |
 | ~~Dependencies~~ | ~~Dead frontend deps: `jquery`, `popper.js`, `react-icons`, `typescript`~~ | **RESOLVED** (Phase 10) — removed |
+| ~~`hackernews-frontend/src/services/loginService.js`~~ | ~~Commented-out try-catch error handling~~ | **RESOLVED** (Phase 14) — removed dead comments |
+| ~~`util/middleware.js:6`~~ | ~~Informal error logging (`console.log("error! ")`)~~ | **RESOLVED** (Phase 14) — changed to `console.error` with descriptive message |
+| ~~`services/hackernews.js:71`~~ | ~~`var` usage instead of `const`~~ | **RESOLVED** (Phase 14) — changed to `const` |
+| ~~`hackernews-frontend/src/components/Story.js:27`~~ | ~~`var` usage instead of `let`~~ | **RESOLVED** (Phase 14) — changed to `let` |
+| ~~`hackernews-frontend/src/serviceWorker.js`~~ | ~~Unused CRA boilerplate (135 lines, only called as `unregister()` no-op)~~ | **RESOLVED** (Phase 14) — file deleted, import removed |
+| ~~`hackernews-frontend/src/App.js`~~ | ~~7 debug `console.log` statements in production code~~ | **RESOLVED** (Phase 14) — all removed |
+| ~~`hackernews-frontend/src/App.js:87-88`~~ | ~~Dead jQuery toggle code (commented out)~~ | **RESOLVED** (Phase 14) — removed |
+| ~~`util/middleware.js:8`~~ | ~~Commented-out MongoDB error check~~ | **RESOLVED** (Phase 14) — removed |
+| ~~`topdump.js`~~ | ~~Stale one-off database population script~~ | **RESOLVED** (Phase 14) — file deleted |
+| ~~`scripts/`~~ | ~~Stale migration scripts and data (12MB)~~ | **RESOLVED** (Phase 14) — directory deleted |
+
+## Dependency Vulnerabilities
+
+| Scope | Status | Details |
+|-------|--------|---------|
+| Backend | 0 vulnerabilities | Clean after `npm audit fix` (Phase 14) |
+| Frontend | 9 vulnerabilities (unfixable) | All locked behind `react-scripts@5.0.1`: `nth-check`, `postcss` (resolve-url-loader), `webpack-dev-server`. Requires CRA replacement to fix. |
