@@ -133,7 +133,7 @@ All of these must be kept current with every change:
 | Code Quality | A- | Modernized boilerplate, a11y fixes, bug fixes, dead code removed |
 | Architecture | B | Firestore migration, lazy singleton, env-prefixed collections |
 | Documentation | B+ | CLAUDE.md + 4 reference docs, proper README |
-| DevOps / CI | B | GitHub Actions Node 18+20+22 matrix, npm audit + build in CI, npm caching; no Docker/linting |
+| DevOps / CI | B | GitHub Actions Node 22, npm audit + build in CI, npm caching; no Docker/linting |
 | Performance | C+ | Client-side sort for Firestore constraint; no virtualization |
 | Dependencies | B | 0 backend vulns; 9 frontend vulns locked behind react-scripts |
 
