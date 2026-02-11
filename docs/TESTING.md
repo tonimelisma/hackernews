@@ -7,10 +7,10 @@
 npm test
 
 # Frontend tests only
-cd hackernews-frontend && npm test -- --watchAll=false
+cd hackernews-frontend && npm test
 
 # Both (from repo root)
-npm test && cd hackernews-frontend && npm test -- --watchAll=false && cd ..
+npm test && cd hackernews-frontend && npm test && cd ..
 ```
 
 ## Test Architecture
@@ -28,13 +28,13 @@ npm test && cd hackernews-frontend && npm test -- --watchAll=false && cd ..
 | `tests/integration/worker.test.js` | Integration | 10 | syncOnce() direct tests, staleness queries, utility functions |
 | **Total** | | **75** | |
 
-### Frontend (Jest + React Testing Library)
+### Frontend (Vitest + React Testing Library)
 
 | File | Type | Tests | What it covers |
 |------|------|-------|----------------|
-| `src/App.test.js` | Component | 8 | App rendering, timespan, loading, auth |
-| `src/components/StoryList.test.js` | Component | 4 | List rendering, hidden filtering |
-| `src/components/Story.test.js` | Component | 11 | Story card: title, author, score, time, favicon, hide, URL safety |
+| `src/App.test.jsx` | Component | 8 | App rendering, timespan, loading, auth |
+| `src/components/StoryList.test.jsx` | Component | 4 | List rendering, hidden filtering |
+| `src/components/Story.test.jsx` | Component | 11 | Story card: title, author, score, time, favicon, hide, URL safety |
 | `src/services/storyService.test.js` | Unit | 4 | Axios calls for stories/hidden |
 | `src/services/loginService.test.js` | Unit | 2 | Axios calls for login |
 | **Total** | | **29** | |
@@ -108,11 +108,12 @@ afterAll(async () => await db.closeDatabase());
 
 | Module | Mock Type | Reason |
 |--------|-----------|--------|
-| `axios` | `jest.mock("axios")` | Avoid real HTTP calls |
-| `dayjs` | `jest.mock("dayjs")` | Consistent time output |
-| `./services/storyService` | `jest.mock()` | Isolate App component from API |
-| `./services/loginService` | `jest.mock()` | Isolate App component from API |
-| `./Story` | `jest.mock()` | Isolate StoryList from Story rendering |
+| `axios` | `vi.mock("axios")` | Avoid real HTTP calls |
+| `dayjs` | `vi.mock("dayjs")` | Consistent time output |
+| `./services/storyService` | `vi.mock()` | Isolate App component from API |
+| `./services/loginService` | `vi.mock()` | Isolate App component from API |
+| `./Story` | `vi.mock()` | Isolate StoryList from Story rendering |
+| `localStorage` | `vi.stubGlobal()` | Node.js 22 built-in localStorage conflicts with jsdom |
 
 ## Regression Tests for Fixed Bugs
 

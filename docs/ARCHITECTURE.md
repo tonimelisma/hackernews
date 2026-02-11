@@ -8,7 +8,7 @@ HackerNews aggregator with three runtime processes and a Firestore database.
 |-----------|---------|-------------|---------|
 | Web Server | Node.js/Express | `bin/www` → `app.js` | REST API + static frontend |
 | Background Worker | Node.js | `worker.js` | Sync stories from HN, update scores |
-| Frontend | React (CRA) | `hackernews-frontend/src/index.js` | SPA served as static files |
+| Frontend | React (Vite) | `hackernews-frontend/src/index.jsx` | SPA served as static files |
 | Database | Google Cloud Firestore | — | Stories, users (project: `melisma-essentials`, db: `hackernews`) |
 
 ## Process Diagram
@@ -46,17 +46,19 @@ hackernews/
 │   ├── config.js                   # dotenv config (limitResults)
 │   └── middleware.js               # unknownEndpoint (404) + errorHandler (500)
 │
-├── hackernews-frontend/            # React CRA project
+├── hackernews-frontend/            # React Vite project
 │   ├── package.json                # Frontend dependencies
-│   ├── public/                     # Static assets
-│   ├── build/                      # Production build output
+│   ├── index.html                  # Vite entry HTML (project root, not public/)
+│   ├── vite.config.js              # Vite + Vitest config
+│   ├── public/                     # Static assets (copied to build/)
+│   ├── build/                      # Production build output (gitignored)
 │   └── src/
-│       ├── index.js                # createRoot entry point (React 19)
-│       ├── App.js                  # Main component: stories, auth, timespan filtering
+│       ├── index.jsx               # createRoot entry point (React 19)
+│       ├── App.jsx                 # Main component: stories, auth, timespan filtering
 │       ├── App.css                 # Styles
 │       ├── components/
-│       │   ├── Story.js            # Single story card (favicon, title, author, score, time, hide)
-│       │   └── StoryList.js        # Story list with hidden filtering
+│       │   ├── Story.jsx           # Single story card (favicon, title, author, score, time, hide)
+│       │   └── StoryList.jsx       # Story list with hidden filtering
 │       └── services/
 │           ├── storyService.js     # Axios client for /get, /hidden
 │           └── loginService.js     # Axios client for /login
@@ -72,6 +74,8 @@ hackernews/
 ├── docs/                           # LLM-geared documentation
 │
 ├── .github/workflows/ci.yml       # GitHub Actions CI pipeline
+├── .husky/pre-commit              # Pre-commit hook (lint-staged → ESLint)
+├── eslint.config.js               # ESLint flat config (backend)
 ├── CLAUDE.md                       # Governance document + Definition of Done
 └── jest.config.js                  # Backend Jest configuration
 ```
@@ -124,4 +128,4 @@ hackernews/
 
 ### Frontend (`hackernews-frontend/src/services/`)
 
-The frontend uses relative URLs (`/api/v1/`) for all API calls. In development, CRA's proxy forwards requests to the backend on port 3000.
+The frontend uses relative URLs (`/api/v1/`) for all API calls. In development, Vite's proxy (`vite.config.js`) forwards `/api` requests to the backend on port 3001.

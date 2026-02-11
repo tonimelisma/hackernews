@@ -14,10 +14,13 @@ HackerNews aggregator: a Node.js/Express backend with a React frontend. The back
 npm test
 
 # Frontend tests
-cd hackernews-frontend && npm test -- --watchAll=false
+cd hackernews-frontend && npm test
 
 # Run both
-npm test && cd hackernews-frontend && npm test -- --watchAll=false && cd ..
+npm test && cd hackernews-frontend && npm test && cd ..
+
+# Backend lint
+npm run lint
 
 # Backend dev server (requires Firestore ADC)
 npm run watch
@@ -37,7 +40,7 @@ You own this repo. You are the maintainer. There is no "someone else" — if the
 
 1. **All tests pass.** Run both suites, fix anything that breaks:
    ```bash
-   npm test && cd hackernews-frontend && npm test -- --watchAll=false && cd ..
+   npm test && cd hackernews-frontend && npm test && cd ..
    ```
 2. **Repo is clean.** `git status` shows no uncommitted changes. You test, commit, and push. Always.
 3. **Bugs get regression tests first.** When you find a bug, write a failing test that reproduces it *before* writing the fix. The test proves the bug exists and proves the fix works.
@@ -50,7 +53,7 @@ You own this repo. You are the maintainer. There is no "someone else" — if the
    - `gh run list --limit 5` — CI must be green on master
    - `git branch -r` — delete stale remote branches
    If CI is failing on master, that's YOUR broken build. Fix it first.
-7. **Dependencies are up to date.** Run `ncu` in both root and `hackernews-frontend/`. If anything is outdated, update it (`ncu -u && npm install`), run tests, and commit. No stale versions. Use `--legacy-peer-deps` for the frontend install.
+7. **Dependencies are up to date.** Run `ncu` in both root and `hackernews-frontend/`. If anything is outdated, update it (`ncu -u && npm install`), run tests, and commit. No stale versions.
 
 ## Architecture Overview
 
@@ -66,15 +69,17 @@ hackernews/
 ├── util/
 │   ├── config.js           # Environment config (limitResults)
 │   └── middleware.js        # Express error handlers
-├── hackernews-frontend/    # React CRA frontend
+├── eslint.config.js        # ESLint flat config (backend)
+├── hackernews-frontend/    # React frontend (Vite + Vitest)
 │   └── src/
-│       ├── App.js          # Main component (stories, auth, filtering)
+│       ├── App.jsx         # Main component (stories, auth, filtering)
 │       ├── components/
-│       │   ├── Story.js    # Single story card
-│       │   └── StoryList.js # Story list with hidden filtering
+│       │   ├── Story.jsx   # Single story card
+│       │   └── StoryList.jsx # Story list with hidden filtering
 │       └── services/
 │           ├── storyService.js  # API client for stories/hidden
 │           └── loginService.js  # API client for login
+├── .husky/pre-commit       # Pre-commit hook (lint-staged)
 └── docs/                   # LLM-geared documentation
 ```
 
@@ -133,20 +138,19 @@ All of these must be kept current with every change:
 | Code Quality | A- | Modernized boilerplate, a11y fixes, bug fixes, dead code removed |
 | Architecture | B | Firestore migration, lazy singleton, env-prefixed collections |
 | Documentation | B+ | CLAUDE.md + 4 reference docs, proper README |
-| DevOps / CI | B | GitHub Actions Node 22, npm audit + build in CI, npm caching; no Docker/linting |
+| DevOps / CI | B+ | GitHub Actions Node 22, npm audit + build in CI, ESLint in CI, pre-commit hooks; no Docker |
 | Performance | C+ | Client-side sort for Firestore constraint; no virtualization |
-| Dependencies | B | 0 backend vulns; 9 frontend vulns locked behind react-scripts |
+| Dependencies | A- | 0 vulnerabilities in both backend and frontend |
 
 ### Open Issues
 
 - **Node.js 25+ crash** — `jsonwebtoken` chain uses removed `SlowBuffer`; no upstream fix
-- **Token in localStorage** (`App.js`) — XSS vector; should migrate to HTTP-only cookie
-- **CRA unmaintained** — `react-scripts@5.0.1` has 9 unfixable transitive vulnerabilities
+- **Token in localStorage** (`App.jsx`) — XSS vector; should migrate to HTTP-only cookie
 
 ### Vulnerability Status
 
 - Backend: **0 vulnerabilities** — `npm audit` enforced in CI at `moderate` level
-- Frontend: **9 unfixable vulnerabilities** locked behind `react-scripts@5.0.1` — `npm audit` enforced in CI at `critical` level
+- Frontend: **0 vulnerabilities** — `npm audit` enforced in CI at `moderate` level (Vite replaced CRA)
 
 ## Backlog
 
@@ -154,9 +158,6 @@ All of these must be kept current with every change:
 - JWT from localStorage to HTTP-only cookie
 
 ### Build & Tooling
-- CRA to Vite migration (unblocks fixing 9 frozen frontend vulnerabilities)
-- Add ESLint to backend
-- Add pre-commit hooks (husky + lint-staged)
 - Migrate Heroku → VPS (Docker Compose + nginx + certbot)
 
 ### API & Backend
@@ -180,11 +181,12 @@ All of these must be kept current with every change:
 - **Firestore query constraint**: Can't `where()` on one field and `orderBy()` on another. Client-side sort needed for stories (time filter + score sort). Composite indexes required for multi-inequality worker queries.
 - **In-memory MockFirestore**: `moduleNameMapper` in `jest.config.js` redirects `@google-cloud/firestore` to an in-memory mock. Storage: flat `Map<collectionPath, Map<docId, data>>`. MockTimestamp wraps Date objects on `.set()`/`.update()`. Backend tests run in ~1 second with no credentials or network.
 - **Node.js 25+ incompatibility**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. Must mock `jsonwebtoken` in tests; use Node.js 18/20 in production.
-- **CRA testing quirks**: `axios` (ESM) needs `transformIgnorePatterns`; `dayjs` mock needs `__esModule: true` + `default` pattern. Bootstrap JS is imported only in `index.js` (not in components).
+- **Vitest mock differences**: `vi.mock()` factory must return an object with `default` key for default exports. No `__esModule: true` needed. Axios mock: `vi.mock("axios", () => ({ default: { get: vi.fn(), post: vi.fn() } }))`.
+- **Node.js 22 localStorage conflict**: Node.js 22's built-in `localStorage` (experimental) conflicts with jsdom in Vitest. Must stub localStorage with `vi.stubGlobal("localStorage", mockImpl)` in tests that use it.
 - **Rate limiter state persists across tests** — rate-limit test must be last in its describe block.
 - **`bin/www` for startup checks**: SECRET validation lives in `bin/www` (not `app.js`) so tests can `require('../../app')` without triggering exit.
 - **Logging convention**: `console.error` for errors (catch blocks), `console.log` for operational info (startup, sync progress). `tests/setup.js` suppresses both globally.
-- **Frontend `npm install` needs `--legacy-peer-deps`** due to react-scripts@5.0.1 peer dep conflicts.
+- **Pre-commit hooks**: husky + lint-staged run `eslint --fix` on staged `.js` files. Backend ESLint config ignores `hackernews-frontend/`.
 - **Bootstrap 5 data attributes**: Use `data-bs-toggle`/`data-bs-dismiss` (not `data-toggle`/`data-dismiss`). Class `dropdown-menu-right` was renamed to `dropdown-menu-end`.
 - **`errorHandler` must not call `next()`**: Calling `next(error)` after `res.status().json()` triggers "headers already sent" errors if another error handler exists downstream.
-- **SCSS in `.css` files is silently ignored**: CRA compiles `.css` files as plain CSS — `@include media-breakpoint-up()` is SCSS syntax and was silently dropped. Use standard `@media` queries instead.
+- **Vite build output**: `build.outDir` set to `"build"` in `vite.config.js` to match Express static path in `app.js`. `build/` is gitignored.
