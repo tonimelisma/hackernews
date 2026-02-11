@@ -10,7 +10,7 @@ HackerNews aggregator: a Node.js/Express backend with a React frontend. The back
 # IMPORTANT: Use Node.js 20 (Node 25+ crashes due to SlowBuffer removal)
 # If using Homebrew: PATH="/opt/homebrew/opt/node@20/bin:$PATH"
 
-# Backend tests (requires Firestore ADC: gcloud auth application-default login)
+# Backend tests (uses in-memory mock — no credentials or network needed)
 npm test
 
 # Frontend tests
@@ -31,7 +31,7 @@ npm run worker
 
 ## Definition of Done
 
-You own this repo. You are responsible for its state. Every iteration of work must end with the repo in a clean, working, documented state. No excuses.
+You own this repo. You are the maintainer. There is no "someone else" — if there are uncommitted changes, failing tests, or stale docs, that's YOUR unfinished work from a previous session. You clean it up. Every iteration of work must end with the repo in a clean, working, documented state. No excuses.
 
 ### Before finishing any unit of work:
 
@@ -39,13 +39,13 @@ You own this repo. You are responsible for its state. Every iteration of work mu
    ```bash
    npm test && cd hackernews-frontend && npm test -- --watchAll=false && cd ..
    ```
-2. **Repo is clean.** `git status` shows no uncommitted changes. You test, commit, and push.
+2. **Repo is clean.** `git status` shows no uncommitted changes. You test, commit, and push. Always.
 3. **Bugs get regression tests first.** When you find a bug, write a failing test that reproduces it *before* writing the fix. The test proves the bug exists and proves the fix works.
 4. **All docs are updated.** Every iteration, review and update all documentation to reflect the current state of the code:
    - This file (`CLAUDE.md`) — architecture, gotchas, test counts, learnings
    - All files under `docs/` (see Documentation section below)
    - `docs/KNOWN_ISSUES.md` if new issues were found or old ones resolved
-5. **No broken windows.** If you encounter a test failure, a stale doc, or inconsistent state — you fix it. It's your repo. There is no "someone else's problem."
+5. **No broken windows.** If you encounter a test failure, a stale doc, uncommitted changes, or inconsistent state — you fix it. It's your repo. There is no "someone else's problem."
 
 ## Architecture Overview
 
@@ -81,7 +81,7 @@ hackernews/
 
 2. **Environment-prefixed collections**: Collections are prefixed by `NODE_ENV`: `dev-stories`/`prod-stories`/`ci-stories`. Logic in `services/firestore.js:getCollectionPrefix()`.
 
-3. **`--experimental-vm-modules` required for tests**: The `@google-cloud/firestore` SDK uses `gaxios` which calls dynamic `import()`. Jest's VM sandbox blocks this unless `NODE_OPTIONS=--experimental-vm-modules` is set. Configured in `package.json` test script.
+3. **In-memory MockFirestore for tests**: Tests use `jest.config.js` `moduleNameMapper` to replace `@google-cloud/firestore` with an in-memory mock (`tests/mocks/firestore-mock.js`). The real SDK never loads — no credentials, no network, no `--experimental-vm-modules` needed. The mock implements the exact Firestore API surface used by this project (collection/doc/query/batch/subcollections). `_clear()` wipes all data between tests.
 
 4. **Worker is not directly testable**: `worker.js` calls `throng(1, main)` at module scope, starting an infinite loop. Worker logic must be tested indirectly by simulating its DB queries.
 
@@ -115,10 +115,10 @@ All of these must be kept current with every change:
 | Suite | Tests |
 |-------|-------|
 | Backend unit (middleware, config, hackernews) | 19 |
-| Backend integration (storyService, api, worker) | 36 |
-| Frontend component (App, StoryList, Story) | 21 |
+| Backend integration (storyService, api, worker) | 39 |
+| Frontend component (App, StoryList, Story) | 23 |
 | Frontend service (storyService, loginService) | 6 |
-| **Total** | **82** |
+| **Total** | **87** |
 
 ## Learnings Log
 
@@ -180,3 +180,31 @@ All of these must be kept current with every change:
 - `orderBy("id", "desc")` instead of `orderBy("__name__", "desc")` to avoid custom index requirement
 - Composite indexes needed for multi-inequality worker queries (time + updated)
 - 82 total tests: 55 backend + 27 frontend (removed 4 obsolete tests, added 2 new worker tests, net -4)
+
+### Phase 10 — Security & Functionality Fixes
+- Removed password logging from login route (`console.log` of pw → username only)
+- Added JWT expiration (`{ expiresIn: '24h' }`) to `jwt.sign()`
+- Fixed hanging response in GET `/get` catch block — now returns 500 with generic error
+- Added `helmet()` middleware for security headers (CSP, HSTS, X-Frame-Options, etc.)
+- Restricted CORS: `localhost:3000` in development, `false` (same-origin) in production
+- Added `express-rate-limit` on POST `/login`: 10 requests per 15-minute window
+- Fixed error object leakage in `/hidden` routes — now returns `"authentication error"` string
+- Added `isSafeUrl()` in Story component to prevent `javascript:` URL protocol injection
+- Replaced Finnish/informal log strings (`"uppistakeikkaa"`, `"err"`, `"whoops"`) with English
+- Replaced hardcoded Heroku URLs with relative paths + CRA proxy for dev
+- Removed dead frontend dependencies: `jquery`, `popper.js`, `react-icons`, `typescript`
+- Rate limiter state persists across test cases in same process — test needs to account for cumulative request count
+- 87 total tests: 58 backend + 29 frontend (+3 backend, +2 frontend)
+
+### Phase 11 — In-Memory MockFirestore for Tests
+- Created `tests/mocks/firestore-mock.js`: ~230-line in-memory Firestore mock with MockFirestore, MockCollectionRef, MockDocRef, MockQuery, MockDocSnapshot, MockQuerySnapshot, MockWriteBatch, MockTimestamp
+- Created `tests/mocks/firestore-sdk-shim.js`: 2-line shim exporting `{ Firestore: MockFirestore }` as drop-in replacement
+- Added `moduleNameMapper` in `jest.config.js` to redirect `@google-cloud/firestore` → shim, preventing real SDK from loading
+- Simplified `tests/setup.js`: `connect()` just suppresses console, `clearDatabase()` calls `getDb()._clear()`
+- Removed `NODE_OPTIONS=--experimental-vm-modules` from `package.json` test script (no longer needed)
+- MockTimestamp wraps Date objects on `.set()`/`.update()` so `doc.data().time.toDate()` works as expected
+- Storage model: flat `Map<collectionPath, Map<docId, data>>` — subcollections stored as paths like `dev-users/testuser/hidden`
+- Where operators: `>`, `<`, `>=`, `<=`, `==` — Date/MockTimestamp values unwrapped to milliseconds for comparison
+- Reordered rate-limit test to be last in login describe block — fast mock exposed pre-existing rate limit exhaustion issue
+- Backend tests now run in ~1 second (down from 30+ seconds), require no credentials or network
+- 87 total tests: 58 backend + 29 frontend (unchanged)

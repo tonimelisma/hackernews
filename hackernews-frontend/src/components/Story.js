@@ -14,6 +14,15 @@ import { faTimes } from "@fortawesome/free-solid-svg-icons";
 
 // story.by, descendants, score, time, title, url
 
+const isSafeUrl = (url) => {
+  try {
+    const u = new URL(url);
+    return ['http:', 'https:'].includes(u.protocol);
+  } catch {
+    return false;
+  }
+};
+
 const Story = ({ story, addHidden }) => {
   var favicon
   try {
@@ -33,7 +42,11 @@ const Story = ({ story, addHidden }) => {
         <img src={favicon} alt="favicon" />{" "}
       </div>{" "}
       <div className="px-3">
-        <a href={story.url}> {story.title} </a> <br />
+        {isSafeUrl(story.url) ? (
+          <a href={story.url}> {story.title} </a>
+        ) : (
+          <span> {story.title} </span>
+        )} <br />
         <small>
           <FontAwesomeIcon icon={faUser} /> {story.by} &nbsp;&nbsp;{" "}
           <FontAwesomeIcon icon={faClock} /> {moment(story.time).fromNow()}

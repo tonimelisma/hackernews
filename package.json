@@ -7,7 +7,7 @@
     "watch": "nodemon ./bin/www",
     "worker": "node worker.js",
     "worker-nodemon": "nodemon worker.js",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --forceExit --detectOpenHandles --passWithNoTests"
+    "test": "jest --forceExit --detectOpenHandles --passWithNoTests"
   },
   "dependencies": {
     "@google-cloud/firestore": "^8.3.0",
@@ -17,6 +17,8 @@
     "debug": "~4.3.7",
     "dotenv": "^16.4.5",
     "express": "~4.21.2",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "~1.10.0",
     "throng": "^5.0.0"

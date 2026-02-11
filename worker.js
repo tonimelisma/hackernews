@@ -56,7 +56,7 @@ const main = async () => {
           }
         }
       } catch (e) {
-        console.log("err: ", e);
+        console.log("Error loading stories:", e);
       }
 
       // UPDATE SCORES FOR TRENDING STORIES
@@ -104,7 +104,7 @@ const main = async () => {
           console.log("...none to update");
         }
       } catch (e) {
-        console.log("whoops: ", e);
+        console.log("Error updating stories:", e);
       }
 
       const memoryUsage = process.memoryUsage();

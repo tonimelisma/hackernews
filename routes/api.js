@@ -2,9 +2,17 @@ const express = require("express");
 const router = express.Router();
 const config = require("../util/config");
 const jwt = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
 
 const storyService = require("../services/storyService");
 const hackernewsService = require("../services/hackernews");
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 const sanitary = (input) => {
   if (input.match(/^[a-z0-9\d\-_\s]+$/i)) return true
@@ -46,7 +54,8 @@ router.get("/get", async (req, res, next) => {
 
     res.json(stories);
   } catch (e) {
-    console.log("uppistakeikkaa: ", e);
+    console.error("GET /get error:", e);
+    res.status(500).json({ error: "internal server error" });
   }
 });
 
@@ -72,7 +81,7 @@ router.get("/hidden", async (req, res, next) => {
     res.status(200).json(hidden);
   } catch (e) {
     console.log("tokenerror: ", e);
-    res.status(401).json({ error: e });
+    res.status(401).json({ error: "authentication error" });
   }
 });
 
@@ -93,15 +102,15 @@ router.post("/hidden", async (req, res, next) => {
     res.status(200).json({ hidden: body.hidden });
   } catch (e) {
     console.log("tokenerror: ", e);
-    res.status(401).json({ error: e });
+    res.status(401).json({ error: "authentication error" });
   }
 });
 
-router.post("/login", async (req, res, next) => {
+router.post("/login", loginLimiter, async (req, res, next) => {
   const goto = req.body.goto;
   const pw = req.body.pw;
   const acct = req.body.acct;
-  console.log("logging in: ", goto, pw, acct);
+  console.log("login attempt for:", acct);
 
   if (!goto || !pw || !acct || !sanitary(acct)) {
     res.status(400).json({ error: "missing fields" });
@@ -109,7 +118,7 @@ router.post("/login", async (req, res, next) => {
     try {
       const loginCorrect = await hackernewsService.login(goto, acct, pw);
       if (loginCorrect) {
-        const token = jwt.sign({ username: acct }, process.env.SECRET);
+        const token = jwt.sign({ username: acct }, process.env.SECRET, { expiresIn: '24h' });
         res.status(200).json({ token });
         storyService.upsertUser(acct);
       } else {

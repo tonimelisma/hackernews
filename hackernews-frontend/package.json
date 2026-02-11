@@ -9,15 +9,12 @@
     "@fortawesome/free-solid-svg-icons": "^6.4.0",
     "@fortawesome/react-fontawesome": "^0.2.0",
     "bootstrap": "~5.0.0",
-    "jquery": "^3.6.4",
     "moment": "^2.29.4",
-    "popper.js": "^1.16.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-icons": "^4.8.0",
-    "react-scripts": "5.0.1",
-    "typescript": "^5.0.4"
+    "react-scripts": "5.0.1"
   },
+  "proxy": "http://localhost:3001",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",

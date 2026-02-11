@@ -92,6 +92,24 @@ describe("Story", () => {
     expect(favicon.src).toContain("example.com");
   });
 
+  it("does not render javascript: URL as clickable link", () => {
+    jest.spyOn(console, "log").mockImplementation(() => {});
+    const xssStory = { ...mockStory, url: "javascript:alert(1)" };
+    render(<Story story={xssStory} addHidden={mockAddHidden} />);
+
+    const title = screen.getByText("Test Story Title");
+    expect(title.closest("a")).toBeNull();
+    expect(title.closest("span")).toBeInTheDocument();
+    console.log.mockRestore();
+  });
+
+  it("renders valid https URL as clickable link", () => {
+    render(<Story story={mockStory} addHidden={mockAddHidden} />);
+
+    const title = screen.getByText("Test Story Title");
+    expect(title.closest("a")).toHaveAttribute("href", "https://example.com/article");
+  });
+
   it("renders HN favicon when story has no URL", () => {
     jest.spyOn(console, "log").mockImplementation(() => {});
     const storyNoUrl = { ...mockStory, url: undefined };

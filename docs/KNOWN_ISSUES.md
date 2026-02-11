@@ -2,14 +2,24 @@
 
 ## Security Issues
 
-| Severity | Location | Description |
-|----------|----------|-------------|
-| HIGH | `routes/api.js:104` | Passwords logged to console: `console.log("logging in: ", goto, pw, acct)` |
-| HIGH | `routes/api.js:112` | JWT has no expiration — tokens are valid forever |
-| HIGH | `routes/api.js:112` | `process.env.SECRET` is undefined without .env — JWT signing fails or uses weak default |
-| MEDIUM | `hackernews-frontend/src/services/storyService.js:4` | Production API URL hardcoded to `tonidemo.herokuapp.com` |
-| MEDIUM | `services/hackernews.js:16-21` | hntoplinks URLs use HTTP (not HTTPS) — data in transit is unencrypted |
-| LOW | `routes/api.js:9-12` | `sanitary()` regex rejects valid HN usernames containing `.` or `@` |
+| Severity | Location | Description | Status |
+|----------|----------|-------------|--------|
+| ~~HIGH~~ | ~~`routes/api.js:104`~~ | ~~Passwords logged to console~~ | **RESOLVED** (Phase 10) — now logs username only |
+| ~~HIGH~~ | ~~`routes/api.js:112`~~ | ~~JWT has no expiration — tokens valid forever~~ | **RESOLVED** (Phase 10) — 24h expiration added |
+| HIGH | `routes/api.js:121` | `process.env.SECRET` is undefined without .env — JWT signing fails or uses weak default | Open |
+| ~~MEDIUM~~ | ~~`hackernews-frontend/src/services/storyService.js:4`~~ | ~~Production API URL hardcoded to `tonidemo.herokuapp.com`~~ | **RESOLVED** (Phase 10) — uses relative URLs |
+| MEDIUM | `services/hackernews.js:16-21` | hntoplinks URLs use HTTP (not HTTPS) — data in transit is unencrypted | Open |
+| LOW | `routes/api.js:17-20` | `sanitary()` regex rejects valid HN usernames containing `.` or `@` | Open |
+
+### Security Improvements Added (Phase 10)
+
+| Feature | Location | Description |
+|---------|----------|-------------|
+| Helmet | `app.js:16` | `helmet()` middleware adds CSP, HSTS, X-Frame-Options, X-Content-Type-Options, etc. |
+| CORS restriction | `app.js:19-22` | CORS restricted to `localhost:3000` in development, disabled in production (same-origin) |
+| Login rate limiting | `routes/api.js:10-15,109` | `express-rate-limit`: 10 requests per 15-minute window on POST `/login` |
+| Error message sanitization | `routes/api.js:84,105` | Auth error responses now return generic `"authentication error"` instead of full Error object |
+| URL protocol validation | `hackernews-frontend/src/components/Story.js:17-23` | `isSafeUrl()` prevents `javascript:` and other dangerous URL protocols in story links |
 
 ## Compatibility Issues
 
@@ -19,19 +29,20 @@
 
 ## Bugs
 
-| Location | Description | Test Coverage |
-|----------|-------------|---------------|
-| `services/storyService.js:4-9` | `getHidden` crashes with `TypeError: Cannot read properties of null` when username doesn't exist in DB. The Firestore doc doesn't exist, so `obj` is set to `null`, then `null.hidden` throws. (Preserved from original MongoDB code for backwards compatibility.) | `tests/integration/storyService.test.js` — "throws when user does not exist" |
-| `routes/api.js:92` | `upsertHidden()` called without `await` — errors are silently lost, response sent before write completes. | Observed in `tests/integration/api.test.js` |
-| `routes/api.js:114` | `upsertUser()` called without `await` — same fire-and-forget issue. | `tests/integration/api.test.js` — "creates user in DB" uses setTimeout workaround |
-| `routes/api.js:48-50` | GET `/get` catches DB errors but doesn't send a response — request hangs until client timeout. | Not tested (hard to simulate) |
-| `routes/api.js:75` | Error response `{ error: e }` serializes the full Error object instead of `e.message`. | Observed behavior |
+| Location | Description | Test Coverage | Status |
+|----------|-------------|---------------|--------|
+| `services/storyService.js:4-9` | `getHidden` crashes with `TypeError: Cannot read properties of null` when username doesn't exist in DB. The Firestore doc doesn't exist, so `obj` is set to `null`, then `null.hidden` throws. (Preserved from original MongoDB code for backwards compatibility.) | `tests/integration/storyService.test.js` — "throws when user does not exist" | Open (intentional) |
+| `routes/api.js:101` | `upsertHidden()` called without `await` — errors are silently lost, response sent before write completes. | Observed in `tests/integration/api.test.js` | Open |
+| `routes/api.js:123` | `upsertUser()` called without `await` — same fire-and-forget issue. | `tests/integration/api.test.js` — "creates user in DB" uses setTimeout workaround | Open |
+| ~~`routes/api.js:48-50`~~ | ~~GET `/get` catches DB errors but doesn't send a response — request hangs until client timeout.~~ | `tests/integration/api.test.js` — "returns 500 when storyService throws" | **RESOLVED** (Phase 10) — now returns 500 |
+| ~~`routes/api.js:75`~~ | ~~Error response `{ error: e }` serializes the full Error object~~ | Existing 401 tests | **RESOLVED** (Phase 10) — returns generic string |
 
 ## Code Quality Issues
 
-| Location | Description |
-|----------|-------------|
-| `hackernews-frontend/src/index.js:14` | Uses deprecated `ReactDOM.render` API (React 16) instead of `createRoot` (React 18) |
-| `hackernews-frontend/src/App.js:6` | Imports `bootstrap.bundle.min` for JS side effects |
-| `services/hackernews.js:77` | `// TODO deduplicate ids` — acknowledged but unfixed |
-| Dependencies | `react-scripts@5.0.1` (CRA) is unmaintained; `popper.js@1.x` is deprecated |
+| Location | Description | Status |
+|----------|-------------|--------|
+| `hackernews-frontend/src/index.js:14` | Uses deprecated `ReactDOM.render` API (React 16) instead of `createRoot` (React 18) | Open |
+| `hackernews-frontend/src/App.js:6` | Imports `bootstrap.bundle.min` for JS side effects | Open |
+| `services/hackernews.js:77` | `// TODO deduplicate ids` — acknowledged but unfixed | Open |
+| Dependencies | `react-scripts@5.0.1` (CRA) is unmaintained | Open |
+| ~~Dependencies~~ | ~~Dead frontend deps: `jquery`, `popper.js`, `react-icons`, `typescript`~~ | **RESOLVED** (Phase 10) — removed |

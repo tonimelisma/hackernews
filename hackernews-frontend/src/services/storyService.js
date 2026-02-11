@@ -1,8 +1,5 @@
 import axios from "axios";
-const baseUrl =
-  process.env.NODE_ENV === "production"
-    ? "https://tonidemo.herokuapp.com/api/v1/"
-    : "http://localhost:3000/api/v1/";
+const baseUrl = "/api/v1/";
 
 const getAll = (timespan) => {
   return timespan

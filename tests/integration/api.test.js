@@ -5,9 +5,9 @@ const { storiesCollection, usersCollection, padId } = require("../../services/fi
 // which was removed in Node.js 25. We mock jsonwebtoken to avoid this.
 const mockTokens = {};
 jest.mock("jsonwebtoken", () => ({
-  sign: (payload, secret) => {
+  sign: (payload, secret, options) => {
     const token = `mock-token-${payload.username}-${Date.now()}`;
-    mockTokens[token] = payload;
+    mockTokens[token] = { ...payload, options };
     return token;
   },
   verify: (token, secret) => {
@@ -141,6 +141,18 @@ describe("API routes", () => {
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
     });
+
+    it("returns 500 when storyService throws", async () => {
+      const storyService = require("../../services/storyService");
+      const original = storyService.getStories;
+      storyService.getStories = jest.fn().mockRejectedValue(new Error("db failure"));
+
+      const res = await request(app).get("/api/v1/get");
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe("internal server error");
+      storyService.getStories = original;
+    });
   });
 
   describe("GET /api/v1/hidden", () => {
@@ -236,6 +248,18 @@ describe("API routes", () => {
       expect(res.body.error).toBe("missing fields");
     });
 
+    it("signs JWT with 24h expiration", async () => {
+      hackernews.login.mockResolvedValue(true);
+
+      const res = await request(app)
+        .post("/api/v1/login")
+        .send({ goto: "news", acct: "expiryuser", pw: "validpass" });
+
+      expect(res.status).toBe(200);
+      const tokenData = mockTokens[res.body.token];
+      expect(tokenData.options).toEqual({ expiresIn: '24h' });
+    });
+
     it("creates user in DB on successful login", async () => {
       hackernews.login.mockResolvedValue(true);
 
@@ -248,6 +272,23 @@ describe("API routes", () => {
 
       const userDoc = await usersCollection().doc("newuser").get();
       expect(userDoc.exists).toBe(true);
+    });
+
+    // Must be last: exhausts the rate limiter's 10-request quota for the process
+    it("returns 429 when rate limited", async () => {
+      hackernews.login.mockResolvedValue(false);
+
+      let got429 = false;
+      for (let i = 0; i < 11; i++) {
+        const res = await request(app)
+          .post("/api/v1/login")
+          .send({ goto: "news", acct: "user", pw: "pass" });
+        if (res.status === 429) {
+          got429 = true;
+          break;
+        }
+      }
+      expect(got429).toBe(true);
     });
   });
 

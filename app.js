@@ -2,6 +2,7 @@ const config = require("./util/config");
 
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 
 const path = require("path");
 const cookieParser = require("cookie-parser");
@@ -12,8 +13,14 @@ const middleware = require("./util/middleware");
 
 const app = express();
 
+app.use(helmet());
 app.use(logger("dev"));
-app.use(cors());
+
+const corsOrigin = process.env.NODE_ENV === "development"
+  ? "http://localhost:3000"
+  : false;
+app.use(cors({ origin: corsOrigin }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());

@@ -3,7 +3,7 @@
 ## Running Tests
 
 ```bash
-# Backend tests only (from repo root)
+# Backend tests only (from repo root — no credentials or network needed)
 npm test
 
 # Frontend tests only
@@ -15,17 +15,17 @@ npm test && cd hackernews-frontend && npm test -- --watchAll=false && cd ..
 
 ## Test Architecture
 
-### Backend (Jest + Firestore + supertest)
+### Backend (Jest + In-Memory MockFirestore + supertest)
 
 | File | Type | Tests | What it covers |
 |------|------|-------|----------------|
 | `tests/unit/middleware.test.js` | Unit | 3 | `unknownEndpoint` (404), `errorHandler` (500 + next) |
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
 | `tests/unit/hackernewsService.test.js` | Unit+DB | 15 | All HN API functions (axios mocked), Firestore operations |
-| `tests/integration/storyService.test.js` | Integration | 16 | All storyService CRUD against real Firestore (dev/ci prefix) |
+| `tests/integration/storyService.test.js` | Integration | 16 | All storyService CRUD against MockFirestore |
 | `tests/integration/api.test.js` | Integration | 17 | Full HTTP request/response via supertest |
 | `tests/integration/worker.test.js` | Integration | 3 | Worker staleness queries + latest story lookup |
-| **Total** | | **55** | |
+| **Total** | | **58** | |
 
 ### Frontend (Jest + React Testing Library)
 
@@ -36,20 +36,45 @@ npm test && cd hackernews-frontend && npm test -- --watchAll=false && cd ..
 | `src/components/Story.test.js` | Component | 9 | Story card: title, author, score, time, favicon, hide |
 | `src/services/storyService.test.js` | Unit | 4 | Axios calls for stories/hidden |
 | `src/services/loginService.test.js` | Unit | 2 | Axios calls for login |
-| **Total** | | **27** | |
+| **Total** | | **29** | |
 
 ## Key Technical Details
 
-### Firestore in Tests
+### In-Memory MockFirestore
 
-Tests use real Firestore (not an emulator or mock). The collection prefix is determined by `NODE_ENV`:
-- Local: `dev-stories`, `dev-users`
-- CI: `ci-stories`, `ci-users`
+Backend tests use an in-memory Firestore mock instead of the real Firestore SDK. The mock is loaded via Jest's `moduleNameMapper` in `jest.config.js`:
+
+```js
+moduleNameMapper: {
+  "^@google-cloud/firestore$": "<rootDir>/tests/mocks/firestore-sdk-shim.js",
+}
+```
+
+This prevents `@google-cloud/firestore` from ever loading, which means:
+- **No credentials needed** — no `gcloud auth application-default login`
+- **No network needed** — tests run offline
+- **No `--experimental-vm-modules`** — the real SDK's dynamic `import()` in gaxios is never triggered
+- **Fast** — tests complete in ~1 second instead of 30+ seconds
+
+The mock consists of:
+
+| File | Purpose |
+|------|---------|
+| `tests/mocks/firestore-mock.js` | In-memory implementation: MockFirestore, MockCollectionRef, MockDocRef, MockQuery, MockDocSnapshot, MockQuerySnapshot, MockWriteBatch, MockTimestamp |
+| `tests/mocks/firestore-sdk-shim.js` | 2-line shim that exports `{ Firestore: MockFirestore }` |
+
+**Storage model**: Flat `Map<collectionPath, Map<docId, data>>`. Subcollection paths use slash notation (e.g., `dev-users/testuser/hidden`).
+
+**MockTimestamp**: Date objects are automatically wrapped in MockTimestamp during `.set()`/`.update()`, so `doc.data().time.toDate()` works exactly like real Firestore.
+
+**Where operators supported**: `>`, `<`, `>=`, `<=`, `==`. Date/MockTimestamp values are unwrapped to milliseconds for comparison.
+
+### Test Setup
 
 `tests/setup.js` provides:
-- `connect()` — health-check write to Firestore
-- `clearDatabase()` — deletes all docs (including subcollections) from prefixed collections
-- `closeDatabase()` — terminates the Firestore client
+- `connect()` — suppresses console.log noise during tests
+- `clearDatabase()` — calls `getDb()._clear()` to wipe all in-memory data
+- `closeDatabase()` — restores console.log
 
 Each test file imports setup and uses:
 ```js
@@ -58,17 +83,13 @@ afterEach(async () => await db.clearDatabase());
 afterAll(async () => await db.closeDatabase());
 ```
 
-### `--experimental-vm-modules` Requirement
-
-The `@google-cloud/firestore` SDK depends on `gaxios` which uses dynamic `import()` for fetch. Jest's VM sandbox blocks dynamic imports unless `NODE_OPTIONS=--experimental-vm-modules` is set. This is configured in `package.json`'s test script.
-
 ### JWT Mock in API Tests
 
 `jsonwebtoken` depends on `buffer-equal-constant-time` which uses `SlowBuffer` — removed in Node.js 25. The API test mocks `jsonwebtoken` entirely with a simple token store to avoid this incompatibility.
 
 ### Worker Testing Strategy
 
-`worker.js` starts an infinite loop via `throng(1, main)` at module scope — it cannot be `require()`'d in tests. Instead, `worker.test.js` simulates the worker's staleness detection and latest-story queries by running equivalent Firestore queries against the database.
+`worker.js` starts an infinite loop via `throng(1, main)` at module scope — it cannot be `require()`'d in tests. Instead, `worker.test.js` simulates the worker's staleness detection and latest-story queries by running equivalent Firestore queries against the mock.
 
 ## Mock Strategy
 
@@ -76,6 +97,7 @@ The `@google-cloud/firestore` SDK depends on `gaxios` which uses dynamic `import
 
 | Module | Mock Type | Reason |
 |--------|-----------|--------|
+| `@google-cloud/firestore` | `moduleNameMapper` → in-memory mock | No credentials, no network, fast tests |
 | `axios` | `jest.mock("axios")` | Avoid real HTTP calls to HN API |
 | `jsonwebtoken` | `jest.mock("jsonwebtoken")` | SlowBuffer removed in Node 25 |
 | `services/hackernews` | `jest.mock()` | Isolate API route tests from HN service |
