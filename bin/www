@@ -4,6 +4,11 @@
  * Module dependencies.
  */
 
+if (!process.env.SECRET) {
+  console.error("FATAL: process.env.SECRET is not set. Exiting.");
+  process.exit(1);
+}
+
 var app = require('../app');
 var debug = require('debug')('hackernews-backend:server');
 var http = require('http');

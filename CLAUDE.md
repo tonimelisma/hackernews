@@ -45,7 +45,7 @@ You own this repo. You are the maintainer. There is no "someone else" — if the
    - This file (`CLAUDE.md`) — architecture, gotchas, test counts, learnings
    - All files under `docs/` (see Documentation section below)
    - `docs/KNOWN_ISSUES.md` if new issues were found or old ones resolved
-5. **No broken windows.** If you encounter a test failure, a stale doc, uncommitted changes, or inconsistent state — you fix it. It's your repo. There is no "someone else's problem."
+5. **No broken windows.** If you encounter a test failure, a stale doc, uncommitted changes, warnings, code smells, or inconsistent state — you fix it. It's your repo. There is no "someone else's problem." Never dismiss anything as "pre-existing noise" or "expected warnings." If it's in the output, you own it. Fix it or document exactly why it can't be fixed yet.
 6. **Repo health checked.** Before finishing, check:
    - `gh pr list --state open` — review open PRs, close stale ones
    - `gh run list --limit 5` — CI must be green on master
@@ -228,4 +228,17 @@ All of these must be kept current with every change:
 - Deleted stale remote branches: `claude/repo-evaluation-review-kANiL`, `claude/heroku-vps-migration-plan-Z1nU8`
 - Updated hntoplinks URL assertions in unit tests to match HTTPS change
 - Added DOD item #6 (repo health: check PRs, CI, branches)
+- 87 total tests: 58 backend + 29 frontend (unchanged)
+
+### Phase 13 — Code Quality, Auth Middleware, README, Docs Cleanup
+- Replaced 8 informal error strings (`"oops"`, `"whoops"`, `"opp"`) in `services/hackernews.js` with descriptive messages
+- Extracted `authenticateToken` middleware in `routes/api.js` — JWT verification no longer duplicated across GET/POST `/hidden`
+- Auth-related catch blocks in `/hidden` routes now return 500 (internal error) instead of 401 for non-auth failures
+- Added `process.env.SECRET` validation in `bin/www` — server exits with FATAL message if missing
+- Placed SECRET check in `bin/www` (not `app.js`) so tests can `require('../../app')` without triggering it
+- Migrated `hackernews-frontend/src/index.js` from `ReactDOM.render` to `createRoot` (React 19 API)
+- Wrote proper README.md with features, tech stack, prerequisites, quick start, testing, and docs links
+- Fixed stale EVALUATION.md: removed MongoDB references (`$addToSet`, `findOne`, `models/comments.js`), updated dependency versions (React 19, Express 5), cleared resolved Dependabot PRs, updated recommendations
+- Updated KNOWN_ISSUES.md: marked SECRET validation and ReactDOM.render as resolved
+- Overall grade improved from B- to B
 - 87 total tests: 58 backend + 29 frontend (unchanged)

@@ -27,7 +27,7 @@ const login = async (goto, acct, pw) => {
   );
   if (response.status === 200) {
     if (response.request.path === "/login") {
-      console.log("whoops: ", response);
+      console.log("login failed (redirected to /login):", response.status);
       return false;
     } else if (response.request.path === "/news") {
       return true;
@@ -77,7 +77,7 @@ const getTopStories = async time => {
     // TODO deduplicate ids
     return ids;
   } catch (e) {
-    console.log("oops: ", e);
+    console.log("getTopStories error:", e);
   }
 };
 
@@ -86,7 +86,7 @@ const getNewStories = async () => {
     const newStories = await axios.get(newStoriesUrl);
     return newStories.data;
   } catch (e) {
-    console.log("oops: ", e);
+    console.log("getNewStories error:", e);
   }
 };
 
@@ -95,7 +95,7 @@ const getItem = async itemId => {
     const itemData = await axios.get(String(await itemUrl(itemId)));
     return itemData.data;
   } catch (e) {
-    console.log("oops2: ", e);
+    console.log("getItem error:", e);
   }
 };
 
@@ -143,14 +143,13 @@ const addStories = async storyIdList => {
         });
       }
     } catch (e) {
-      console.log("oops3: ", e);
-      console.log("opp: ", storyData);
+      console.log("addStories set error:", e, storyData);
     }
   });
   try {
     await Promise.all(promiseArray);
   } catch (e) {
-    console.log("oops4: ", e);
+    console.log("addStories batch error:", e);
   }
 };
 
@@ -168,14 +167,13 @@ const updateStories = async storyIdList => {
         });
       }
     } catch (e) {
-      console.log("oops7: ", e);
-      console.log("opp: ", storyData);
+      console.log("updateStories update error:", e, storyData);
     }
   });
   try {
     await Promise.all(promiseArray);
   } catch (e) {
-    console.log("oops8: ", e);
+    console.log("updateStories batch error:", e);
   }
 };
 

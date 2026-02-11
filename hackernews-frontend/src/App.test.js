@@ -23,6 +23,9 @@ describe("App", () => {
   it("renders navbar with title", async () => {
     render(<App />);
     expect(screen.getByText("Top Hacker News Stories")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(storyService.getAll).toHaveBeenCalled();
+    });
   });
 
   it("shows loading spinner while fetching", () => {
@@ -100,7 +103,7 @@ describe("App", () => {
     expect(storyService.getHidden).not.toHaveBeenCalled();
   });
 
-  it("renders timespan buttons", () => {
+  it("renders timespan buttons", async () => {
     render(<App />);
 
     expect(screen.getAllByText("Day").length).toBeGreaterThan(0);
@@ -108,5 +111,8 @@ describe("App", () => {
     expect(screen.getAllByText("Month").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Year").length).toBeGreaterThan(0);
     expect(screen.getAllByText("All").length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(storyService.getAll).toHaveBeenCalled();
+    });
   });
 });

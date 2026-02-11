@@ -65,43 +65,41 @@ const getTokenFromReq = request => {
   }
 };
 
-router.get("/hidden", async (req, res, next) => {
+const authenticateToken = (req, res, next) => {
   const token = getTokenFromReq(req);
-
   try {
     const decodedToken = jwt.verify(token, process.env.SECRET);
     if (!token || !decodedToken.username) {
       return res.status(401).json({ error: "invalid token" });
     }
+    req.user = decodedToken;
+    next();
+  } catch (e) {
+    console.log("auth error:", e);
+    res.status(401).json({ error: "authentication error" });
+  }
+};
 
-    console.log("getting hidden for username:", decodedToken.username);
-
-    const hidden = await storyService.getHidden(decodedToken.username);
+router.get("/hidden", authenticateToken, async (req, res, next) => {
+  try {
+    console.log("getting hidden for username:", req.user.username);
+    const hidden = await storyService.getHidden(req.user.username);
     res.status(200).json(hidden);
   } catch (e) {
-    console.log("tokenerror: ", e);
-    res.status(401).json({ error: "authentication error" });
+    console.log("GET /hidden error:", e);
+    res.status(500).json({ error: "internal server error" });
   }
 });
 
-router.post("/hidden", async (req, res, next) => {
-  const body = req.body;
-  const token = getTokenFromReq(req);
-
+router.post("/hidden", authenticateToken, async (req, res, next) => {
   try {
-    const decodedToken = jwt.verify(token, process.env.SECRET);
-    if (!token || !decodedToken.username) {
-      return res.status(401).json({ error: "invalid token" });
-    }
-
-    console.log("adding body.hidden:", body.hidden);
-    console.log("for username:", decodedToken.username);
-
-    await storyService.upsertHidden(decodedToken.username, body.hidden);
-    res.status(200).json({ hidden: body.hidden });
+    console.log("adding body.hidden:", req.body.hidden);
+    console.log("for username:", req.user.username);
+    await storyService.upsertHidden(req.user.username, req.body.hidden);
+    res.status(200).json({ hidden: req.body.hidden });
   } catch (e) {
-    console.log("tokenerror: ", e);
-    res.status(401).json({ error: "authentication error" });
+    console.log("POST /hidden error:", e);
+    res.status(500).json({ error: "internal server error" });
   }
 });
 

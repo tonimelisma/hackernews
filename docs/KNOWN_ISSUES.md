@@ -6,7 +6,7 @@
 |----------|----------|-------------|--------|
 | ~~HIGH~~ | ~~`routes/api.js:104`~~ | ~~Passwords logged to console~~ | **RESOLVED** (Phase 10) — now logs username only |
 | ~~HIGH~~ | ~~`routes/api.js:112`~~ | ~~JWT has no expiration — tokens valid forever~~ | **RESOLVED** (Phase 10) — 24h expiration added |
-| HIGH | `routes/api.js:121` | `process.env.SECRET` is undefined without .env — JWT signing fails or uses weak default | Open |
+| ~~HIGH~~ | ~~`routes/api.js:121`~~ | ~~`process.env.SECRET` is undefined without .env — JWT signing fails or uses weak default~~ | **RESOLVED** (Phase 13) — `bin/www` validates SECRET on startup, exits if missing |
 | ~~MEDIUM~~ | ~~`hackernews-frontend/src/services/storyService.js:4`~~ | ~~Production API URL hardcoded to `tonidemo.herokuapp.com`~~ | **RESOLVED** (Phase 10) — uses relative URLs |
 | ~~MEDIUM~~ | ~~`services/hackernews.js:16-21`~~ | ~~hntoplinks URLs use HTTP (not HTTPS) — data in transit is unencrypted~~ | **RESOLVED** (Phase 12) — changed to HTTPS |
 | ~~LOW~~ | ~~`routes/api.js:17-20`~~ | ~~`sanitary()` regex rejects valid HN usernames containing `.` or `@`~~ | **RESOLVED** (Phase 12) — renamed to `isValidUsername()` with proper `[a-zA-Z0-9_-]+` regex |
@@ -41,7 +41,7 @@
 
 | Location | Description | Status |
 |----------|-------------|--------|
-| `hackernews-frontend/src/index.js:14` | Uses deprecated `ReactDOM.render` API (React 16) instead of `createRoot` (React 18) | Open |
+| ~~`hackernews-frontend/src/index.js:14`~~ | ~~Uses deprecated `ReactDOM.render` API (React 16) instead of `createRoot` (React 18)~~ | **RESOLVED** (Phase 13) — migrated to `createRoot` |
 | `hackernews-frontend/src/App.js:6` | Imports `bootstrap.bundle.min` for JS side effects | Open |
 | `services/hackernews.js:77` | `// TODO deduplicate ids` — acknowledged but unfixed | Open |
 | Dependencies | `react-scripts@5.0.1` (CRA) is unmaintained | Open |

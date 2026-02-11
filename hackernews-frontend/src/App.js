@@ -1,7 +1,5 @@
 /* eslint-disable jsx-a11y/anchor-is-valid */
 import React, { useState, useEffect } from "react";
-// import $ from "jquery";
-// import Popper from "popper.js";
 import "bootstrap/dist/js/bootstrap.bundle.min";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -56,7 +54,7 @@ const App = () => {
           setHidden(response.data);
         })
         .catch((e) => {
-          console.log("whoopsie:", e);
+          console.log("getHidden error:", e);
           setHidden(null);
         });
     }
