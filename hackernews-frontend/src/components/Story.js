@@ -1,8 +1,6 @@
 import React from "react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
-dayjs.extend(relativeTime);
-
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faThumbsUp,
@@ -10,8 +8,9 @@ import {
   faUser,
   faClock,
 } from "@fortawesome/free-regular-svg-icons";
-
 import { faTimes } from "@fortawesome/free-solid-svg-icons";
+
+dayjs.extend(relativeTime);
 
 // story.by, descendants, score, time, title, url
 
