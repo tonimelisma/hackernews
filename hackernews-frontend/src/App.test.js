@@ -2,9 +2,6 @@ import React from "react";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import App from "./App";
 
-// Mock bootstrap JS to avoid JSDOM issues
-jest.mock("bootstrap/dist/js/bootstrap.bundle.min", () => {});
-
 // Mock services
 jest.mock("./services/storyService");
 jest.mock("./services/loginService");

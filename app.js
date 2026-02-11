@@ -13,7 +13,7 @@ const middleware = require("./util/middleware");
 const app = express();
 
 app.use(helmet());
-app.use(logger("dev"));
+app.use(logger(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
 const corsOrigin = process.env.NODE_ENV === "development"
   ? "http://localhost:3000"

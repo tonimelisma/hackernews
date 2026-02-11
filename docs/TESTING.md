@@ -23,18 +23,18 @@ npm test && cd hackernews-frontend && npm test -- --watchAll=false && cd ..
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
 | `tests/unit/hackernewsService.test.js` | Unit+DB | 15 | All HN API functions (axios mocked), Firestore operations |
 | `tests/unit/firestore.test.js` | Unit | 10 | getCollectionPrefix, padId, storiesCollection, usersCollection, getDb/setDb |
-| `tests/integration/storyService.test.js` | Integration | 14 | All storyService CRUD against MockFirestore |
-| `tests/integration/api.test.js` | Integration | 18 | Full HTTP request/response via supertest |
-| `tests/integration/worker.test.js` | Integration | 7 | Worker staleness queries + latest story lookup |
-| **Total** | | **68** | |
+| `tests/integration/storyService.test.js` | Integration | 16 | All storyService CRUD against MockFirestore |
+| `tests/integration/api.test.js` | Integration | 20 | Full HTTP request/response via supertest |
+| `tests/integration/worker.test.js` | Integration | 10 | syncOnce() direct tests, staleness queries, utility functions |
+| **Total** | | **75** | |
 
 ### Frontend (Jest + React Testing Library)
 
 | File | Type | Tests | What it covers |
 |------|------|-------|----------------|
-| `src/App.test.js` | Component | 15 | App rendering, timespan, loading, auth |
-| `src/components/StoryList.test.js` | Component | 5 | List rendering, hidden filtering |
-| `src/components/Story.test.js` | Component | 3 | Story card: title, author, score, time, favicon, hide |
+| `src/App.test.js` | Component | 8 | App rendering, timespan, loading, auth |
+| `src/components/StoryList.test.js` | Component | 4 | List rendering, hidden filtering |
+| `src/components/Story.test.js` | Component | 11 | Story card: title, author, score, time, favicon, hide, URL safety |
 | `src/services/storyService.test.js` | Unit | 4 | Axios calls for stories/hidden |
 | `src/services/loginService.test.js` | Unit | 2 | Axios calls for login |
 | **Total** | | **29** | |
@@ -90,7 +90,7 @@ afterAll(async () => await db.closeDatabase());
 
 ### Worker Testing Strategy
 
-`worker.js` starts an infinite loop via `throng(1, main)` at module scope — it cannot be `require()`'d in tests. Instead, `worker.test.js` simulates the worker's staleness detection and latest-story queries by running equivalent Firestore queries against the mock.
+`worker.js` exports `syncOnce()` (a single sync cycle) and guards `throng` with `require.main === module`. Tests import `syncOnce()` directly and mock `services/hackernews` to verify bootstrap, incremental sync, and score update logic. Simulated query tests also validate staleness detection and latest-story lookup against MockFirestore.
 
 ## Mock Strategy
 
@@ -101,7 +101,7 @@ afterAll(async () => await db.closeDatabase());
 | `@google-cloud/firestore` | `moduleNameMapper` → in-memory mock | No credentials, no network, fast tests |
 | `axios` | `jest.mock("axios")` | Avoid real HTTP calls to HN API |
 | `jsonwebtoken` | `jest.mock("jsonwebtoken")` | SlowBuffer removed in Node 25 |
-| `services/hackernews` | `jest.mock()` | Isolate API route tests from HN service |
+| `services/hackernews` | `jest.mock()` | Isolate API route tests and worker tests from HN service |
 | `console.log` | `jest.spyOn` | Suppress noise from production code |
 
 ### Frontend
@@ -109,8 +109,7 @@ afterAll(async () => await db.closeDatabase());
 | Module | Mock Type | Reason |
 |--------|-----------|--------|
 | `axios` | `jest.mock("axios")` | Avoid real HTTP calls |
-| `moment` | `jest.mock("moment")` | Consistent time output |
-| `bootstrap/dist/js/bootstrap.bundle.min` | `jest.mock()` | JSDOM doesn't support bootstrap JS |
+| `dayjs` | `jest.mock("dayjs")` | Consistent time output |
 | `./services/storyService` | `jest.mock()` | Isolate App component from API |
 | `./services/loginService` | `jest.mock()` | Isolate App component from API |
 | `./Story` | `jest.mock()` | Isolate StoryList from Story rendering |

@@ -88,7 +88,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 3. **In-memory MockFirestore for tests**: Tests use `jest.config.js` `moduleNameMapper` to replace `@google-cloud/firestore` with an in-memory mock (`tests/mocks/firestore-mock.js`). The real SDK never loads — no credentials, no network, no `--experimental-vm-modules` needed. The mock implements the exact Firestore API surface used by this project (collection/doc/query/batch/subcollections). `_clear()` wipes all data between tests.
 
-4. **Worker is not directly testable**: `worker.js` calls `throng(1, main)` at module scope, starting an infinite loop. Worker logic must be tested indirectly by simulating its DB queries.
+4. **Worker testable via `syncOnce()`**: `worker.js` exports `syncOnce()` (one full sync cycle) and guards `throng` with `require.main === module`. Tests import `syncOnce()` directly with mocked `services/hackernews`.
 
 5. **No input validation on API**: The `/get` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint has `isValidUsername()` validation.
 
@@ -116,10 +116,10 @@ All of these must be kept current with every change:
 | Suite | Tests |
 |-------|-------|
 | Backend unit (middleware, config, hackernews, firestore) | 29 |
-| Backend integration (storyService, api, worker) | 39 |
+| Backend integration (storyService, api, worker) | 46 |
 | Frontend component (App, StoryList, Story) | 23 |
 | Frontend service (storyService, loginService) | 6 |
-| **Total** | **97** |
+| **Total** | **104** |
 
 ## Project Health
 
@@ -129,7 +129,7 @@ All of these must be kept current with every change:
 |----------|-------|---------|
 | Functionality | B | Core features work; hntoplinks scraper is brittle (regex) |
 | Security | B+ | Helmet, CORS, rate limiting, JWT expiry, SECRET validation |
-| Testing | A- | 97 tests, in-memory mock, ~1s backend runs |
+| Testing | A- | 104 tests, in-memory mock, ~1s backend runs |
 | Code Quality | A- | Modernized boilerplate, a11y fixes, bug fixes, dead code removed |
 | Architecture | B | Firestore migration, lazy singleton, env-prefixed collections |
 | Documentation | B+ | CLAUDE.md + 4 reference docs, proper README |
@@ -141,7 +141,6 @@ All of these must be kept current with every change:
 
 - **Node.js 25+ crash** — `jsonwebtoken` chain uses removed `SlowBuffer`; no upstream fix
 - **Token in localStorage** (`App.js`) — XSS vector; should migrate to HTTP-only cookie
-- **Bootstrap JS import** (`App.js`) — side-effect import at module scope
 - **CRA unmaintained** — `react-scripts@5.0.1` has 9 unfixable transitive vulnerabilities
 
 ### Vulnerability Status
@@ -162,12 +161,9 @@ All of these must be kept current with every change:
 
 ### API & Backend
 - RESTful API naming (`/get` → `/stories`)
-- Replace `moment.js` with `dayjs`
-- Extract worker `main()` for direct testability
 
 ### Frontend
 - Replace FontAwesome 5 packages with lighter alternative
-- Remove Bootstrap JS side-effect import
 - Add virtualization for large story lists
 
 ### Testing & Quality
@@ -184,7 +180,7 @@ All of these must be kept current with every change:
 - **Firestore query constraint**: Can't `where()` on one field and `orderBy()` on another. Client-side sort needed for stories (time filter + score sort). Composite indexes required for multi-inequality worker queries.
 - **In-memory MockFirestore**: `moduleNameMapper` in `jest.config.js` redirects `@google-cloud/firestore` to an in-memory mock. Storage: flat `Map<collectionPath, Map<docId, data>>`. MockTimestamp wraps Date objects on `.set()`/`.update()`. Backend tests run in ~1 second with no credentials or network.
 - **Node.js 25+ incompatibility**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. Must mock `jsonwebtoken` in tests; use Node.js 18/20 in production.
-- **CRA testing quirks**: `axios` (ESM) needs `transformIgnorePatterns`; `moment` mock needs `__esModule: true` + `default` pattern; Bootstrap JS must be mocked to avoid JSDOM errors.
+- **CRA testing quirks**: `axios` (ESM) needs `transformIgnorePatterns`; `dayjs` mock needs `__esModule: true` + `default` pattern. Bootstrap JS is imported only in `index.js` (not in components).
 - **Rate limiter state persists across tests** — rate-limit test must be last in its describe block.
 - **`bin/www` for startup checks**: SECRET validation lives in `bin/www` (not `app.js`) so tests can `require('../../app')` without triggering exit.
 - **Logging convention**: `console.error` for errors (catch blocks), `console.log` for operational info (startup, sync progress). `tests/setup.js` suppresses both globally.

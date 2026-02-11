@@ -2,16 +2,13 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import Story from "./Story";
 
-// Mock moment to return consistent output
-jest.mock("moment", () => {
-  const mockMoment = () => ({
-    fromNow: () => "2 hours ago",
-  });
-  return {
-    __esModule: true,
-    default: mockMoment,
-  };
+// Mock dayjs to return consistent output
+jest.mock("dayjs", () => {
+  const mockDayjs = () => ({ fromNow: () => "2 hours ago" });
+  mockDayjs.extend = jest.fn();
+  return { __esModule: true, default: mockDayjs };
 });
+jest.mock("dayjs/plugin/relativeTime", () => ({ __esModule: true, default: jest.fn() }));
 
 const mockStory = {
   id: 12345,
@@ -57,7 +54,7 @@ describe("Story", () => {
     expect(screen.getByText(/42/)).toBeInTheDocument();
   });
 
-  it("renders time using moment fromNow", () => {
+  it("renders relative time", () => {
     render(<Story story={mockStory} addHidden={mockAddHidden} />);
     expect(screen.getByText(/2 hours ago/)).toBeInTheDocument();
   });

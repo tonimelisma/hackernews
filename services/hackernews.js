@@ -1,6 +1,5 @@
 const axios = require("axios");
 const { storiesCollection, padId } = require("./firestore");
-const qs = require("qs");
 
 const newStoriesUrl =
   "https://hacker-news.firebaseio.com/v0/newstories.json?print=pretty";
@@ -19,7 +18,7 @@ const alltimeTopStoriesUrl = "https://www.hntoplinks.com/all/";
 const login = async (goto, acct, pw) => {
   const response = await axios.post(
     loginUrl,
-    qs.stringify({ goto, acct, pw }),
+    new URLSearchParams({ goto, acct, pw }).toString(),
     { withCredentials: true }
   );
   if (response.status === 200) {

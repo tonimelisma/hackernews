@@ -1,5 +1,7 @@
 import React from "react";
-import moment from "moment";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+dayjs.extend(relativeTime);
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -48,7 +50,7 @@ const Story = ({ story, addHidden }) => {
         )} <br />
         <small>
           <FontAwesomeIcon icon={faUser} /> {story.by} &nbsp;&nbsp;{" "}
-          <FontAwesomeIcon icon={faClock} /> {moment(story.time).fromNow()}
+          <FontAwesomeIcon icon={faClock} /> {dayjs(story.time).fromNow()}
         </small>{" "}
       </div>{" "}
       <div

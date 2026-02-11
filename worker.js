@@ -19,80 +19,81 @@ const formatBytes = (bytes, decimals = 2) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
+const syncOnce = async () => {
+  // LOAD LATEST STORIES
+  try {
+    // Find latest story by doc ID (zero-padded, so lexicographic = numeric order)
+    const latestSnap = await storiesCollection()
+      .orderBy("id", "desc")
+      .limit(1)
+      .get();
+
+    const latestRemoteStoryIds = await Remote.getNewStories();
+
+    if (latestSnap.empty) {
+      console.log("empty db, bootstrapping...");
+      await Remote.addStories(latestRemoteStoryIds);
+    } else {
+      const latestLocalId = latestSnap.docs[0].data().id;
+      if (latestLocalId < latestRemoteStoryIds[0]) {
+        console.log("new stories available: local=%d remote=%d", latestLocalId, latestRemoteStoryIds[0]);
+        const newStoryIds = latestRemoteStoryIds.filter(
+          checkStoryId => checkStoryId > latestLocalId
+        );
+        await Remote.addStories(newStoryIds);
+      } else {
+        console.log("all stories in local db already");
+      }
+    }
+  } catch (e) {
+    console.error("error loading stories:", e);
+  }
+
+  // UPDATE SCORES FOR TRENDING STORIES
+  try {
+    const lastEverSnap = await storiesCollection()
+      .where("updated", "<", new Date(Date.now() - 14 * 24 * 60 * 60 * 1000))
+      .get();
+    if (!lastEverSnap.empty) {
+      await Remote.updateStories(lastEverSnap.docs.map(d => d.data().id));
+    }
+
+    const lastMonthSnap = await storiesCollection()
+      .where("time", ">", new Date(Date.now() - 28 * 24 * 60 * 60 * 1000))
+      .where("updated", "<", new Date(Date.now() - 24 * 60 * 60 * 1000))
+      .get();
+    if (!lastMonthSnap.empty) {
+      await Remote.updateStories(lastMonthSnap.docs.map(d => d.data().id));
+    }
+
+    const lastWeekSnap = await storiesCollection()
+      .where("time", ">", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
+      .where("updated", "<", new Date(Date.now() - 60 * 60 * 1000))
+      .get();
+    if (!lastWeekSnap.empty) {
+      await Remote.updateStories(lastWeekSnap.docs.map(d => d.data().id));
+    }
+
+    const last24hSnap = await storiesCollection()
+      .where("time", ">", new Date(Date.now() - 24 * 60 * 60 * 1000))
+      .where("updated", "<", new Date(Date.now() - 15 * 60 * 1000))
+      .get();
+    if (!last24hSnap.empty) {
+      await Remote.updateStories(last24hSnap.docs.map(d => d.data().id));
+    }
+  } catch (e) {
+    console.error("error updating stories:", e);
+  }
+
+  const memoryUsage = process.memoryUsage();
+  console.log("sync complete | rss: %s, heap: %s", formatBytes(memoryUsage.rss), formatBytes(memoryUsage.heapUsed));
+};
 
 const main = async () => {
   try {
     while (true) {
       console.log("Starting background sync job...");
-
-      // LOAD LATEST STORIES
-      try {
-        // Find latest story by doc ID (zero-padded, so lexicographic = numeric order)
-        const latestSnap = await storiesCollection()
-          .orderBy("id", "desc")
-          .limit(1)
-          .get();
-
-        const latestRemoteStoryIds = await Remote.getNewStories();
-
-        if (latestSnap.empty) {
-          console.log("empty db, bootstrapping...");
-          await Remote.addStories(latestRemoteStoryIds);
-        } else {
-          const latestLocalId = latestSnap.docs[0].data().id;
-          if (latestLocalId < latestRemoteStoryIds[0]) {
-            console.log("new stories available: local=%d remote=%d", latestLocalId, latestRemoteStoryIds[0]);
-            const newStoryIds = latestRemoteStoryIds.filter(
-              checkStoryId => checkStoryId > latestLocalId
-            );
-            await Remote.addStories(newStoryIds);
-          } else {
-            console.log("all stories in local db already");
-          }
-        }
-      } catch (e) {
-        console.error("error loading stories:", e);
-      }
-
-      // UPDATE SCORES FOR TRENDING STORIES
-      try {
-        const lastEverSnap = await storiesCollection()
-          .where("updated", "<", new Date(Date.now() - 14 * 24 * 60 * 60 * 1000))
-          .get();
-        if (!lastEverSnap.empty) {
-          await Remote.updateStories(lastEverSnap.docs.map(d => d.data().id));
-        }
-
-        const lastMonthSnap = await storiesCollection()
-          .where("time", ">", new Date(Date.now() - 28 * 24 * 60 * 60 * 1000))
-          .where("updated", "<", new Date(Date.now() - 24 * 60 * 60 * 1000))
-          .get();
-        if (!lastMonthSnap.empty) {
-          await Remote.updateStories(lastMonthSnap.docs.map(d => d.data().id));
-        }
-
-        const lastWeekSnap = await storiesCollection()
-          .where("time", ">", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
-          .where("updated", "<", new Date(Date.now() - 60 * 60 * 1000))
-          .get();
-        if (!lastWeekSnap.empty) {
-          await Remote.updateStories(lastWeekSnap.docs.map(d => d.data().id));
-        }
-
-        const last24hSnap = await storiesCollection()
-          .where("time", ">", new Date(Date.now() - 24 * 60 * 60 * 1000))
-          .where("updated", "<", new Date(Date.now() - 15 * 60 * 1000))
-          .get();
-        if (!last24hSnap.empty) {
-          await Remote.updateStories(last24hSnap.docs.map(d => d.data().id));
-        }
-      } catch (e) {
-        console.error("error updating stories:", e);
-      }
-
-      const memoryUsage = process.memoryUsage();
-      console.log("sync complete | rss: %s, heap: %s", formatBytes(memoryUsage.rss), formatBytes(memoryUsage.heapUsed));
-
+      await syncOnce();
       await sleep(10 * 60 * 1000);
     }
   } catch (e) {
@@ -100,4 +101,8 @@ const main = async () => {
   }
 };
 
-throng(1, main);
+if (require.main === module) {
+  throng(1, main);
+}
+
+module.exports = { main, syncOnce, formatBytes, sleep };
