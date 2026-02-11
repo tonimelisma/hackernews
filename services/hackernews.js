@@ -13,11 +13,11 @@ const itemUrl = async item => {
 
 const loginUrl = "https://news.ycombinator.com/login";
 
-const dailyTopStoriesUrl = "http://www.hntoplinks.com/today/";
-const weeklyTopStoriesUrl = "http://www.hntoplinks.com/week/";
-const monthlyTopStoriesUrl = "http://www.hntoplinks.com/month/";
-const yearlyTopStoriesUrl = "http://www.hntoplinks.com/year/";
-const alltimeTopStoriesUrl = "http://www.hntoplinks.com/all/";
+const dailyTopStoriesUrl = "https://www.hntoplinks.com/today/";
+const weeklyTopStoriesUrl = "https://www.hntoplinks.com/week/";
+const monthlyTopStoriesUrl = "https://www.hntoplinks.com/month/";
+const yearlyTopStoriesUrl = "https://www.hntoplinks.com/year/";
+const alltimeTopStoriesUrl = "https://www.hntoplinks.com/all/";
 
 const login = async (goto, acct, pw) => {
   const response = await axios.post(

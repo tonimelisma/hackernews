@@ -267,9 +267,6 @@ describe("API routes", () => {
         .post("/api/v1/login")
         .send({ goto: "news", acct: "newuser", pw: "validpass" });
 
-      // Small delay for async upsertUser
-      await new Promise((r) => setTimeout(r, 100));
-
       const userDoc = await usersCollection().doc("newuser").get();
       expect(userDoc.exists).toBe(true);
     });

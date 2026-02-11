@@ -92,7 +92,7 @@ describe("services/hackernews", () => {
 
       expect(result).toEqual(["12345", "67890"]);
       expect(axios.get).toHaveBeenCalledWith(
-        "http://www.hntoplinks.com/today/1"
+        "https://www.hntoplinks.com/today/1"
       );
       consoleSpy.mockRestore();
     });
@@ -124,7 +124,7 @@ describe("services/hackernews", () => {
       await hackernews.getTopStories("weekly");
 
       expect(axios.get).toHaveBeenCalledWith(
-        "http://www.hntoplinks.com/week/1"
+        "https://www.hntoplinks.com/week/1"
       );
       consoleSpy.mockRestore();
     });

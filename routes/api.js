@@ -14,10 +14,9 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const sanitary = (input) => {
-  if (input.match(/^[a-z0-9\d\-_\s]+$/i)) return true
-  return false
-}
+const isValidUsername = (input) => {
+  return /^[a-zA-Z0-9_-]+$/.test(input);
+};
 
 router.get("/get", async (req, res, next) => {
   const parseTimespan = timespan => {
@@ -98,7 +97,7 @@ router.post("/hidden", async (req, res, next) => {
     console.log("adding body.hidden:", body.hidden);
     console.log("for username:", decodedToken.username);
 
-    storyService.upsertHidden(decodedToken.username, body.hidden);
+    await storyService.upsertHidden(decodedToken.username, body.hidden);
     res.status(200).json({ hidden: body.hidden });
   } catch (e) {
     console.log("tokenerror: ", e);
@@ -112,15 +111,15 @@ router.post("/login", loginLimiter, async (req, res, next) => {
   const acct = req.body.acct;
   console.log("login attempt for:", acct);
 
-  if (!goto || !pw || !acct || !sanitary(acct)) {
+  if (!goto || !pw || !acct || !isValidUsername(acct)) {
     res.status(400).json({ error: "missing fields" });
   } else {
     try {
       const loginCorrect = await hackernewsService.login(goto, acct, pw);
       if (loginCorrect) {
         const token = jwt.sign({ username: acct }, process.env.SECRET, { expiresIn: '24h' });
+        await storyService.upsertUser(acct);
         res.status(200).json({ token });
-        storyService.upsertUser(acct);
       } else {
         res.status(401).json({ error: "False username or password" });
       }

@@ -46,6 +46,11 @@ You own this repo. You are the maintainer. There is no "someone else" — if the
    - All files under `docs/` (see Documentation section below)
    - `docs/KNOWN_ISSUES.md` if new issues were found or old ones resolved
 5. **No broken windows.** If you encounter a test failure, a stale doc, uncommitted changes, or inconsistent state — you fix it. It's your repo. There is no "someone else's problem."
+6. **Repo health checked.** Before finishing, check:
+   - `gh pr list --state open` — review open PRs, close stale ones
+   - `gh run list --limit 5` — CI must be green on master
+   - `git branch -r` — delete stale remote branches
+   If CI is failing on master, that's YOUR broken build. Fix it first.
 
 ## Architecture Overview
 
@@ -85,7 +90,7 @@ hackernews/
 
 4. **Worker is not directly testable**: `worker.js` calls `throng(1, main)` at module scope, starting an infinite loop. Worker logic must be tested indirectly by simulating its DB queries.
 
-5. **No input validation on API**: The `/get` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint has basic `sanitary()` check but logs passwords to console.
+5. **No input validation on API**: The `/get` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint has `isValidUsername()` validation.
 
 6. **`getHidden` null pointer bug**: If username doesn't exist in Firestore, the code intentionally crashes with `null.hidden` TypeError. This preserves the original MongoDB behavior and is documented with a test.
 
@@ -207,4 +212,19 @@ All of these must be kept current with every change:
 - Where operators: `>`, `<`, `>=`, `<=`, `==` — Date/MockTimestamp values unwrapped to milliseconds for comparison
 - Reordered rate-limit test to be last in login describe block — fast mock exposed pre-existing rate limit exhaustion issue
 - Backend tests now run in ~1 second (down from 30+ seconds), require no credentials or network
+- 87 total tests: 58 backend + 29 frontend (unchanged)
+
+### Phase 12 — CI Fix, Bug Fixes, Repo Cleanup
+- Added `axios` as explicit frontend dependency (was hoisted from root, broke CI's isolated `npm ci`)
+- Removed GCP credential setup from CI workflow (backend tests use in-memory mock since Phase 11)
+- Added `await` to `upsertHidden()` and `upsertUser()` — eliminated fire-and-forget bugs
+- Reordered `upsertUser()` before `res.json()` in login route — user is now created before response
+- Removed `setTimeout(100ms)` workaround in api.test.js "creates user in DB" test
+- Changed 5 hntoplinks URLs from `http://` to `https://`
+- Renamed `sanitary()` to `isValidUsername()` with strict `[a-zA-Z0-9_-]+` regex (removed `\s`)
+- Created `.env.example` documenting required `SECRET` env var
+- Closed PR #72 (superseded), closed PRs #69/#70/#75 (deps not in direct dependencies)
+- Deleted stale remote branches: `claude/repo-evaluation-review-kANiL`, `claude/heroku-vps-migration-plan-Z1nU8`
+- Updated hntoplinks URL assertions in unit tests to match HTTPS change
+- Added DOD item #6 (repo health: check PRs, CI, branches)
 - 87 total tests: 58 backend + 29 frontend (unchanged)

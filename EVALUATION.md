@@ -1,7 +1,7 @@
 # Codebase Evaluation: hackernews
 
-**Date:** 2026-02-09
-**Scope:** Full-stack application — Node.js/Express backend, React frontend, MongoDB, Heroku deployment
+**Date:** 2026-02-10 (re-evaluated after Phases 10-12)
+**Scope:** Full-stack application — Node.js/Express backend, React frontend, Google Cloud Firestore
 **Lines of code:** ~1,430 (850 backend, 580 frontend) across 16 source files
 
 ---
@@ -10,9 +10,9 @@
 
 A Hacker News aggregator that filters stories by score thresholds across time periods (day/week/month/year). Users can authenticate with their real HN credentials and hide stories. A background worker keeps the database fresh by syncing from the HN API every 10 minutes.
 
-The app achieves its stated goal — it works. The architecture is sensible for a project of this size: clear separation into models/routes/services, a separate worker process, and a clean React component hierarchy. However, there are real security problems that need fixing, no test coverage, and no CI pipeline — which means the 12 open Dependabot PRs are being merged blind.
+The app achieves its stated goal — it works. The architecture is sensible for a project of this size: clear separation into routes/services, a separate worker process, and a clean React component hierarchy. Since the initial evaluation, significant improvements have been made: comprehensive test coverage (87 tests), CI pipeline, security hardening (helmet, CORS, rate limiting, JWT expiration), migration from MongoDB to Firestore, and thorough documentation.
 
-**Overall: C-** — Working application with sound structure, undermined by security gaps and absence of testing.
+**Overall: B-** — Working application with solid test coverage and good documentation, improved security posture. Remaining gaps: unmaintained CRA, some code quality issues, and frontend performance.
 
 ---
 
@@ -20,15 +20,15 @@ The app achieves its stated goal — it works. The architecture is sensible for 
 
 | # | Category | Grade | Weight | Notes |
 |---|----------|-------|--------|-------|
-| 1 | Functionality | B- | 15% | Core features work; a few edge cases crash |
-| 2 | Security | F | 20% | Multiple critical vulnerabilities |
-| 3 | Testing | F | 15% | Zero meaningful tests |
-| 4 | Code Quality | C- | 15% | Readable but repetitive; inconsistent error handling |
-| 5 | Architecture | C+ | 10% | Good separation of concerns for its size |
-| 6 | Documentation | F | 10% | 3-line README, no other docs |
-| 7 | DevOps / CI | D- | 5% | Procfile exists; no CI, no Docker, no linting |
-| 8 | Performance | C | 5% | Works at current scale; missing indexes |
-| 9 | Dependencies | C | 5% | Dependabot active but merging without gates |
+| 1 | Functionality | B- | 15% | Core features work; `getHidden` null pointer preserved intentionally |
+| 2 | Security | B | 20% | Helmet, CORS, rate limiting, JWT expiry added; token in localStorage remains |
+| 3 | Testing | A- | 15% | 87 tests (58 backend + 29 frontend), in-memory mock, ~1s backend runs |
+| 4 | Code Quality | C+ | 15% | Fire-and-forget fixed, sanitary renamed; some duplication remains |
+| 5 | Architecture | B- | 10% | Firestore migration, lazy singleton, env-prefixed collections |
+| 6 | Documentation | B | 10% | CLAUDE.md, 6 docs/ files, EVALUATION.md, KNOWN_ISSUES.md |
+| 7 | DevOps / CI | C+ | 5% | GitHub Actions CI with Node 18+20 matrix; no Docker, no linting |
+| 8 | Performance | C+ | 5% | Client-side sort for Firestore constraint; no virtualization |
+| 9 | Dependencies | C+ | 5% | Dependabot active, CI gates PRs; dead deps removed, CRA unmaintained |
 
 ---
 
@@ -52,234 +52,196 @@ The app achieves its stated goal — it works. The architecture is sensible for 
 
 ---
 
-## 2. Security — F
+## 2. Security — B
 
-This is the most critical area. Multiple serious vulnerabilities exist.
+Significant improvements since initial evaluation. Most critical and high vulnerabilities have been addressed.
 
-### Critical
+### Resolved (Phases 10-12)
+
+| Finding | Resolution |
+|---------|------------|
+| ~~Password logged to stdout~~ | Removed — now logs username only |
+| ~~JWT never expires~~ | Added `{ expiresIn: '24h' }` |
+| ~~CORS unrestricted~~ | Restricted to `localhost:3000` in dev, same-origin in prod |
+| ~~No rate limiting~~ | `express-rate-limit`: 10 req/15min on POST `/login` |
+| ~~Error objects leaked to client~~ | Generic `"authentication error"` string |
+| ~~No security headers~~ | `helmet()` middleware added |
+| ~~No URL protocol validation~~ | `isSafeUrl()` in Story component |
+| ~~`sanitary()` misnamed/limited~~ | Renamed `isValidUsername()` with `[a-zA-Z0-9_-]+` regex |
+| ~~hntoplinks HTTP URLs~~ | Changed to HTTPS |
+| ~~`upsertHidden`/`upsertUser` fire-and-forget~~ | Added `await`, reordered before response |
+
+### Remaining
 
 | Finding | Location | Risk |
 |---------|----------|------|
-| **Password logged to stdout** | `routes/api.js:104` — `console.log("logging in: ", goto, pw, acct)` | Credentials visible in Heroku logs, any log drain, or aggregation tool |
-| **JWT never expires** | `routes/api.js:112` — `jwt.sign({ username: acct }, process.env.SECRET)` with no `expiresIn` | A stolen token is valid forever with no revocation mechanism |
-| **Token in localStorage** | `App.js:86` — `window.localStorage.setItem("loginToken", ...)` | Any XSS vector gives attackers the token |
-| **CORS unrestricted** | `app.js:16` — `app.use(cors())` with no origin restriction | Any website can make authenticated API requests |
-
-### High
-
-- **No rate limiting** on `/api/v1/login` — brute-force attacks are trivially possible
-- **No CSRF protection** — POST endpoints accept requests from any origin
-- `routes/api.js:75,96` — **error objects sent directly to client** (`res.status(401).json({ error: e })`), potentially leaking internal error details and stack traces
-- `Story.js:36` — renders `<a href={story.url}>` without protocol validation; a malicious HN story with a `javascript:` URL would execute in the user's browser
-- **No security headers** — no Content-Security-Policy, HSTS, X-Frame-Options, or X-Content-Type-Options
-- **No HTTPS enforcement** at the app level — relies entirely on Heroku
-- `routes/api.js:8` — **`sanitary()` function is misnamed and limited** — regex `/^[a-z0-9\d\-_\s]+$/i` may reject valid HN usernames and gives a false sense of security
+| **Token in localStorage** | `App.js:86` | XSS vector gives attackers the token |
+| **No CSRF protection** | POST endpoints | Mitigated by CORS restriction |
+| **SECRET not validated** | `routes/api.js:121` | `process.env.SECRET` undefined → JWT fails |
 
 ### Mitigating factors
-- Heroku provides HTTPS by default on `*.herokuapp.com`
-- Passwords are never stored — they're proxied to HN for authentication
-- The `sanitary()` input validator exists for usernames, even if limited
+- Passwords are never stored — proxied to HN for authentication
+- Helmet provides CSP, HSTS, X-Frame-Options, X-Content-Type-Options
+- `.env.example` documents required SECRET variable
 
 ---
 
-## 3. Testing — F
+## 3. Testing — A-
 
-### Backend: Zero tests
+### Backend: 58 tests
 
-- `package.json` test script is literally `"echo placeholder"`
-- No test framework installed (no jest, mocha, or supertest in dependencies)
-- No test files exist for any backend code
-- Zero coverage of API routes, services, models, worker, or middleware
+- Jest 30 with in-memory MockFirestore (no credentials, no network, ~1s runtime)
+- Unit tests: middleware (5), config (3), hackernews service (11) = 19
+- Integration tests: storyService (14), API routes (18), worker (7) = 39
+- MockFirestore replaces `@google-cloud/firestore` via `jest.config.js` `moduleNameMapper`
+- `jsonwebtoken` mocked in api.test.js to avoid Node.js 25+ SlowBuffer crash
 
-### Frontend: One superficial test
+### Frontend: 29 tests
 
-- `App.test.js` — a single smoke test: "renders without crashing" using deprecated `ReactDOM.render`
-- No component tests for StoryList or Story
-- No tests for service functions or user interactions
-- No mocking of API calls
+- React Testing Library + jest (via CRA)
+- Component tests: App (15), StoryList (5), Story (3) = 23
+- Service tests: storyService (4), loginService (2) = 6
+- Axios mocked, moment mocked with `__esModule: true` pattern
 
-### What's missing
+### What's still missing
 
-- Unit tests for all 6 backend modules
-- Integration tests for the 4 API endpoints
-- Worker job correctness tests
-- Database operation tests (ideally with mongodb-memory-server)
-- Frontend component and interaction tests (React Testing Library)
 - End-to-end tests
-- Any test configuration (jest.config, test setup/teardown)
-- Test database seeding or fixtures
-
-### Impact
-
-Dependabot has created 12 open PRs for dependency updates. Every one gets merged with zero automated verification. A breaking change or a supply-chain attack would pass straight through.
+- Worker is not directly testable (throng infinite loop at module scope)
+- No code coverage reporting
 
 ---
 
-## 4. Code Quality — C-
+## 4. Code Quality — C+
 
-Readable and well-structured for the most part. Files are short, naming is generally clear, and the project layout makes sense.
+Readable and well-structured. Naming improvements and bug fixes applied in Phases 10-12.
 
-### Code duplication (DRY violations)
+### Resolved (Phases 10-12)
 
-- **`services/storyService.js:52-146`** — `getStories()` repeats the same query pattern **4 times** (with/without skip x all/timespan). ~80 lines that could be ~20 with a conditional query builder.
-- **`worker.js:127-178`** — Four nearly identical `deleteMany()` calls with different thresholds, followed by four similar update scans. Should be a loop over a config array.
-- **`hackernews-frontend/src/services/storyService.js:2-5` and `loginService.js:2-5`** — identical `baseUrl` logic duplicated in both files.
+- Finnish strings replaced with English log messages
+- `sanitary()` renamed to `isValidUsername()` with proper regex
+- `upsertHidden`/`upsertUser` fire-and-forget bugs fixed (added `await`)
+- GET `/get` catch block now returns 500 (was hanging)
+- Dead frontend deps removed (jquery, popper.js, react-icons, typescript)
+- Dead Comment model removed (Firestore migration)
+- Hardcoded Heroku URLs replaced with relative paths
 
-### Naming and language
+### Remaining issues
 
-- Finnish strings appear throughout production code:
-  - `routes/api.js:49` — `"uppistakeikkaa"` (informal Finnish exclamation)
-  - `worker.js:180` — `"ei onnistunut"` (Finnish: "didn't succeed")
-  - `worker.js:41` — `"LADATAAN UUSIMMAT TARINAT"` (Finnish: "LOADING LATEST STORIES")
-- Abbreviated variable names: `acct`, `pw`, `goto` instead of `account/username`, `password`, `redirectUrl`
-- `sanitary()` should be named `isValidInput()` or `isAlphanumeric()`
-
-### Error handling
-
-- **Silent failures everywhere**: 12+ catch blocks across `hackernews.js` and `worker.js` that only `console.log()` the error and continue
-- `routes/api.js:48-50` — catch block logs but doesn't respond (client hangs)
-- No error classification, no structured error responses, no retry logic
-
-### Dead code
-
-- TypeScript 5.0.4 installed as a frontend dependency but **completely unused** — no `.ts` files, no `tsconfig.json`, no type annotations
-- `react-icons` package installed but never imported
-- Comment model defined but never used
-- Informal comments: `"this function is kind of nasty"`, `"oops"`, `"oops2"`
+- **`services/storyService.js`** — `getStories()` repeats the same query pattern with/without skip/timespan
+- **Silent failures**: catch blocks in `hackernews.js` and `worker.js` only `console.log()` and continue
+- Abbreviated variable names: `acct`, `pw`, `goto`
+- Informal comments: `"oops"`, `"oops2"` in hackernews.js
 
 ---
 
-## 5. Architecture — C+
+## 5. Architecture — B-
 
 ### Good decisions
 
-- MVC-ish layout: `models/`, `routes/`, `services/`, `util/` is clear and appropriate for this project size
-- Background worker correctly separated from the web process (Heroku Procfile with separate dyno)
+- `routes/`, `services/`, `util/` layout is clear and appropriate for this project size
+- Background worker correctly separated from the web process (Procfile with separate dyno)
 - Frontend has a clean component hierarchy: `App` -> `StoryList` -> `Story`
 - Service layer abstracts both external APIs (HN) and database operations
 - `throng` for worker process management with graceful shutdown
+- Firestore lazy singleton with environment-prefixed collections (Phase 9)
+- Hidden stories use subcollection pattern for scalability (1MB doc limit avoidance)
 
-### Problems
+### Remaining issues
 
-- **Database connection in service file** — `services/storyService.js:6-16` calls `mongoose.connect()` at module load time. `topdump.js` also connects independently. Connection lifecycle isn't centrally managed.
-- **No auth middleware** — JWT verification is done inline in each route handler instead of being a reusable middleware
+- **No auth middleware** — JWT verification is done inline in each route handler
 - **Route naming** — `/api/v1/get` is not RESTful; should be `/api/v1/stories`
-- **Frontend-backend coupling** — production API URL is hardcoded in two frontend service files rather than using relative paths or environment variables
-- **Comment model** is orphaned dead code
-- **No separation of worker concerns** — `worker.js` handles fetching, updating, pruning, and scheduling all in one 210-line file
+- **No separation of worker concerns** — `worker.js` handles fetching, updating, and scheduling in one file
 
 ---
 
-## 6. Documentation — F
+## 6. Documentation — B
 
-### README.md — 3 lines total
+### What exists now
 
-```
-# hackernews
-Hacker news app, shows only the best articles
-Works on both mobile and desktop
-https://besthackernews.herokuapp.com
-```
+- **CLAUDE.md** — comprehensive project governance, architecture overview, gotchas, test counts, learnings log
+- **docs/ARCHITECTURE.md** — system overview, directory structure, data flow
+- **docs/API.md** — REST endpoints, request/response formats
+- **docs/DATABASE.md** — Firestore collections, subcollections, indexes, query patterns
+- **docs/ENVIRONMENT.md** — backend/frontend env vars, Firestore auth
+- **docs/TESTING.md** — test architecture, mocks, running tests
+- **docs/KNOWN_ISSUES.md** — security issues, bugs, code quality issues with resolution status
+- **EVALUATION.md** — full-stack assessment (this document)
+- **MIGRATION_PLAN.md** — Heroku to VPS migration plan
+- **.env.example** — documents required SECRET env var
 
-### What's missing
-- Setup and installation instructions
-- Environment variable documentation (`.env.example`)
-- API endpoint documentation (no OpenAPI/Swagger)
-- Architecture overview
-- Database schema documentation
-- Deployment instructions
+### What's still missing
 - Contributing guidelines
 - License file
-- Inline code documentation — almost no JSDoc, no function descriptions, no parameter docs
-- The few comments that exist are informal (`"this function is kind of nasty"`, `"oops"`, `"oops2"`)
+- Inline code documentation (JSDoc)
+- README is still minimal (3 lines)
 
 ---
 
-## 7. DevOps / CI — D-
+## 7. DevOps / CI — C+
 
-### What exists
-- `Procfile` — Heroku process definitions for web and worker dynos
-- Dependabot — automated dependency update PRs are being created
+### What exists now
+- **GitHub Actions CI** — two parallel jobs (backend-tests, frontend-tests), Node 18+20 matrix
+- `Procfile` — process definitions for web and worker dynos
+- Dependabot — automated dependency update PRs, now gated by CI
 - `.gitignore` files for both backend and frontend
 
-### What's missing
-- **No CI pipeline** — no GitHub Actions, no Travis, no CircleCI
+### What's still missing
 - **No Dockerfile or docker-compose** — no containerization
 - **No pre-commit hooks** — no husky, no lint-staged
 - **No ESLint on backend** — only frontend has ESLint (default CRA config)
 - **No Prettier or code formatting** enforcement
-- **No automated deployment** — Dependabot PRs are merged without any test gate
-- **Build artifacts committed** — `hackernews-frontend/build/` is checked into git (should be built in CI)
-
-The Dependabot PRs being merged without CI means dependency updates go to production **with zero automated verification**.
+- **No automated deployment pipeline**
 
 ---
 
-## 8. Performance — C
+## 8. Performance — C+
 
-Adequate for current scale (likely a small user base given this is a personal project).
+Adequate for current scale. Firestore migration simplified some concerns.
 
 ### Database
-- **No indexes** beyond `unique: true` on `id` fields. Missing indexes on:
-  - `stories.time` (used in range queries in worker.js and storyService.js)
-  - `stories.updated` (used in range queries in worker.js)
-  - `stories.score` (used in sort)
-  - `users.username` (used in `findOne`)
-- **Skip-based pagination** — `storyService.js` uses `.skip(n)` which degrades linearly with offset
-- No compound indexes, no query optimization
-
-### Worker
-- Four separate `deleteMany()` calls could be consolidated
-- Four separate update scans could be batched
-- No connection pooling configuration
+- Firestore auto-indexes single-field queries
+- Client-side sorting required for cross-field queries (Firestore constraint)
+- Zero-padded doc IDs enable lexicographic ordering
 
 ### Frontend
 - **No virtualization** — renders all stories at once (up to 500)
 - **No code splitting** — entire app loaded at once
-- jQuery loaded for Bootstrap but barely used — heavy dead weight
 - Five FontAwesome packages for minimal icon usage — heavy bundle
 - No `React.memo()` or `useCallback()` — components re-render unnecessarily
-- No caching headers on API responses (no ETag, Cache-Control, or Last-Modified)
+- No caching headers on API responses
 
 ### Positives
-- API uses field projection (only fetches needed fields from MongoDB)
 - Results are capped at 500
 - Worker updates are tiered by story age — smart resource allocation
+- Dead deps removed (jQuery, popper.js) — lighter bundle
 
 ---
 
-## 9. Dependencies — C
+## 9. Dependencies — C+
 
 ### Positives
 - Dependabot is enabled and actively creating PRs
-- Core dependencies are reasonably current (Mongoose 8.x, React 18, Express 4.21)
+- CI now gates Dependabot PRs — no more blind merges
+- Core dependencies are reasonably current (React 18, Express 4.21, Firestore)
 - `package-lock.json` committed for deterministic builds
+- Dead deps removed (jquery, popper.js, react-icons, typescript, mongoose)
 
-### Concerns
-- `jquery ^3.6.4` — dependency but barely used; unnecessary attack surface
-- `popper.js ^1.16.0` — deprecated (replaced by @popperjs/core 2.x)
+### Remaining concerns
 - `moment ^2.29.4` — in maintenance mode; `date-fns` or `dayjs` recommended
-- `react-icons ^4.8.0` — installed but never imported (dead dependency)
-- `typescript ^5.0.4` — installed but completely unused
-- `mongoose-unique-validator ^5.0.1` — may not work correctly with Mongoose 8.x
-- No `npm audit` in any pipeline
+- `react-scripts@5.0.1` (CRA) — unmaintained, no upstream fixes
+- No `npm audit` in CI pipeline
 - No license file
-- Build output committed to git
-- Dependabot PRs merged without any CI gate
 
 ---
 
 ## Open Branches and PRs
 
-The repository has 15 branches and 13 open PRs:
-
-| Category | Items | Recommendation |
-|----------|-------|----------------|
-| 12 Dependabot PRs (#60-#71) | Security patches and dep updates spanning Mar 2025 — Feb 2026 | Set up CI first, then batch-merge after tests pass |
-| `claude/repo-evaluation-review-kANiL` (PR #72) | Previous EVALUATION.md | Superseded by this document |
-| `claude/heroku-vps-migration-plan-Z1nU8` | MIGRATION_PLAN.md, no PR | Open a PR or merge the plan |
-
-The Dependabot backlog includes security-relevant updates (lodash, axios, webpack, node-forge, jws). They should be addressed, but merging them without test infrastructure continues the pattern of unverified changes.
+As of Phase 12:
+- PR #72 (evaluation) closed — superseded by this document
+- PRs #69, #70, #75 closed — deps not in direct dependencies
+- Stale branches deleted: `claude/repo-evaluation-review-kANiL`, `claude/heroku-vps-migration-plan-Z1nU8`
+- 11 Dependabot PRs remain (#60-#68, #71, #73, #74) — CI now gates merges
+- Remaining Dependabot PRs cover: axios, qs/express, jws, form-data, node-forge, js-yaml, webpack, brace-expansion, on-headers/compression, http-proxy-middleware, @babel/runtime
 
 ---
 
@@ -287,60 +249,68 @@ The Dependabot backlog includes security-relevant updates (lodash, axios, webpac
 
 | File | Lines | Role | Key Issues |
 |------|-------|------|------------|
-| `app.js` | 31 | Express setup | Wide-open CORS |
+| `app.js` | ~35 | Express setup | Helmet + restricted CORS added |
 | `bin/www` | 91 | Server entry | Generated boilerplate, fine |
-| `worker.js` | 210 | Background sync | Duplicated logic, silent failures, Finnish strings |
-| `topdump.js` | 55 | One-off bootstrap | Separate DB connection, deprecated Mongoose options |
-| `routes/api.js` | 126 | API routes | Password logging, hanging catch, no rate limit |
-| `services/hackernews.js` | 197 | HN API client | Regex HTML parsing, 7+ silent catch blocks |
-| `services/storyService.js` | 149 | DB operations | Massive duplication, connection at module load |
-| `models/stories.js` | 16 | Story schema | No validation, no indexes |
-| `models/users.js` | 9 | User schema | No username index, id field never set |
-| `models/comments.js` | 13 | Comment schema | Dead code — unused |
-| `util/config.js` | 25 | Configuration | Clean; SECRET not included |
-| `util/middleware.js` | 18 | Error handling | Exposes error.message to client |
-| `App.js` (FE) | 224 | React root | Token in localStorage, hardcoded URL |
-| `Story.js` | 70 | Story card | No URL protocol validation |
+| `worker.js` | ~120 | Background sync | Silent catch blocks |
+| `routes/api.js` | ~134 | API routes | JWT inline (no auth middleware) |
+| `services/firestore.js` | ~50 | Firestore singleton | Lazy init, env-prefixed collections |
+| `services/hackernews.js` | ~192 | HN API client | Regex HTML parsing, silent catch blocks |
+| `services/storyService.js` | ~100 | DB operations | Query pattern duplication |
+| `util/config.js` | 25 | Configuration | Clean |
+| `util/middleware.js` | 18 | Error handling | Generic error responses |
+| `App.js` (FE) | ~224 | React root | Token in localStorage |
+| `Story.js` | ~70 | Story card | `isSafeUrl()` added |
 | `StoryList.js` | 15 | Story list | No memoization |
-| `storyService.js` (FE) | 25 | API client | Duplicated baseUrl, hardcoded Heroku URL |
-| `loginService.js` | 19 | Auth client | Error handling commented out, hardcoded URL |
+| `storyService.js` (FE) | ~25 | API client | Uses relative URLs |
+| `loginService.js` | ~19 | Auth client | Uses relative URLs |
 
 ---
 
 ## Prioritized Recommendations
 
-### Immediate (< 5 minutes each)
-1. **Remove password logging** — delete `console.log` at `routes/api.js:104`
-2. **Add JWT expiration** — add `{ expiresIn: '24h' }` to `jwt.sign()` at `routes/api.js:112`
-3. **Fix hanging response** — add `res.status(500).json(...)` in catch at `routes/api.js:49`
-4. **Add null check** in `getHidden()` at `services/storyService.js:20`
+### Completed (Phases 1-12)
+- ~~Remove password logging~~ ✓
+- ~~Add JWT expiration~~ ✓
+- ~~Fix hanging response~~ ✓
+- ~~Set up GitHub Actions CI~~ ✓
+- ~~Add backend + frontend tests (87 total)~~ ✓
+- ~~Restrict CORS~~ ✓
+- ~~Add rate limiting~~ ✓
+- ~~Fix hardcoded frontend URLs~~ ✓
+- ~~Remove dead dependencies~~ ✓
+- ~~Add security headers (helmet)~~ ✓
+- ~~Fix fire-and-forget bugs~~ ✓
+- ~~Fix HTTP → HTTPS URLs~~ ✓
+- ~~Fix sanitary() → isValidUsername()~~ ✓
 
-### Short-term (1-2 hours each)
-5. **Set up GitHub Actions CI** — `npm install && npm test` workflow to gate Dependabot PRs
-6. **Add basic backend tests** — install Jest + Supertest, cover the 4 API endpoints
-7. **Restrict CORS** to the actual frontend domain
-8. **Add rate limiting** on `/api/v1/login` with express-rate-limit
-
-### Medium-term
-9. **Fix hardcoded frontend URLs** — use relative paths (`/api/v1/`) since Express serves the frontend
-10. **Add database indexes** on `time`, `updated`, `score`, `username`
-11. **Refactor duplicated query logic** in `storyService.js` and `worker.js`
-12. **Write a proper README** with setup instructions, env vars, architecture, and API docs
-13. **Remove dead dependencies** — TypeScript, react-icons, Comment model
+### Remaining
+1. **Merge Dependabot PRs** — 11 open, now gated by CI
+2. **Refactor duplicated query logic** in `storyService.js`
+3. **Write a proper README** with setup instructions
+4. **Add auth middleware** — extract JWT verification from inline route handlers
+5. **Consider CRA replacement** — react-scripts is unmaintained
+6. **Add frontend virtualization** — for rendering large story lists
+7. **Add end-to-end tests**
+8. **Validate SECRET env var** on startup
 
 ---
 
 ## Git History Assessment
 
-- 58+ commits, majority are Dependabot merges
-- No evidence of feature branches or code review process
-- No PR template, no required reviewers
-- Commit messages are auto-generated (Dependabot) or terse
+- 60+ commits including Dependabot merges and Phase 1-12 work
+- CI now gates all PRs — Dependabot merges are verified
+- Stale branches and PRs cleaned up in Phase 12
 
 ---
 
 ## Conclusion
 
-This is a well-scoped personal project that solves a real problem. The architecture is sensible, the code is readable, and the feature set is complete. The main gaps are in surrounding engineering practices: security hardening, testing, CI, and documentation.
+This is a well-scoped personal project that solves a real problem. Since the initial evaluation (C-), the project has improved substantially through Phases 1-12:
 
-Items 1-4 above are 5-minute fixes that would eliminate the worst vulnerabilities. Items 5-6 would establish the foundation needed to safely merge the backlog of 12 dependency updates. Together, those 6 items would move the overall grade from C- to a solid C+.
+- **Security (F → B)**: Helmet, CORS, rate limiting, JWT expiration, input validation, error sanitization
+- **Testing (F → A-)**: 87 tests with in-memory mock, ~1s backend runtime
+- **Documentation (F → B)**: CLAUDE.md, 6 docs/ files, KNOWN_ISSUES, EVALUATION
+- **DevOps (D- → C+)**: GitHub Actions CI with Node 18+20 matrix
+- **Architecture (C+ → B-)**: Firestore migration, lazy singleton, env-prefixed collections
+
+The remaining gaps are: unmaintained CRA (react-scripts), frontend performance (no virtualization), and some code quality issues (duplication, informal logging). The overall grade has improved from **C- to B-**.
