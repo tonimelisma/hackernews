@@ -63,10 +63,8 @@ npm test && cd hackernews-frontend && npm test -- --watchAll=false && cd ..
 
 ## Documentation
 
-- [CLAUDE.md](CLAUDE.md) - Project governance, architecture, gotchas, and learnings
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - System overview and data flow
-- [docs/API.md](docs/API.md) - REST API reference
-- [docs/DATABASE.md](docs/DATABASE.md) - Firestore schema and query patterns
-- [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) - Environment variables
-- [docs/TESTING.md](docs/TESTING.md) - Test architecture and mocks
-- [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) - Known issues and resolution status
+- [CLAUDE.md](CLAUDE.md) — Project governance, architecture, gotchas, health, and backlog
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System overview, data flow, and environment variables
+- [docs/API.md](docs/API.md) — REST API reference
+- [docs/DATABASE.md](docs/DATABASE.md) — Firestore schema and query patterns
+- [docs/TESTING.md](docs/TESTING.md) — Test architecture and mocks

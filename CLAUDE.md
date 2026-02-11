@@ -42,9 +42,8 @@ You own this repo. You are the maintainer. There is no "someone else" — if the
 2. **Repo is clean.** `git status` shows no uncommitted changes. You test, commit, and push. Always.
 3. **Bugs get regression tests first.** When you find a bug, write a failing test that reproduces it *before* writing the fix. The test proves the bug exists and proves the fix works.
 4. **All docs are updated.** Every iteration, review and update all documentation to reflect the current state of the code:
-   - This file (`CLAUDE.md`) — architecture, gotchas, test counts, learnings
+   - This file (`CLAUDE.md`) — architecture, gotchas, test counts
    - All files under `docs/` (see Documentation section below)
-   - `docs/KNOWN_ISSUES.md` if new issues were found or old ones resolved
 5. **No broken windows.** If you encounter a test failure, a stale doc, uncommitted changes, warnings, code smells, or inconsistent state — you fix it. It's your repo. There is no "someone else's problem." Never dismiss anything as "pre-existing noise" or "expected warnings." If it's in the output, you own it. Fix it or document exactly why it can't be fixed yet.
 6. **Repo health checked.** Before finishing, check:
    - `gh pr list --state open` — review open PRs, close stale ones
@@ -79,6 +78,8 @@ hackernews/
 └── docs/                   # LLM-geared documentation
 ```
 
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow, and environment variables.
+
 ## Key Architectural Constraints & Gotchas
 
 1. **Firestore lazy singleton**: `services/firestore.js` creates the Firestore client on first use via `getDb()`. No module-load side effects. `setDb()` allows test injection.
@@ -91,7 +92,7 @@ hackernews/
 
 5. **No input validation on API**: The `/get` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint has `isValidUsername()` validation.
 
-6. **`getHidden` returns empty array for missing users**: If username doesn't exist in Firestore, `getHidden` returns `[]` (no hidden stories). Fixed in Phase 15 — previously crashed with null pointer.
+6. **`getHidden` returns empty array for missing users**: If username doesn't exist in Firestore, `getHidden` returns `[]` (no hidden stories).
 
 7. **Node.js 25+ crashes the app**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. `SlowBuffer` was removed in Node 25. No upstream fix available. **Use Node.js 18 or 20.**
 
@@ -105,15 +106,10 @@ hackernews/
 
 All of these must be kept current with every change:
 
-- [Architecture](docs/ARCHITECTURE.md) — system overview, directory structure, data flow
+- [Architecture](docs/ARCHITECTURE.md) — system overview, directory structure, data flow, environment variables
 - [API Reference](docs/API.md) — REST endpoints, request/response formats
 - [Database Schemas](docs/DATABASE.md) — Firestore collections, subcollections, indexes, query patterns
-- [Environment Variables](docs/ENVIRONMENT.md) — backend/frontend env vars, Firestore auth
 - [Testing Guide](docs/TESTING.md) — test architecture, mocks, running tests, technical details
-- [Known Issues](docs/KNOWN_ISSUES.md) — security issues, bugs, code quality issues
-- [Codebase Evaluation](EVALUATION.md) — initial full-stack assessment
-- [Backlog](BACKLOG.md) — future work items
-- [Migration Plan](MIGRATION_PLAN.md) — Heroku to VPS migration plan
 
 ## Test Counts
 
@@ -125,148 +121,71 @@ All of these must be kept current with every change:
 | Frontend service (storyService, loginService) | 6 |
 | **Total** | **87** |
 
-## Learnings Log
+## Project Health
 
-### Phase 0
-- Initial CLAUDE.md created with project structure analysis
-- Identified 6 key architectural gotchas from source code review
+**Overall: B** — Working application with solid test coverage and good documentation.
 
-### Phase 1 — Backend Test Infrastructure
-- Jest 30 installed with mongodb-memory-server for in-memory DB testing
-- `setupFiles` in jest.config.js runs before the test framework — can't use `beforeAll`/`afterAll` there
-- Solution: shared `tests/setup.js` module with `connect`/`clearDatabase`/`closeDatabase` helpers, imported by each test file
-- The `storyService.js` module-load connection fails silently when `DB_URI` is undefined — this is fine in tests because we connect to the in-memory server afterward
+| Category | Grade | Summary |
+|----------|-------|---------|
+| Functionality | B | Core features work; hntoplinks scraper is brittle (regex) |
+| Security | B+ | Helmet, CORS, rate limiting, JWT expiry, SECRET validation |
+| Testing | A- | 87 tests, in-memory mock, ~1s backend runs |
+| Code Quality | B+ | Standardized logging, dead code removed, auth middleware extracted |
+| Architecture | B | Firestore migration, lazy singleton, env-prefixed collections |
+| Documentation | B+ | CLAUDE.md + 4 reference docs, proper README |
+| DevOps / CI | B- | GitHub Actions Node 18+20 matrix, npm audit in CI; no Docker/linting |
+| Performance | C+ | Client-side sort for Firestore constraint; no virtualization |
+| Dependencies | B | 0 backend vulns; 9 frontend vulns locked behind react-scripts |
 
-### Phase 2 — Backend Unit Tests
-- `jest.resetModules()` + `process.env` manipulation needed to test config.js (it caches at require-time)
-- `axios` mock must be set up before requiring `services/hackernews.js`
-- `checkStoryExists` and `addStories`/`updateStories` need real DB even though they're in the "hackernews" service
+### Open Issues
 
-### Phase 3 — Backend Integration Tests
-- `jsonwebtoken` breaks on Node.js 25 (SlowBuffer removed from buffer module)
-- Solution: mock `jsonwebtoken` entirely in api.test.js with a simple token-store implementation
-- `upsertUser` is fire-and-forget (no await) — API test needs `setTimeout` delay to verify user creation
-- Confirmed `getHidden` null pointer bug with test: `Users.findOne()` returns null for nonexistent user
+- **Node.js 25+ crash** — `jsonwebtoken` chain uses removed `SlowBuffer`; no upstream fix
+- **Token in localStorage** (`App.js`) — XSS vector; should migrate to HTTP-only cookie
+- **Bootstrap JS import** (`App.js`) — side-effect import at module scope
+- **CRA unmaintained** — `react-scripts@5.0.1` has 9 unfixable transitive vulnerabilities
 
-### Phase 4 — Frontend Test Infrastructure
-- `npm install` in frontend needs `--legacy-peer-deps` due to react-scripts@5.0.1 peer dep conflicts
-- CRA's Jest config doesn't transform `axios` (ESM) — added `transformIgnorePatterns` to frontend package.json
-- `@testing-library/dom` is a peer dep of `@testing-library/react` that must be explicitly installed
+### Vulnerability Status
 
-### Phase 5 — Frontend Tests
-- `moment` mock needs `__esModule: true` + `default` export pattern for CRA's Babel transform
-- `getByText` uses exact matching — text inside multi-content elements (like `<small>` with icons) needs regex matchers
-- Bootstrap JS must be mocked (`jest.mock("bootstrap/dist/js/bootstrap.bundle.min", () => {})`) to avoid JSDOM errors
-- React 18 `act()` warnings are expected noise — the production code uses React 16's `ReactDOM.render` API
+- Backend: **0 vulnerabilities** — `npm audit` enforced in CI at `moderate` level
+- Frontend: **9 unfixable vulnerabilities** locked behind `react-scripts@5.0.1` — `npm audit` enforced in CI at `critical` level
 
-### Phase 6 — CI Pipeline
-- Two parallel jobs: `backend-tests` and `frontend-tests`, each with Node 18+20 matrix
-- Frontend `npm ci` needs `--legacy-peer-deps` flag in CI too
+## Backlog
 
-### Phase 7 — Documentation
-- All docs structured for LLM consumption: tables, code blocks, explicit paths
-- Documented 6 security issues, 6 bugs, and 10 code quality issues in KNOWN_ISSUES.md
+### Security
+- JWT from localStorage to HTTP-only cookie
 
-### Phase 8 — Final Cleanup
-- 86 total tests: 59 backend + 27 frontend, all passing
-- 0 production code changes made
-- All known bugs documented with corresponding test coverage
+### Build & Tooling
+- CRA to Vite migration (unblocks fixing 9 frozen frontend vulnerabilities)
+- Add ESLint to backend
+- Add pre-commit hooks (husky + lint-staged)
+- Migrate Heroku → VPS (Docker Compose + nginx + certbot)
 
-### Phase 9 — MongoDB → Firestore Migration
-- Replaced MongoDB/Mongoose with Google Cloud Firestore (`@google-cloud/firestore`)
-- Created `services/firestore.js` as lazy singleton with environment-prefixed collection refs
-- Rewrote `services/storyService.js` — no module-load connection, uses Firestore SDK
-- Rewrote `services/hackernews.js` — replaced Mongoose model ops with Firestore doc ops
-- Rewrote `worker.js` — removed all pruning logic (unnecessary with 1GB Firestore free tier)
-- Deleted `models/` directory (stories.js, users.js, comments.js)
-- Removed `mongoose`, `mongoose-unique-validator`, `mongodb-memory-server` dependencies
-- Tests use real Firestore (dev/ci prefix) instead of mongodb-memory-server
-- `--experimental-vm-modules` required: gaxios uses dynamic `import()`, Jest blocks without this flag
-- `orderBy("id", "desc")` instead of `orderBy("__name__", "desc")` to avoid custom index requirement
-- Composite indexes needed for multi-inequality worker queries (time + updated)
-- 82 total tests: 55 backend + 27 frontend (removed 4 obsolete tests, added 2 new worker tests, net -4)
+### API & Backend
+- RESTful API naming (`/get` → `/stories`)
+- Replace `moment.js` with `dayjs`
+- Extract worker `main()` for direct testability
 
-### Phase 10 — Security & Functionality Fixes
-- Removed password logging from login route (`console.log` of pw → username only)
-- Added JWT expiration (`{ expiresIn: '24h' }`) to `jwt.sign()`
-- Fixed hanging response in GET `/get` catch block — now returns 500 with generic error
-- Added `helmet()` middleware for security headers (CSP, HSTS, X-Frame-Options, etc.)
-- Restricted CORS: `localhost:3000` in development, `false` (same-origin) in production
-- Added `express-rate-limit` on POST `/login`: 10 requests per 15-minute window
-- Fixed error object leakage in `/hidden` routes — now returns `"authentication error"` string
-- Added `isSafeUrl()` in Story component to prevent `javascript:` URL protocol injection
-- Replaced Finnish/informal log strings (`"uppistakeikkaa"`, `"err"`, `"whoops"`) with English
-- Replaced hardcoded Heroku URLs with relative paths + CRA proxy for dev
-- Removed dead frontend dependencies: `jquery`, `popper.js`, `react-icons`, `typescript`
-- Rate limiter state persists across test cases in same process — test needs to account for cumulative request count
-- 87 total tests: 58 backend + 29 frontend (+3 backend, +2 frontend)
+### Frontend
+- Replace FontAwesome 5 packages with lighter alternative
+- Remove Bootstrap JS side-effect import
+- Add virtualization for large story lists
 
-### Phase 11 — In-Memory MockFirestore for Tests
-- Created `tests/mocks/firestore-mock.js`: ~230-line in-memory Firestore mock with MockFirestore, MockCollectionRef, MockDocRef, MockQuery, MockDocSnapshot, MockQuerySnapshot, MockWriteBatch, MockTimestamp
-- Created `tests/mocks/firestore-sdk-shim.js`: 2-line shim exporting `{ Firestore: MockFirestore }` as drop-in replacement
-- Added `moduleNameMapper` in `jest.config.js` to redirect `@google-cloud/firestore` → shim, preventing real SDK from loading
-- Simplified `tests/setup.js`: `connect()` just suppresses console, `clearDatabase()` calls `getDb()._clear()`
-- Removed `NODE_OPTIONS=--experimental-vm-modules` from `package.json` test script (no longer needed)
-- MockTimestamp wraps Date objects on `.set()`/`.update()` so `doc.data().time.toDate()` works as expected
-- Storage model: flat `Map<collectionPath, Map<docId, data>>` — subcollections stored as paths like `dev-users/testuser/hidden`
-- Where operators: `>`, `<`, `>=`, `<=`, `==` — Date/MockTimestamp values unwrapped to milliseconds for comparison
-- Reordered rate-limit test to be last in login describe block — fast mock exposed pre-existing rate limit exhaustion issue
-- Backend tests now run in ~1 second (down from 30+ seconds), require no credentials or network
-- 87 total tests: 58 backend + 29 frontend (unchanged)
+### Testing & Quality
+- Add end-to-end tests (Playwright or Cypress)
+- Add code coverage reporting
 
-### Phase 12 — CI Fix, Bug Fixes, Repo Cleanup
-- Added `axios` as explicit frontend dependency (was hoisted from root, broke CI's isolated `npm ci`)
-- Removed GCP credential setup from CI workflow (backend tests use in-memory mock since Phase 11)
-- Added `await` to `upsertHidden()` and `upsertUser()` — eliminated fire-and-forget bugs
-- Reordered `upsertUser()` before `res.json()` in login route — user is now created before response
-- Removed `setTimeout(100ms)` workaround in api.test.js "creates user in DB" test
-- Changed 5 hntoplinks URLs from `http://` to `https://`
-- Renamed `sanitary()` to `isValidUsername()` with strict `[a-zA-Z0-9_-]+` regex (removed `\s`)
-- Created `.env.example` documenting required `SECRET` env var
-- Closed PR #72 (superseded), closed PRs #69/#70/#75 (deps not in direct dependencies)
-- Deleted stale remote branches: `claude/repo-evaluation-review-kANiL`, `claude/heroku-vps-migration-plan-Z1nU8`
-- Updated hntoplinks URL assertions in unit tests to match HTTPS change
-- Added DOD item #6 (repo health: check PRs, CI, branches)
-- 87 total tests: 58 backend + 29 frontend (unchanged)
+### Documentation & Governance
+- Add JSDoc to exported functions
+- Add CONTRIBUTING.md
+- Add LICENSE file
 
-### Phase 13 — Code Quality, Auth Middleware, README, Docs Cleanup
-- Replaced 8 informal error strings (`"oops"`, `"whoops"`, `"opp"`) in `services/hackernews.js` with descriptive messages
-- Extracted `authenticateToken` middleware in `routes/api.js` — JWT verification no longer duplicated across GET/POST `/hidden`
-- Auth-related catch blocks in `/hidden` routes now return 500 (internal error) instead of 401 for non-auth failures
-- Added `process.env.SECRET` validation in `bin/www` — server exits with FATAL message if missing
-- Placed SECRET check in `bin/www` (not `app.js`) so tests can `require('../../app')` without triggering it
-- Migrated `hackernews-frontend/src/index.js` from `ReactDOM.render` to `createRoot` (React 19 API)
-- Wrote proper README.md with features, tech stack, prerequisites, quick start, testing, and docs links
-- Fixed stale EVALUATION.md: removed MongoDB references (`$addToSet`, `findOne`, `models/comments.js`), updated dependency versions (React 19, Express 5), cleared resolved Dependabot PRs, updated recommendations
-- Updated KNOWN_ISSUES.md: marked SECRET validation and ReactDOM.render as resolved
-- Overall grade improved from B- to B
-- 87 total tests: 58 backend + 29 frontend (unchanged)
+## Key Learnings
 
-### Phase 14 — Security Fixes, Dead Code Removal, Code Quality Cleanup
-- Backend: `npm audit fix` — 0 vulnerabilities (lodash, brace-expansion already fixed upstream)
-- Frontend: `npm audit fix` — reduced from 27 to 9 vulnerabilities; remaining 9 locked behind `react-scripts` (nth-check, postcss, webpack-dev-server)
-- Added `@babel/plugin-proposal-private-property-in-object` as frontend devDep — silences CRA build warning
-- Removed commented try-catch in `loginService.js` (caller handles errors)
-- Removed 7 debug `console.log` statements from `App.js`
-- Removed dead jQuery code (`// TODO FIXME` + `//$("#loginDropdownMenu").dropdown("toggle")`) from `App.js`
-- Removed commented MongoDB error check from `util/middleware.js`
-- Fixed error handler: `console.log` → `console.error` with descriptive message
-- Deleted `hackernews-frontend/src/serviceWorker.js` (unused CRA boilerplate), removed import from `index.js`
-- Deleted `topdump.js` (stale database population script)
-- Deleted `scripts/` directory: `export-from-mongodb.js`, `import-to-firestore.js`, and `data/` (12MB migration artifacts)
-- `var` → `const` in `services/hackernews.js:71` (articles regex match)
-- `var` → `let` in `Story.js:27` (favicon, conditionally assigned)
-- Resolved TODO: `getTopStories()` now deduplicates IDs with `[...new Set(ids)]`
-- 87 total tests: 58 backend + 29 frontend (unchanged)
-
-### Phase 15 — Logging Cleanup, Error Handling, Bug Fix, CI Audit
-- `console.log` → `console.error` for all error catch blocks in `hackernews.js`, `worker.js`, `api.js`
-- Removed debug/request logging: `getting url`, per-page URL, `getting hidden for username`, `adding body.hidden`, `login attempt for`
-- Worker logging consolidated: removed tier announcements and "none to update" messages, single-line memory summary
-- Removed favicon parse `console.log` from Story.js — catch block now sets fallback favicon silently
-- Fixed `getHidden` null pointer bug: returns `[]` when user doesn't exist instead of crashing
-- Added `npm audit` to CI: `--audit-level=moderate` for backend, `--audit-level=critical` for frontend
-- `tests/setup.js` now suppresses both `console.log` and `console.error` globally — individual test spies are optional
-- Created `BACKLOG.md` with all remaining future work items
-- Convention: `console.error` for errors, `console.log` for operational info (startup, sync progress)
-- 87 total tests: 58 backend + 29 frontend (unchanged)
+- **Firestore query constraint**: Can't `where()` on one field and `orderBy()` on another. Client-side sort needed for stories (time filter + score sort). Composite indexes required for multi-inequality worker queries.
+- **In-memory MockFirestore**: `moduleNameMapper` in `jest.config.js` redirects `@google-cloud/firestore` to an in-memory mock. Storage: flat `Map<collectionPath, Map<docId, data>>`. MockTimestamp wraps Date objects on `.set()`/`.update()`. Backend tests run in ~1 second with no credentials or network.
+- **Node.js 25+ incompatibility**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. Must mock `jsonwebtoken` in tests; use Node.js 18/20 in production.
+- **CRA testing quirks**: `axios` (ESM) needs `transformIgnorePatterns`; `moment` mock needs `__esModule: true` + `default` pattern; Bootstrap JS must be mocked to avoid JSDOM errors.
+- **Rate limiter state persists across tests** — rate-limit test must be last in its describe block.
+- **`bin/www` for startup checks**: SECRET validation lives in `bin/www` (not `app.js`) so tests can `require('../../app')` without triggering exit.
+- **Logging convention**: `console.error` for errors (catch blocks), `console.log` for operational info (startup, sync progress). `tests/setup.js` suppresses both globally.
+- **Frontend `npm install` needs `--legacy-peer-deps`** due to react-scripts@5.0.1 peer dep conflicts.

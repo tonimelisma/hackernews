@@ -29,9 +29,9 @@ Fetch stories sorted by score descending.
 ]
 ```
 
-**Known issues:**
-- Invalid `timespan` values silently default to `"All"` — no error returned
-- No response sent on internal DB error (request hangs until timeout)
+**Error:** `500` on internal DB error.
+
+**Note:** Invalid `timespan` values silently default to `"All"` — no error returned.
 
 ---
 
@@ -47,11 +47,10 @@ Get hidden story IDs for authenticated user.
 ```
 
 **Error responses:**
-- `401` — missing/invalid token: `{ "error": "invalid token" }` or `{ "error": <Error object> }`
+- `401` — missing/invalid token: `{ "error": "invalid token" }`
+- `500` — internal error: `{ "error": "internal error" }`
 
-**Known issues:**
-- If user doesn't exist in DB, crashes with null pointer (no null check on `findOne` result)
-- Error response serializes the Error object directly (`{ "error": e }`) instead of `e.message`
+Returns `[]` if the user has no hidden stories or doesn't exist in the database.
 
 ---
 
@@ -71,15 +70,19 @@ Add a story ID to authenticated user's hidden list.
 { "hidden": 12345 }
 ```
 
-**Known issues:**
-- `upsertHidden` is called without `await` — fire-and-forget, errors are silently lost
-- Uses `$addToSet` so duplicates are prevented
+**Error responses:**
+- `401` — missing/invalid token: `{ "error": "invalid token" }`
+- `500` — internal error: `{ "error": "internal error" }`
+
+Uses Firestore `set()` on a subcollection doc — naturally idempotent (hiding the same story twice is a no-op).
 
 ---
 
 ### POST /login
 
-Authenticate via HackerNews credentials.
+Authenticate via HackerNews credentials. Proxies the login request to `news.ycombinator.com`.
+
+**Rate limited:** 10 requests per 15-minute window (via `express-rate-limit`).
 
 **Request body:**
 ```json
@@ -90,10 +93,14 @@ Authenticate via HackerNews credentials.
 }
 ```
 
+**Validation:** Username must match `[a-zA-Z0-9_-]+` (`isValidUsername()`). Returns `400` if invalid.
+
 **Response (success):** `200 OK`
 ```json
 { "token": "eyJhbGciOiJIUzI1NiJ9..." }
 ```
+
+JWT expires after **24 hours**. Signed with `process.env.SECRET` (validated on server startup).
 
 **Response (failure):** `401`
 ```json
@@ -105,9 +112,9 @@ Authenticate via HackerNews credentials.
 { "error": "missing fields" }
 ```
 
-**Known issues:**
-- Passwords are logged to console via `console.log("logging in: ", goto, pw, acct)`
-- `sanitary()` regex rejects valid HN usernames containing `.` or `@`
-- `upsertUser` is called without `await` — fire-and-forget
-- JWT secret comes from `process.env.SECRET` — undefined in dev without .env
-- JWT has no expiration
+## Security
+
+- All endpoints served behind `helmet()` middleware (CSP, HSTS, X-Frame-Options, etc.)
+- CORS restricted to `localhost:3000` in development, same-origin in production
+- Passwords are never stored — only proxied to HN for authentication
+- Protected routes use `authenticateToken` middleware for JWT verification

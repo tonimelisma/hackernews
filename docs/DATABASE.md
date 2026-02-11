@@ -54,7 +54,7 @@ Document ID: story ID as string (e.g., `"42345678"`)
 | `services/firestore.js:setDb()` | Allows tests to inject a custom Firestore instance |
 | `worker.js` | No explicit connection management — Firestore handles connections automatically |
 
-**Key difference from MongoDB era:** No module-load connection side effect. `storyService.js` imports collection refs from `firestore.js` but the client is only created when first used.
+**No module-load connection side effect.** `storyService.js` imports collection refs from `firestore.js` but the client is only created when first used.
 
 ## Composite Indexes
 

@@ -22,18 +22,18 @@ npm test && cd hackernews-frontend && npm test -- --watchAll=false && cd ..
 | `tests/unit/middleware.test.js` | Unit | 3 | `unknownEndpoint` (404), `errorHandler` (500 + next) |
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
 | `tests/unit/hackernewsService.test.js` | Unit+DB | 15 | All HN API functions (axios mocked), Firestore operations |
-| `tests/integration/storyService.test.js` | Integration | 16 | All storyService CRUD against MockFirestore |
-| `tests/integration/api.test.js` | Integration | 17 | Full HTTP request/response via supertest |
-| `tests/integration/worker.test.js` | Integration | 3 | Worker staleness queries + latest story lookup |
+| `tests/integration/storyService.test.js` | Integration | 14 | All storyService CRUD against MockFirestore |
+| `tests/integration/api.test.js` | Integration | 18 | Full HTTP request/response via supertest |
+| `tests/integration/worker.test.js` | Integration | 7 | Worker staleness queries + latest story lookup |
 | **Total** | | **58** | |
 
 ### Frontend (Jest + React Testing Library)
 
 | File | Type | Tests | What it covers |
 |------|------|-------|----------------|
-| `src/App.test.js` | Component | 8 | App rendering, timespan, loading, auth |
-| `src/components/StoryList.test.js` | Component | 4 | List rendering, hidden filtering |
-| `src/components/Story.test.js` | Component | 9 | Story card: title, author, score, time, favicon, hide |
+| `src/App.test.js` | Component | 15 | App rendering, timespan, loading, auth |
+| `src/components/StoryList.test.js` | Component | 5 | List rendering, hidden filtering |
+| `src/components/Story.test.js` | Component | 3 | Story card: title, author, score, time, favicon, hide |
 | `src/services/storyService.test.js` | Unit | 4 | Axios calls for stories/hidden |
 | `src/services/loginService.test.js` | Unit | 2 | Axios calls for login |
 | **Total** | | **29** | |
@@ -72,9 +72,9 @@ The mock consists of:
 ### Test Setup
 
 `tests/setup.js` provides:
-- `connect()` — suppresses console.log noise during tests
+- `connect()` — suppresses `console.log` and `console.error` during tests
 - `clearDatabase()` — calls `getDb()._clear()` to wipe all in-memory data
-- `closeDatabase()` — restores console.log
+- `closeDatabase()` — restores console output
 
 Each test file imports setup and uses:
 ```js
@@ -114,9 +114,9 @@ afterAll(async () => await db.closeDatabase());
 | `./services/loginService` | `jest.mock()` | Isolate App component from API |
 | `./Story` | `jest.mock()` | Isolate StoryList from Story rendering |
 
-## Known Issues Documented via Tests
+## Regression Tests for Fixed Bugs
 
-| Test File | Test Name | Issue |
-|-----------|-----------|-------|
-| `storyService.test.js` | "throws when user does not exist" | `getHidden` null pointer crash |
-| `api.test.js` | "returns 400 for unsanitary username" | Overly restrictive `sanitary()` regex |
+| Test File | Test Name | Original Bug |
+|-----------|-----------|--------------|
+| `storyService.test.js` | "returns empty array when user does not exist" | `getHidden` null pointer crash (fixed Phase 15) |
+| `api.test.js` | "returns 400 for unsanitary username" | Overly restrictive username validation (fixed Phase 12, renamed to `isValidUsername()`) |

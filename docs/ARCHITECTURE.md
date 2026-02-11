@@ -30,7 +30,7 @@ HackerNews aggregator with three runtime processes and a Firestore database.
 ```
 hackernews/
 ├── app.js                          # Express app (middleware, routes, static)
-├── bin/www                         # HTTP server bootstrap
+├── bin/www                         # HTTP server bootstrap + SECRET validation
 ├── worker.js                       # Background sync worker (throng, 10m loop)
 ├── package.json                    # Backend dependencies + scripts
 │
@@ -51,24 +51,23 @@ hackernews/
 │   ├── public/                     # Static assets
 │   ├── build/                      # Production build output
 │   └── src/
-│       ├── index.js                # ReactDOM.render entry point (React 16 API)
+│       ├── index.js                # createRoot entry point (React 19)
 │       ├── App.js                  # Main component: stories, auth, timespan filtering
 │       ├── App.css                 # Styles
 │       ├── components/
 │       │   ├── Story.js            # Single story card (favicon, title, author, score, time, hide)
 │       │   └── StoryList.js        # Story list with hidden filtering
-│       ├── services/
-│       │   ├── storyService.js     # Axios client for /get, /hidden
-│       │   └── loginService.js     # Axios client for /login
-│       └── serviceWorker.js        # CRA service worker (unregistered)
-│
-├── scripts/
-│   └── migrate-to-firestore.js     # One-time MongoDB → Firestore migration
+│       └── services/
+│           ├── storyService.js     # Axios client for /get, /hidden
+│           └── loginService.js     # Axios client for /login
 │
 ├── tests/                          # Backend test suites
-│   ├── setup.js                    # Firestore connection + cleanup helpers
+│   ├── setup.js                    # Console suppression + MockFirestore cleanup helpers
+│   ├── mocks/
+│   │   ├── firestore-mock.js       # In-memory Firestore implementation
+│   │   └── firestore-sdk-shim.js   # 2-line shim for moduleNameMapper
 │   ├── unit/                       # Pure unit tests
-│   └── integration/                # Tests with real Firestore + supertest
+│   └── integration/                # Tests with MockFirestore + supertest
 │
 ├── docs/                           # LLM-geared documentation
 │
@@ -96,6 +95,33 @@ hackernews/
 ### Authentication (Frontend → HN → Backend → JWT)
 1. Frontend POSTs credentials to `/api/v1/login`
 2. Backend proxies login to `news.ycombinator.com/login`
-3. If HN redirects to `/news` → success → issue JWT + upsert user
+3. If HN redirects to `/news` → success → issue JWT (24h expiry) + upsert user
 4. JWT stored in localStorage, sent as `Authorization: bearer <token>`
-5. Protected routes (`/hidden`) verify JWT and extract username
+5. Protected routes (`/hidden`) verify JWT via `authenticateToken` middleware and extract username
+
+## Environment Variables
+
+### Backend
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `NODE_ENV` | No | `"production"` → `prod-` collections, `"ci"` → `ci-` collections, anything else → `dev-` |
+| `SECRET` | Yes | JWT signing secret. Validated on startup in `bin/www` — server exits if missing |
+| `PORT` | No | HTTP listen port (default: 3000) |
+
+### Firestore Authentication
+
+| Environment | Auth Method |
+|---|---|
+| Local dev | Application Default Credentials via `gcloud auth application-default login` |
+| Production | Service account key or workload identity (depends on deployment) |
+
+### Config Constants (`util/config.js`)
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `limitResults` | 500 | Max stories per API response |
+
+### Frontend (`hackernews-frontend/src/services/`)
+
+The frontend uses relative URLs (`/api/v1/`) for all API calls. In development, CRA's proxy forwards requests to the backend on port 3000.
