@@ -51,6 +51,7 @@ You own this repo. You are the maintainer. There is no "someone else" — if the
    - `gh run list --limit 5` — CI must be green on master
    - `git branch -r` — delete stale remote branches
    If CI is failing on master, that's YOUR broken build. Fix it first.
+7. **Dependencies are up to date.** Run `ncu` in both root and `hackernews-frontend/`. If anything is outdated, update it (`ncu -u && npm install`), run tests, and commit. No stale versions. Use `--legacy-peer-deps` for the frontend install.
 
 ## Architecture Overview
 
