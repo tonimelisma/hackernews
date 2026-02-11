@@ -3,11 +3,11 @@ import { render, screen } from "@testing-library/react";
 import StoryList from "./StoryList";
 
 // Mock Story component for isolation
-jest.mock("./Story", () => {
-  return function MockStory({ story }) {
+vi.mock("./Story", () => ({
+  default: function MockStory({ story }) {
     return <div data-testid={`story-${story.id}`}>{story.title}</div>;
-  };
-});
+  },
+}));
 
 const mockStories = [
   { id: 1, title: "Story 1", by: "a", score: 100, descendants: 10, time: new Date().toISOString(), url: "https://example.com/1" },

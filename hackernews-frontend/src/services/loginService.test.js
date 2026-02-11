@@ -1,11 +1,11 @@
 import axios from "axios";
 import loginService from "./loginService";
 
-jest.mock("axios");
+vi.mock("axios", () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 
 describe("loginService", () => {
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it("login posts credentials and returns data", async () => {

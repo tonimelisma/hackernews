@@ -3,15 +3,35 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import App from "./App";
 
 // Mock services
-jest.mock("./services/storyService");
-jest.mock("./services/loginService");
+vi.mock("./services/storyService", () => ({
+  default: {
+    getAll: vi.fn(),
+    getHidden: vi.fn(),
+    addHidden: vi.fn(),
+  },
+}));
+vi.mock("./services/loginService", () => ({
+  default: {
+    login: vi.fn(),
+  },
+}));
 
 import storyService from "./services/storyService";
 import loginService from "./services/loginService";
 
+// Stub localStorage (Node.js 22 built-in localStorage conflicts with jsdom)
+const localStorageStore = {};
+const localStorageMock = {
+  getItem: vi.fn((key) => localStorageStore[key] ?? null),
+  setItem: vi.fn((key, value) => { localStorageStore[key] = String(value); }),
+  removeItem: vi.fn((key) => { delete localStorageStore[key]; }),
+  clear: vi.fn(() => { Object.keys(localStorageStore).forEach((k) => delete localStorageStore[k]); }),
+};
+vi.stubGlobal("localStorage", localStorageMock);
+
 beforeEach(() => {
-  jest.clearAllMocks();
-  window.localStorage.clear();
+  vi.clearAllMocks();
+  localStorageMock.clear();
   storyService.getAll.mockResolvedValue({ data: [] });
   storyService.getHidden.mockResolvedValue({ data: [] });
 });
@@ -80,7 +100,7 @@ describe("App", () => {
   });
 
   it("loads token from localStorage on mount", async () => {
-    window.localStorage.setItem("loginToken", "saved-token");
+    localStorageMock.setItem("loginToken", "saved-token");
     storyService.getHidden.mockResolvedValue({ data: [1, 2, 3] });
 
     render(<App />);

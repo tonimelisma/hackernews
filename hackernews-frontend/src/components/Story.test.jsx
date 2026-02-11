@@ -3,12 +3,12 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import Story from "./Story";
 
 // Mock dayjs to return consistent output
-jest.mock("dayjs", () => {
+vi.mock("dayjs", () => {
   const mockDayjs = () => ({ fromNow: () => "2 hours ago" });
-  mockDayjs.extend = jest.fn();
-  return { __esModule: true, default: mockDayjs };
+  mockDayjs.extend = vi.fn();
+  return { default: mockDayjs };
 });
-jest.mock("dayjs/plugin/relativeTime", () => ({ __esModule: true, default: jest.fn() }));
+vi.mock("dayjs/plugin/relativeTime", () => ({ default: vi.fn() }));
 
 const mockStory = {
   id: 12345,
@@ -21,7 +21,7 @@ const mockStory = {
 };
 
 describe("Story", () => {
-  const mockAddHidden = jest.fn();
+  const mockAddHidden = vi.fn();
 
   beforeEach(() => {
     mockAddHidden.mockClear();
@@ -89,7 +89,7 @@ describe("Story", () => {
   });
 
   it("does not render javascript: URL as clickable link", () => {
-    jest.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
     const xssStory = { ...mockStory, url: "javascript:alert(1)" };
     render(<Story story={xssStory} addHidden={mockAddHidden} />);
 
@@ -107,7 +107,7 @@ describe("Story", () => {
   });
 
   it("renders HN favicon when story has no URL", () => {
-    jest.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
     const storyNoUrl = { ...mockStory, url: undefined };
     render(<Story story={storyNoUrl} addHidden={mockAddHidden} />);
 

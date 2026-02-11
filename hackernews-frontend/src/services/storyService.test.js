@@ -1,11 +1,11 @@
 import axios from "axios";
 import storyService from "./storyService";
 
-jest.mock("axios");
+vi.mock("axios", () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 
 describe("storyService", () => {
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it("getAll fetches stories with timespan", async () => {
