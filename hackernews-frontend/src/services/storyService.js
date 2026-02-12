@@ -3,8 +3,8 @@ const baseUrl = "/api/v1/";
 
 const getAll = (timespan) => {
   return timespan
-    ? axios.get(baseUrl + `get?timespan=${timespan}`)
-    : axios.get(baseUrl + `get`);
+    ? axios.get(baseUrl + `stories?timespan=${timespan}`)
+    : axios.get(baseUrl + `stories`);
 };
 
 const getHidden = (token) => {

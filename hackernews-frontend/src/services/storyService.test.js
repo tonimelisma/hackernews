@@ -15,7 +15,7 @@ describe("storyService", () => {
     const result = await storyService.getAll("Week");
 
     expect(axios.get).toHaveBeenCalledWith(
-      expect.stringContaining("get?timespan=Week")
+      expect.stringContaining("stories?timespan=Week")
     );
     expect(result).toEqual(mockData);
   });
@@ -26,7 +26,7 @@ describe("storyService", () => {
 
     await storyService.getAll();
 
-    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("get"));
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("stories"));
     expect(axios.get).toHaveBeenCalledWith(
       expect.not.stringContaining("timespan")
     );

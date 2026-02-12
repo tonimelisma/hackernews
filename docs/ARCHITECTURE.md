@@ -35,7 +35,7 @@ hackernews/
 ├── package.json                    # Backend dependencies + scripts
 │
 ├── routes/
-│   └── api.js                      # All API endpoints (/get, /hidden, /login)
+│   └── api.js                      # All API endpoints (/stories, /hidden, /login)
 │
 ├── services/
 │   ├── firestore.js                # Firestore client singleton, collection refs, padId()
@@ -60,7 +60,7 @@ hackernews/
 │       │   ├── Story.jsx           # Single story card (favicon, title, author, score, time, hide)
 │       │   └── StoryList.jsx       # Story list with hidden filtering
 │       └── services/
-│           ├── storyService.js     # Axios client for /get, /hidden
+│           ├── storyService.js     # Axios client for /stories, /hidden
 │           └── loginService.js     # Axios client for /login
 │
 ├── tests/                          # Backend test suites
@@ -83,7 +83,7 @@ hackernews/
 ## Data Flow
 
 ### Story Fetch (Frontend → Backend → Firestore)
-1. Frontend calls `GET /api/v1/get?timespan=Day`
+1. Frontend calls `GET /api/v1/stories?timespan=Day`
 2. `routes/api.js` parses timespan, limit, skip
 3. `storyService.getStories()` queries Firestore with time filter, sorts client-side by score
 4. Response: JSON array of stories

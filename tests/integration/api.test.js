@@ -62,14 +62,14 @@ const createToken = (username = "testuser") => {
 };
 
 describe("API routes", () => {
-  describe("GET /api/v1/get", () => {
+  describe("GET /api/v1/stories", () => {
     it("returns stories as JSON", async () => {
       await Promise.all([
         seedStory({ id: 1, score: 200 }),
         seedStory({ id: 2, score: 100 }),
       ]);
 
-      const res = await request(app).get("/api/v1/get");
+      const res = await request(app).get("/api/v1/stories");
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
@@ -85,7 +85,7 @@ describe("API routes", () => {
         }), // 2 days ago
       ]);
 
-      const res = await request(app).get("/api/v1/get?timespan=Day");
+      const res = await request(app).get("/api/v1/stories?timespan=Day");
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
@@ -100,7 +100,7 @@ describe("API routes", () => {
         }),
       ]);
 
-      const res = await request(app).get("/api/v1/get");
+      const res = await request(app).get("/api/v1/stories");
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
@@ -113,7 +113,7 @@ describe("API routes", () => {
         seedStory({ id: 3 }),
       ]);
 
-      const res = await request(app).get("/api/v1/get?limit=2");
+      const res = await request(app).get("/api/v1/stories?limit=2");
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
@@ -126,7 +126,7 @@ describe("API routes", () => {
         seedStory({ id: 3, score: 100 }),
       ]);
 
-      const res = await request(app).get("/api/v1/get?skip=1&limit=2");
+      const res = await request(app).get("/api/v1/stories?skip=1&limit=2");
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
@@ -136,7 +136,7 @@ describe("API routes", () => {
     it("defaults invalid timespan to All", async () => {
       await seedStory({ id: 1 });
 
-      const res = await request(app).get("/api/v1/get?timespan=Invalid");
+      const res = await request(app).get("/api/v1/stories?timespan=Invalid");
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
@@ -147,7 +147,7 @@ describe("API routes", () => {
       const original = storyService.getStories;
       storyService.getStories = jest.fn().mockRejectedValue(new Error("db failure"));
 
-      const res = await request(app).get("/api/v1/get");
+      const res = await request(app).get("/api/v1/stories");
 
       expect(res.status).toBe(500);
       expect(res.body.error).toBe("internal server error");

@@ -18,7 +18,7 @@ const isValidUsername = (input) => {
   return /^[a-zA-Z0-9_-]+$/.test(input);
 };
 
-router.get("/get", async (req, res, next) => {
+router.get("/stories", async (req, res, next) => {
   const parseTimespan = timespan => {
     if (!timespan) return "All";
     switch (timespan) {
@@ -51,7 +51,7 @@ router.get("/get", async (req, res, next) => {
 
     res.json(stories);
   } catch (e) {
-    console.error("GET /get error:", e);
+    console.error("GET /stories error:", e);
     res.status(500).json({ error: "internal server error" });
   }
 });

@@ -61,7 +61,7 @@ You own this repo. You are the maintainer. There is no "someone else" — if the
 hackernews/
 ├── app.js                  # Express app setup (middleware, routes, static files)
 ├── worker.js               # Background sync worker (throng, infinite loop)
-├── routes/api.js           # REST API routes (/get, /hidden, /login)
+├── routes/api.js           # REST API routes (/stories, /hidden, /login)
 ├── services/
 │   ├── firestore.js        # Firestore client singleton, collection refs, padId()
 │   ├── storyService.js     # Firestore CRUD for stories/users
@@ -95,7 +95,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 4. **Worker testable via `syncOnce()`**: `worker.js` exports `syncOnce()` (one full sync cycle) and guards `throng` with `require.main === module`. Tests import `syncOnce()` directly with mocked `services/hackernews`.
 
-5. **No input validation on API**: The `/get` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint has `isValidUsername()` validation.
+5. **No input validation on API**: The `/stories` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint has `isValidUsername()` validation.
 
 6. **`getHidden` returns empty array for missing users**: If username doesn't exist in Firestore, `getHidden` returns `[]` (no hidden stories).
 
@@ -159,9 +159,6 @@ All of these must be kept current with every change:
 
 ### Build & Tooling
 - Migrate Heroku → VPS (Docker Compose + nginx + certbot)
-
-### API & Backend
-- RESTful API naming (`/get` → `/stories`)
 
 ### Frontend
 - Replace FontAwesome 5 packages with lighter alternative

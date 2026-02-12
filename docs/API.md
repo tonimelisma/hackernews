@@ -4,7 +4,7 @@ Base URL: `/api/v1`
 
 ## Endpoints
 
-### GET /get
+### GET /stories
 
 Fetch stories sorted by score descending.
 
