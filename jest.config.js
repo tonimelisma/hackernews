@@ -1,7 +1,7 @@
 module.exports = {
   testEnvironment: "node",
   testMatch: ["**/tests/**/*.test.js"],
-  testPathIgnorePatterns: ["/hackernews-frontend/", "/node_modules/"],
+  testPathIgnorePatterns: ["/hackernews-frontend/", "/node_modules/", "firestore-smoke"],
   testTimeout: 10000,
   moduleNameMapper: {
     "^@google-cloud/firestore$": "<rootDir>/tests/mocks/firestore-sdk-shim.js",

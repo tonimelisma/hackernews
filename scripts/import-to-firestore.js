@@ -9,6 +9,7 @@
  *   --max-writes N    Stop after N writes (default: unlimited)
  *   --users-only      Import only users + hidden subcollections (skip stories)
  *   --stories-only    Import only stories (skip users)
+ *   --limit N         Import only the N newest stories (by time descending)
  *
  * Environment:
  *   TARGET_PREFIX     Collection prefix (default: "prod")
@@ -42,6 +43,16 @@ if (maxIdx !== -1 && args[maxIdx + 1]) {
   MAX_WRITES = parseInt(args[maxIdx + 1], 10);
   if (isNaN(MAX_WRITES) || MAX_WRITES <= 0) {
     console.error("--max-writes must be a positive integer");
+    process.exit(1);
+  }
+}
+
+let LIMIT = Infinity;
+const limitIdx = args.indexOf("--limit");
+if (limitIdx !== -1 && args[limitIdx + 1]) {
+  LIMIT = parseInt(args[limitIdx + 1], 10);
+  if (isNaN(LIMIT) || LIMIT <= 0) {
+    console.error("--limit must be a positive integer");
     process.exit(1);
   }
 }
@@ -363,8 +374,22 @@ async function main() {
     process.exit(1);
   }
 
-  const stories = JSON.parse(fs.readFileSync(storiesPath, "utf-8"));
+  let stories = JSON.parse(fs.readFileSync(storiesPath, "utf-8"));
   const users = JSON.parse(fs.readFileSync(usersPath, "utf-8"));
+
+  // Apply --limit: sort by time descending, take newest N
+  if (LIMIT < Infinity) {
+    stories.sort((a, b) => new Date(b.time) - new Date(a.time));
+    stories = stories.slice(0, LIMIT);
+
+    // Filter hidden IDs to only those matching imported stories
+    const storyIds = new Set(stories.map((s) => s.id));
+    for (const user of users) {
+      if (user.hidden) {
+        user.hidden = user.hidden.filter((id) => storyIds.has(id));
+      }
+    }
+  }
 
   const progress = loadProgress();
 
@@ -373,6 +398,9 @@ async function main() {
   console.log(`Mode: ${DRY_RUN ? "DRY RUN" : "LIVE"}`);
   console.log(`Max writes: ${MAX_WRITES === Infinity ? "unlimited" : MAX_WRITES}`);
   console.log(`Import scope: ${USERS_ONLY ? "users only" : STORIES_ONLY ? "stories only" : "all"}`);
+  if (LIMIT < Infinity) {
+    console.log(`Story limit: ${LIMIT} newest`);
+  }
   if (process.env.FIRESTORE_EMULATOR_HOST) {
     console.log(`Using emulator: ${process.env.FIRESTORE_EMULATOR_HOST}`);
   }

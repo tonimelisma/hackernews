@@ -43,7 +43,7 @@ const Story = ({ story, addHidden }) => {
       </div>{" "}
       <div className="px-3">
         {isSafeUrl(story.url) ? (
-          <a href={story.url}> {story.title} </a>
+          <a href={story.url} className="text-decoration-none"> {story.title} </a>
         ) : (
           <span> {story.title} </span>
         )} <br />

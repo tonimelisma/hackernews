@@ -137,12 +137,12 @@ const App = () => {
 
   const navBar = () => {
     return (
-      <nav className="navbar fixed-top navbar-expand navbar-dark bg-dark d-flex justify-content-start align-items-center">
-        <div className="navbar-brand h1 m-0 mr-3">
+      <nav className="navbar fixed-top navbar-expand navbar-dark bg-dark d-flex justify-content-start align-items-center px-3">
+        <div className="navbar-brand h1 m-0 me-3">
           <FontAwesomeIcon
             icon={faHackerNewsSquare}
             size="lg"
-            className="mr-2"
+            className="me-2"
           />
           Top Hacker News Stories
         </div>

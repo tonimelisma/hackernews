@@ -165,6 +165,10 @@ All of these must be kept current with every change:
 ### Frontend
 - Replace FontAwesome 5 packages with lighter alternative
 - Add virtualization for large story lists
+- Bug: hiding stories requires login — non-logged-in users lose hidden state on refresh
+- Bug: hidden stories flash briefly on page refresh before being filtered out (stories render before hidden IDs are fetched)
+- Bug: story timestamps show "a month ago" — API returns Firestore Timestamp objects (`{_seconds, _nanoseconds}`) instead of Date/ISO strings; dayjs can't parse them
+- Bug: `authenticateToken` logs noisy stack traces for expected 401s (no cookie on `GET /me`) — should check for missing token before calling `jwt.verify()`
 
 ### Testing & Quality
 - Add end-to-end tests (Playwright or Cypress)
