@@ -35,9 +35,10 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `src/App.test.jsx` | Component | 8 | App rendering, timespan, loading, auth |
 | `src/components/StoryList.test.jsx` | Component | 4 | List rendering, hidden filtering |
 | `src/components/Story.test.jsx` | Component | 11 | Story card: title, author, score, time, favicon, hide, URL safety |
+| `src/hooks/useTheme.test.js` | Hook | 4 | Theme detection, live changes, cleanup |
 | `src/services/storyService.test.js` | Unit | 4 | Axios calls for stories/hidden |
 | `src/services/loginService.test.js` | Unit | 4 | Axios calls for login, logout, getMe |
-| **Total** | | **31** | |
+| **Total** | | **35** | |
 
 ## Key Technical Details
 
@@ -118,6 +119,7 @@ Tests that use `storyService` must call `clearCache()` in `afterEach` to prevent
 | `./services/storyService` | `vi.mock()` | Isolate App component from API |
 | `./services/loginService` | `vi.mock()` | Isolate App component from API (login, logout, getMe) |
 | `./Story` | `vi.mock()` | Isolate StoryList from Story rendering |
+| `window.matchMedia` | `Object.defineProperty` in `setupTests.js` | jsdom lacks matchMedia; needed for `useTheme` hook |
 
 ## Code Coverage
 

@@ -37,7 +37,7 @@ const Story = ({ story, addHidden }) => {
     `https://news.ycombinator.com/item?id=${id}`;
 
   return (
-    <div className="bg-light text-dark rounded border-bottom border-right d-flex p-md-3 p-sm-2 px-2 mx-md-3 my-md-1">
+    <div className="bg-body-secondary rounded border-bottom border-end d-flex p-md-3 p-sm-2 px-2 mx-md-3 my-md-1">
       <div>
         <img src={favicon} alt="favicon" />{" "}
       </div>{" "}

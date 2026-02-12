@@ -82,6 +82,8 @@ hackernews/
 ├── hackernews-frontend/    # React frontend (Vite + Vitest)
 │   └── src/
 │       ├── App.jsx         # Main component (stories, auth, filtering)
+│       ├── hooks/
+│       │   └── useTheme.js # System dark/light mode detection
 │       ├── components/
 │       │   ├── Story.jsx   # Single story card
 │       │   └── StoryList.jsx # Story list with hidden filtering
@@ -123,7 +125,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 12. **Worker quota optimization**: Runs every 30 min (not 10). Staleness thresholds: daily=1h, weekly=6h, monthly=48h. 14d-old query removed (scores stable). Each query capped at `WORKER_BATCH_LIMIT=200`.
 
-13. **`getHidden` skips user doc check**: Reads subcollection directly — empty snapshot = no hidden stories. Saves 1 Firestore read per authenticated request.
+13. **Dark mode via system preference**: Bootstrap 5.3's `data-bs-theme` attribute on `<html>`. A synchronous `<script>` in `index.html` sets the attribute before first paint (no flash). `useTheme` hook listens for live OS changes. Navbar stays `navbar-dark bg-dark` in both modes. Story cards use `bg-body-secondary` (theme-aware). No manual toggle — system detection only.
+
+14. **`getHidden` skips user doc check**: Reads subcollection directly — empty snapshot = no hidden stories. Saves 1 Firestore read per authenticated request.
 
 ## Documentation
 
@@ -141,8 +145,9 @@ All of these must be kept current with every change:
 | Backend unit (middleware, config, hackernews, firestore) | 29 |
 | Backend integration (storyService, api, worker) | 57 |
 | Frontend component (App, StoryList, Story) | 23 |
+| Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total (mock-based)** | **117** |
+| **Total (mock-based)** | **121** |
 | Firestore smoke (real dev- data, standalone) | 8 |
 
 ## Project Health
@@ -201,6 +206,7 @@ All of these must be kept current with every change:
 - **Node.js 22 localStorage conflict**: Node.js 22's built-in `localStorage` (experimental) conflicts with jsdom in Vitest. Must stub localStorage with `vi.stubGlobal("localStorage", mockImpl)` in tests that use it.
 - **Rate limiter state persists across tests** — rate-limit test must be last in its describe block.
 - **`bin/www` for startup checks**: SECRET validation lives in `bin/www` (not `app.js`) so tests can `require('../../app')` without triggering exit.
+- **jsdom lacks `window.matchMedia`**: Must stub in `setupTests.js` (global) for any component using `useTheme`. Tests that need specific matchMedia behavior reassign `window.matchMedia` in `beforeEach`.
 - **Logging convention**: `console.error` for errors (catch blocks), `console.log` for operational info (startup, sync progress). `tests/setup.js` suppresses both globally.
 - **Pre-commit hooks**: husky + lint-staged run `eslint --fix` on staged `.js` files. Backend ESLint config ignores `hackernews-frontend/`.
 - **Bootstrap 5 data attributes**: Use `data-bs-toggle`/`data-bs-dismiss` (not `data-toggle`/`data-dismiss`). Class `dropdown-menu-right` was renamed to `dropdown-menu-end`.

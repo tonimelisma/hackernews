@@ -8,8 +8,10 @@ import "./App.css";
 import storyService from "./services/storyService";
 import loginService from "./services/loginService";
 import StoryList from "./components/StoryList";
+import useTheme from "./hooks/useTheme";
 
 const App = () => {
+  useTheme();
   const [stories, setStories] = useState([]);
   const [timespan, setTimespan] = useState("Day");
   const [hidden, setHidden] = useState([]);
@@ -103,6 +105,7 @@ const App = () => {
           <label htmlFor="login-username">Username</label>
           <input
             id="login-username"
+            className="form-control"
             type="text"
             value={username}
             name="Username"
@@ -113,6 +116,7 @@ const App = () => {
           <label htmlFor="login-password">Password</label>
           <input
             id="login-password"
+            className="form-control"
             type="password"
             value={password}
             name="Password"
@@ -188,7 +192,7 @@ const App = () => {
                 Logged in as {loggedInUser}
                 <button
                   type="button"
-                  className="btn btn-sm btn-outline-dark ms-2"
+                  className="btn btn-sm btn-outline-secondary ms-2"
                   onClick={handleLogout}
                 >
                   Logout
@@ -206,19 +210,19 @@ const App = () => {
   const timespanButtons = () => {
     return (
       <>
-        <button className="btn btn-light" onClick={() => setTimespan("Day")}>
+        <button className="btn btn-outline-light" onClick={() => setTimespan("Day")}>
           Day
         </button>
-        <button className="btn btn-light" onClick={() => setTimespan("Week")}>
+        <button className="btn btn-outline-light" onClick={() => setTimespan("Week")}>
           Week
         </button>
-        <button className="btn btn-light" onClick={() => setTimespan("Month")}>
+        <button className="btn btn-outline-light" onClick={() => setTimespan("Month")}>
           Month
         </button>
-        <button className="btn btn-light" onClick={() => setTimespan("Year")}>
+        <button className="btn btn-outline-light" onClick={() => setTimespan("Year")}>
           Year
         </button>
-        <button className="btn btn-light" onClick={() => setTimespan("All")}>
+        <button className="btn btn-outline-light" onClick={() => setTimespan("All")}>
           All
         </button>
       </>

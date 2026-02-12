@@ -2,19 +2,6 @@ html {
   font-size: 1rem;
 }
 
-div.story {
-  padding: 0.5em;
-  margin: 0.5em;
-}
-
-a.story:link {
-  color: black;
-}
-
-a.story:visited {
-  color: gray;
-}
-
 .small {
   line-height: 90%;
 }

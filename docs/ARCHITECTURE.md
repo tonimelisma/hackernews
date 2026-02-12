@@ -56,6 +56,8 @@ hackernews/
 │       ├── index.jsx               # createRoot entry point (React 19)
 │       ├── App.jsx                 # Main component: stories, auth, timespan filtering
 │       ├── App.css                 # Styles
+│       ├── hooks/
+│       │   └── useTheme.js        # System dark/light mode detection (prefers-color-scheme)
 │       ├── components/
 │       │   ├── Story.jsx           # Single story card (favicon, title, author, score, time, hide)
 │       │   └── StoryList.jsx       # Story list with hidden filtering
