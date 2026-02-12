@@ -130,6 +130,34 @@ Both generate `text`, `text-summary`, and `lcov` reports. The `coverage/` direct
 
 CI uploads coverage artifacts (14-day retention) via `actions/upload-artifact@v4`.
 
+## Firestore Smoke Tests (Real Database)
+
+A standalone Node.js test suite (`tests/integration/firestore-smoke.test.js`) runs against real Firestore dev- data. It is **not** a Jest test — Jest's VM sandbox breaks gRPC/auth in the Firestore SDK.
+
+```bash
+npm run test:firestore
+```
+
+**Requires**: Application Default Credentials (`gcloud auth application-default login`)
+
+**Operation limits**: Hard-capped at 50 reads + 50 writes per run via Firestore SDK prototype instrumentation (`Query.prototype.get`, `DocumentReference.prototype.get/set/update/delete`).
+
+| Test | Reads | Writes |
+|------|-------|--------|
+| getStories sorted by score | 1 | 0 |
+| getStories correct schema | 1 | 0 |
+| getStories respects limit | 1 | 0 |
+| getStories respects skip | 2 | 0 |
+| getHidden returns array for existing user | 1 | 0 |
+| getHidden returns empty for nonexistent user | 1 | 0 |
+| upsertHidden writes and reads back | 1 | 2 |
+| Cleanup test data | 0 | 2 |
+| **Total** | **~10** | **~4** |
+
+Can be run ~100 times/day and stay well within the Firestore Spark free tier (50K reads/day, 20K writes/day).
+
+The test file is excluded from regular Jest runs via `testPathIgnorePatterns` in `jest.config.js`.
+
 ## Regression Tests for Fixed Bugs
 
 | Test File | Test Name | Original Bug |

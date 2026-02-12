@@ -28,6 +28,9 @@ cd hackernews-frontend && npm run test:coverage && cd ..
 # Backend lint
 npm run lint
 
+# Firestore smoke tests (requires ADC, hits real dev- Firestore, max 50 reads + 50 writes)
+npm run test:firestore
+
 # Backend dev server (requires Firestore ADC)
 npm run watch
 
@@ -85,6 +88,9 @@ hackernews/
 │       └── services/
 │           ├── storyService.js  # API client for stories/hidden
 │           └── loginService.js  # API client for login/logout/me
+├── tests/integration/
+│   └── firestore-smoke.test.js  # Standalone smoke tests against real Firestore (not Jest)
+├── scripts/                # Migration scripts (import, audit, export)
 ├── .husky/pre-commit       # Pre-commit hook (lint-staged)
 └── docs/                   # LLM-geared documentation
 ```
@@ -130,7 +136,8 @@ All of these must be kept current with every change:
 | Backend integration (storyService, api, worker) | 49 |
 | Frontend component (App, StoryList, Story) | 23 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total** | **109** |
+| **Total (mock-based)** | **109** |
+| Firestore smoke (real dev- data, standalone) | 8 |
 
 ## Project Health
 

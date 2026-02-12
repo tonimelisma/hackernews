@@ -70,6 +70,13 @@ hackernews/
 │   │   └── firestore-sdk-shim.js   # 2-line shim for moduleNameMapper
 │   ├── unit/                       # Pure unit tests
 │   └── integration/                # Tests with MockFirestore + supertest
+│       └── firestore-smoke.test.js # Standalone smoke tests against real Firestore (not Jest)
+│
+├── scripts/                        # Migration scripts (data export/import/audit)
+│   ├── data/                       # Exported JSON data (gitignored)
+│   ├── import-to-firestore.js      # Import JSON → Firestore (--dry-run, --limit, --max-writes)
+│   ├── audit-firestore.js          # Read-only audit of cloud Firestore data
+│   └── export-from-mongodb.js      # Export MongoDB → local JSON
 │
 ├── docs/                           # LLM-geared documentation
 │
