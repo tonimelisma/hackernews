@@ -24,9 +24,9 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `tests/unit/hackernewsService.test.js` | Unit+DB | 15 | All HN API functions (axios mocked), Firestore operations |
 | `tests/unit/firestore.test.js` | Unit | 10 | getCollectionPrefix, padId, storiesCollection, usersCollection, getDb/setDb |
 | `tests/integration/storyService.test.js` | Integration | 16 | All storyService CRUD against MockFirestore |
-| `tests/integration/api.test.js` | Integration | 20 | Full HTTP request/response via supertest |
+| `tests/integration/api.test.js` | Integration | 23 | Full HTTP request/response via supertest |
 | `tests/integration/worker.test.js` | Integration | 10 | syncOnce() direct tests, staleness queries, utility functions |
-| **Total** | | **75** | |
+| **Total** | | **78** | |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -36,8 +36,8 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `src/components/StoryList.test.jsx` | Component | 4 | List rendering, hidden filtering |
 | `src/components/Story.test.jsx` | Component | 11 | Story card: title, author, score, time, favicon, hide, URL safety |
 | `src/services/storyService.test.js` | Unit | 4 | Axios calls for stories/hidden |
-| `src/services/loginService.test.js` | Unit | 2 | Axios calls for login |
-| **Total** | | **29** | |
+| `src/services/loginService.test.js` | Unit | 4 | Axios calls for login, logout, getMe |
+| **Total** | | **31** | |
 
 ## Key Technical Details
 
@@ -86,7 +86,7 @@ afterAll(async () => await db.closeDatabase());
 
 ### JWT Mock in API Tests
 
-`jsonwebtoken` depends on `buffer-equal-constant-time` which uses `SlowBuffer` — removed in Node.js 25. The API test mocks `jsonwebtoken` entirely with a simple token store to avoid this incompatibility.
+`jsonwebtoken` depends on `buffer-equal-constant-time` which uses `SlowBuffer` — removed in Node.js 25. The API test mocks `jsonwebtoken` entirely with a simple token store to avoid this incompatibility. Auth tokens are sent via `Cookie` header (`.set("Cookie", "token=...")`) matching the HTTP-only cookie auth flow.
 
 ### Worker Testing Strategy
 
@@ -111,9 +111,8 @@ afterAll(async () => await db.closeDatabase());
 | `axios` | `vi.mock("axios")` | Avoid real HTTP calls |
 | `dayjs` | `vi.mock("dayjs")` | Consistent time output |
 | `./services/storyService` | `vi.mock()` | Isolate App component from API |
-| `./services/loginService` | `vi.mock()` | Isolate App component from API |
+| `./services/loginService` | `vi.mock()` | Isolate App component from API (login, logout, getMe) |
 | `./Story` | `vi.mock()` | Isolate StoryList from Story rendering |
-| `localStorage` | `vi.stubGlobal()` | Node.js 22 built-in localStorage conflicts with jsdom |
 
 ## Regression Tests for Fixed Bugs
 

@@ -17,7 +17,8 @@ const App = () => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState(false);
-  const [token, setToken] = useState(null);
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [loggedInUser, setLoggedInUser] = useState("");
 
   useEffect(() => {
     setLoading(true);
@@ -33,16 +34,22 @@ const App = () => {
   }, [timespan]);
 
   useEffect(() => {
-    const localToken = window.localStorage.getItem("loginToken");
-    if (localToken) {
-      setToken(localToken);
-    }
+    loginService
+      .getMe()
+      .then((data) => {
+        setLoggedIn(true);
+        setLoggedInUser(data.username);
+      })
+      .catch(() => {
+        setLoggedIn(false);
+        setLoggedInUser("");
+      });
   }, []);
 
   useEffect(() => {
-    if (token) {
+    if (loggedIn) {
       storyService
-        .getHidden(token)
+        .getHidden()
         .then((response) => {
           setHidden(response.data);
         })
@@ -50,32 +57,43 @@ const App = () => {
           setHidden([]);
         });
     }
-  }, [token]);
+  }, [loggedIn]);
 
   const addHidden = (id) => {
     const updatedHidden = hidden.concat(id);
     setHidden(updatedHidden);
-    if (token) {
-      storyService.addHidden(id, token);
+    if (loggedIn) {
+      storyService.addHidden(id);
     }
   };
 
   const handleLogin = async (event) => {
     event.preventDefault();
     try {
-      const recvToken = await loginService.login({
+      const response = await loginService.login({
         goto: "news",
         acct: username,
         pw: password,
       });
-      recvToken.token ? setToken(recvToken.token) : setToken(null);
+      setLoggedIn(true);
+      setLoggedInUser(response.username);
       setLoginError(false);
       setUsername("");
       setPassword("");
-      window.localStorage.setItem("loginToken", recvToken.token);
     } catch (error) {
       setLoginError(true);
     }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await loginService.logout();
+    } catch (error) {
+      // logout best-effort
+    }
+    setLoggedIn(false);
+    setLoggedInUser("");
+    setHidden([]);
   };
 
   const loginForm = () => {
@@ -145,7 +163,7 @@ const App = () => {
         </div>
         <div className="btn-group">
           <button type="button" className="btn" data-bs-toggle="dropdown">
-            {token ? (
+            {loggedIn ? (
               <FontAwesomeIcon
                 icon={faUserCircle}
                 size="lg"
@@ -165,7 +183,20 @@ const App = () => {
             className="dropdown-menu dropdown-menu-end"
             id="loginDropdownMenu"
           >
-            {token ? <div className="m-3">Logged in</div> : loginForm()}
+            {loggedIn ? (
+              <div className="m-3">
+                Logged in as {loggedInUser}
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-dark ms-2"
+                  onClick={handleLogout}
+                >
+                  Logout
+                </button>
+              </div>
+            ) : (
+              loginForm()
+            )}
           </div>
         </div>
       </nav>

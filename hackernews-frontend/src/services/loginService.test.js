@@ -9,7 +9,7 @@ describe("loginService", () => {
   });
 
   it("login posts credentials and returns data", async () => {
-    const mockResponse = { data: { token: "abc123" } };
+    const mockResponse = { data: { username: "user" } };
     axios.post.mockResolvedValue(mockResponse);
 
     const result = await loginService.login({
@@ -23,7 +23,7 @@ describe("loginService", () => {
       acct: "user",
       pw: "pass",
     });
-    expect(result).toEqual({ token: "abc123" });
+    expect(result).toEqual({ username: "user" });
   });
 
   it("login propagates errors", async () => {
@@ -32,5 +32,23 @@ describe("loginService", () => {
     await expect(
       loginService.login({ goto: "news", acct: "user", pw: "pass" })
     ).rejects.toThrow("Network error");
+  });
+
+  it("logout posts and returns data", async () => {
+    axios.post.mockResolvedValue({ data: { success: true } });
+
+    const result = await loginService.logout();
+
+    expect(axios.post).toHaveBeenCalledWith(expect.stringContaining("logout"));
+    expect(result).toEqual({ success: true });
+  });
+
+  it("getMe fetches current user", async () => {
+    axios.get.mockResolvedValue({ data: { username: "testuser" } });
+
+    const result = await loginService.getMe();
+
+    expect(axios.get).toHaveBeenCalledWith(expect.stringContaining("me"));
+    expect(result).toEqual({ username: "testuser" });
   });
 });

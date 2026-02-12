@@ -61,7 +61,7 @@ hackernews/
 │       │   └── StoryList.jsx       # Story list with hidden filtering
 │       └── services/
 │           ├── storyService.js     # Axios client for /stories, /hidden
-│           └── loginService.js     # Axios client for /login
+│           └── loginService.js     # Axios client for /login, /logout, /me
 │
 ├── tests/                          # Backend test suites
 │   ├── setup.js                    # Console suppression + MockFirestore cleanup helpers
@@ -96,12 +96,14 @@ hackernews/
    - Update scores for stale stories (tiered by age: 15m/1h/24h/14d)
 3. No pruning — Firestore free tier (1GB) handles ~27 years of growth at ~37MB/year
 
-### Authentication (Frontend → HN → Backend → JWT)
+### Authentication (Frontend → HN → Backend → JWT Cookie)
 1. Frontend POSTs credentials to `/api/v1/login`
 2. Backend proxies login to `news.ycombinator.com/login`
-3. If HN redirects to `/news` → success → issue JWT (24h expiry) + upsert user
-4. JWT stored in localStorage, sent as `Authorization: bearer <token>`
-5. Protected routes (`/hidden`) verify JWT via `authenticateToken` middleware and extract username
+3. If HN redirects to `/news` → success → issue JWT (24h expiry) as HTTP-only cookie + upsert user
+4. Cookie (`token`) sent automatically with all `/api` requests (httpOnly, secure in prod, sameSite=strict)
+5. On page load, frontend calls `GET /me` to check login state
+6. Protected routes (`/hidden`, `/me`) verify JWT via `authenticateToken` middleware and extract username
+7. Logout: `POST /logout` clears the cookie
 
 ## Environment Variables
 

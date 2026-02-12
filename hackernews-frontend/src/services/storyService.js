@@ -7,14 +7,12 @@ const getAll = (timespan) => {
     : axios.get(baseUrl + `stories`);
 };
 
-const getHidden = (token) => {
-  const config = { headers: { Authorization: `bearer ${token}` } };
-  return axios.get(baseUrl + "hidden", config);
+const getHidden = () => {
+  return axios.get(baseUrl + "hidden");
 };
 
-const addHidden = (hidden, token) => {
-  const config = { headers: { Authorization: `bearer ${token}` } };
-  return axios.post(baseUrl + "hidden", { hidden }, config);
+const addHidden = (hidden) => {
+  return axios.post(baseUrl + "hidden", { hidden });
 };
 
 const storyServices = { getAll, getHidden, addHidden };

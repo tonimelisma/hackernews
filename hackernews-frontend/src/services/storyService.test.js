@@ -32,28 +32,26 @@ describe("storyService", () => {
     );
   });
 
-  it("getHidden sends auth header", async () => {
+  it("getHidden fetches hidden stories", async () => {
     const mockData = { data: [1, 2, 3] };
     axios.get.mockResolvedValue(mockData);
 
-    const result = await storyService.getHidden("my-token");
+    const result = await storyService.getHidden();
 
     expect(axios.get).toHaveBeenCalledWith(
-      expect.stringContaining("hidden"),
-      { headers: { Authorization: "bearer my-token" } }
+      expect.stringContaining("hidden")
     );
     expect(result).toEqual(mockData);
   });
 
-  it("addHidden posts with auth header", async () => {
+  it("addHidden posts hidden story ID", async () => {
     axios.post.mockResolvedValue({ data: { hidden: 123 } });
 
-    await storyService.addHidden(123, "my-token");
+    await storyService.addHidden(123);
 
     expect(axios.post).toHaveBeenCalledWith(
       expect.stringContaining("hidden"),
-      { hidden: 123 },
-      { headers: { Authorization: "bearer my-token" } }
+      { hidden: 123 }
     );
   });
 });

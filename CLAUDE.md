@@ -61,7 +61,7 @@ You own this repo. You are the maintainer. There is no "someone else" — if the
 hackernews/
 ├── app.js                  # Express app setup (middleware, routes, static files)
 ├── worker.js               # Background sync worker (throng, infinite loop)
-├── routes/api.js           # REST API routes (/stories, /hidden, /login)
+├── routes/api.js           # REST API routes (/stories, /hidden, /login, /logout, /me)
 ├── services/
 │   ├── firestore.js        # Firestore client singleton, collection refs, padId()
 │   ├── storyService.js     # Firestore CRUD for stories/users
@@ -78,7 +78,7 @@ hackernews/
 │       │   └── StoryList.jsx # Story list with hidden filtering
 │       └── services/
 │           ├── storyService.js  # API client for stories/hidden
-│           └── loginService.js  # API client for login
+│           └── loginService.js  # API client for login/logout/me
 ├── .husky/pre-commit       # Pre-commit hook (lint-staged)
 └── docs/                   # LLM-geared documentation
 ```
@@ -121,10 +121,10 @@ All of these must be kept current with every change:
 | Suite | Tests |
 |-------|-------|
 | Backend unit (middleware, config, hackernews, firestore) | 29 |
-| Backend integration (storyService, api, worker) | 46 |
+| Backend integration (storyService, api, worker) | 49 |
 | Frontend component (App, StoryList, Story) | 23 |
-| Frontend service (storyService, loginService) | 6 |
-| **Total** | **104** |
+| Frontend service (storyService, loginService) | 8 |
+| **Total** | **109** |
 
 ## Project Health
 
@@ -133,8 +133,8 @@ All of these must be kept current with every change:
 | Category | Grade | Summary |
 |----------|-------|---------|
 | Functionality | B | Core features work; hntoplinks scraper is brittle (regex) |
-| Security | B+ | Helmet, CORS, rate limiting, JWT expiry, SECRET validation |
-| Testing | A- | 104 tests, in-memory mock, ~1s backend runs |
+| Security | A- | Helmet, CORS, rate limiting, JWT in HTTP-only cookie, SECRET validation |
+| Testing | A- | 109 tests, in-memory mock, ~1s backend runs |
 | Code Quality | A- | Modernized boilerplate, a11y fixes, bug fixes, dead code removed |
 | Architecture | B | Firestore migration, lazy singleton, env-prefixed collections |
 | Documentation | B+ | CLAUDE.md + 4 reference docs, proper README |
@@ -145,7 +145,6 @@ All of these must be kept current with every change:
 ### Open Issues
 
 - **Node.js 25+ crash** — `jsonwebtoken` chain uses removed `SlowBuffer`; no upstream fix
-- **Token in localStorage** (`App.jsx`) — XSS vector; should migrate to HTTP-only cookie
 
 ### Vulnerability Status
 
@@ -153,9 +152,6 @@ All of these must be kept current with every change:
 - Frontend: **0 vulnerabilities** — `npm audit` enforced in CI at `moderate` level (Vite replaced CRA)
 
 ## Backlog
-
-### Security
-- JWT from localStorage to HTTP-only cookie
 
 ### Build & Tooling
 - Migrate Heroku → VPS (Docker Compose + nginx + certbot)

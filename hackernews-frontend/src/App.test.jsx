@@ -13,27 +13,19 @@ vi.mock("./services/storyService", () => ({
 vi.mock("./services/loginService", () => ({
   default: {
     login: vi.fn(),
+    logout: vi.fn(),
+    getMe: vi.fn(),
   },
 }));
 
 import storyService from "./services/storyService";
 import loginService from "./services/loginService";
 
-// Stub localStorage (Node.js 22 built-in localStorage conflicts with jsdom)
-const localStorageStore = {};
-const localStorageMock = {
-  getItem: vi.fn((key) => localStorageStore[key] ?? null),
-  setItem: vi.fn((key, value) => { localStorageStore[key] = String(value); }),
-  removeItem: vi.fn((key) => { delete localStorageStore[key]; }),
-  clear: vi.fn(() => { Object.keys(localStorageStore).forEach((k) => delete localStorageStore[k]); }),
-};
-vi.stubGlobal("localStorage", localStorageMock);
-
 beforeEach(() => {
   vi.clearAllMocks();
-  localStorageMock.clear();
   storyService.getAll.mockResolvedValue({ data: [] });
   storyService.getHidden.mockResolvedValue({ data: [] });
+  loginService.getMe.mockRejectedValue(new Error("not logged in"));
 });
 
 describe("App", () => {
@@ -99,18 +91,21 @@ describe("App", () => {
     });
   });
 
-  it("loads token from localStorage on mount", async () => {
-    localStorageMock.setItem("loginToken", "saved-token");
+  it("checks login state via getMe on mount", async () => {
+    loginService.getMe.mockResolvedValue({ username: "saveduser" });
     storyService.getHidden.mockResolvedValue({ data: [1, 2, 3] });
 
     render(<App />);
 
     await waitFor(() => {
-      expect(storyService.getHidden).toHaveBeenCalledWith("saved-token");
+      expect(loginService.getMe).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(storyService.getHidden).toHaveBeenCalled();
     });
   });
 
-  it("does not fetch hidden when no token", async () => {
+  it("does not fetch hidden when not logged in", async () => {
     render(<App />);
 
     await waitFor(() => {

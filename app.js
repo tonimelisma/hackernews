@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const cookieParser = require("cookie-parser");
 
 const path = require("path");
 const logger = require("morgan");
@@ -19,6 +20,7 @@ const corsOrigin = process.env.NODE_ENV === "development"
 app.use(cors({ origin: corsOrigin }));
 
 app.use(express.json());
+app.use(cookieParser());
 app.use(express.urlencoded({ extended: false }));
 
 // STATIC

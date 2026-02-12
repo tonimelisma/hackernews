@@ -2,6 +2,14 @@
 
 Base URL: `/api/v1`
 
+## Authentication
+
+Authentication uses HTTP-only cookies. On successful login, the server sets a `token` cookie containing a signed JWT. All subsequent requests to protected endpoints automatically include this cookie.
+
+**Cookie properties:** `httpOnly`, `secure` (production only), `sameSite=strict`, `path=/api`, `maxAge=24h`
+
+Protected endpoints return `401` if no valid cookie is present.
+
 ## Endpoints
 
 ### GET /stories
@@ -39,7 +47,7 @@ Fetch stories sorted by score descending.
 
 Get hidden story IDs for authenticated user.
 
-**Headers:** `Authorization: bearer <JWT>`
+**Auth:** Requires `token` cookie (set by `/login`).
 
 **Response:** `200 OK`
 ```json
@@ -47,8 +55,8 @@ Get hidden story IDs for authenticated user.
 ```
 
 **Error responses:**
-- `401` — missing/invalid token: `{ "error": "invalid token" }`
-- `500` — internal error: `{ "error": "internal error" }`
+- `401` — missing/invalid token: `{ "error": "authentication error" }`
+- `500` — internal error: `{ "error": "internal server error" }`
 
 Returns `[]` if the user has no hidden stories or doesn't exist in the database.
 
@@ -58,7 +66,7 @@ Returns `[]` if the user has no hidden stories or doesn't exist in the database.
 
 Add a story ID to authenticated user's hidden list.
 
-**Headers:** `Authorization: bearer <JWT>`
+**Auth:** Requires `token` cookie (set by `/login`).
 
 **Request body:**
 ```json
@@ -71,8 +79,8 @@ Add a story ID to authenticated user's hidden list.
 ```
 
 **Error responses:**
-- `401` — missing/invalid token: `{ "error": "invalid token" }`
-- `500` — internal error: `{ "error": "internal error" }`
+- `401` — missing/invalid token: `{ "error": "authentication error" }`
+- `500` — internal error: `{ "error": "internal server error" }`
 
 Uses Firestore `set()` on a subcollection doc — naturally idempotent (hiding the same story twice is a no-op).
 
@@ -96,15 +104,17 @@ Authenticate via HackerNews credentials. Proxies the login request to `news.ycom
 **Validation:** Username must match `[a-zA-Z0-9_-]+` (`isValidUsername()`). Returns `400` if invalid.
 
 **Response (success):** `200 OK`
+
+Sets an HTTP-only `token` cookie and returns:
 ```json
-{ "token": "eyJhbGciOiJIUzI1NiJ9..." }
+{ "username": "username" }
 ```
 
 JWT expires after **24 hours**. Signed with `process.env.SECRET` (validated on server startup).
 
 **Response (failure):** `401`
 ```json
-{ "error": "False username or password" }
+{ "error": "invalid credentials" }
 ```
 
 **Response (bad request):** `400`
@@ -112,9 +122,40 @@ JWT expires after **24 hours**. Signed with `process.env.SECRET` (validated on s
 { "error": "missing fields" }
 ```
 
+---
+
+### POST /logout
+
+Clear the authentication cookie.
+
+**Response:** `200 OK`
+```json
+{ "success": true }
+```
+
+Clears the `token` cookie. Always succeeds (no auth required).
+
+---
+
+### GET /me
+
+Get the currently authenticated user.
+
+**Auth:** Requires `token` cookie (set by `/login`).
+
+**Response:** `200 OK`
+```json
+{ "username": "username" }
+```
+
+**Error responses:**
+- `401` — missing/invalid token: `{ "error": "authentication error" }`
+
 ## Security
 
 - All endpoints served behind `helmet()` middleware (CSP, HSTS, X-Frame-Options, etc.)
 - CORS restricted to `localhost:3000` in development, same-origin in production
 - Passwords are never stored — only proxied to HN for authentication
-- Protected routes use `authenticateToken` middleware for JWT verification
+- JWT stored in HTTP-only cookie (not accessible to JavaScript — prevents XSS token theft)
+- Cookie attributes: `httpOnly`, `secure` (production), `sameSite=strict`, `path=/api`
+- Protected routes use `authenticateToken` middleware for JWT verification via cookie

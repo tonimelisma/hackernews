@@ -18,6 +18,29 @@ const isValidUsername = (input) => {
   return /^[a-zA-Z0-9_-]+$/.test(input);
 };
 
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "strict",
+  maxAge: 24 * 60 * 60 * 1000,
+  path: "/api",
+};
+
+const authenticateToken = (req, res, next) => {
+  const token = req.cookies && req.cookies.token;
+  try {
+    const decodedToken = jwt.verify(token, process.env.SECRET);
+    if (!decodedToken.username) {
+      return res.status(401).json({ error: "invalid token" });
+    }
+    req.user = decodedToken;
+    next();
+  } catch (e) {
+    console.error("auth error:", e);
+    res.status(401).json({ error: "authentication error" });
+  }
+};
+
 router.get("/stories", async (req, res, next) => {
   const parseTimespan = timespan => {
     if (!timespan) return "All";
@@ -56,28 +79,6 @@ router.get("/stories", async (req, res, next) => {
   }
 });
 
-const getTokenFromReq = request => {
-  const authorization = request.get("authorization");
-  if (authorization && authorization.toLowerCase().startsWith("bearer")) {
-    return authorization.substring(7);
-  }
-};
-
-const authenticateToken = (req, res, next) => {
-  const token = getTokenFromReq(req);
-  try {
-    const decodedToken = jwt.verify(token, process.env.SECRET);
-    if (!decodedToken.username) {
-      return res.status(401).json({ error: "invalid token" });
-    }
-    req.user = decodedToken;
-    next();
-  } catch (e) {
-    console.error("auth error:", e);
-    res.status(401).json({ error: "authentication error" });
-  }
-};
-
 router.get("/hidden", authenticateToken, async (req, res, next) => {
   try {
     const hidden = await storyService.getHidden(req.user.username);
@@ -110,7 +111,8 @@ router.post("/login", loginLimiter, async (req, res, next) => {
       if (loginCorrect) {
         const token = jwt.sign({ username: acct }, process.env.SECRET, { expiresIn: '24h' });
         await storyService.upsertUser(acct);
-        res.status(200).json({ token });
+        res.cookie("token", token, COOKIE_OPTIONS);
+        res.status(200).json({ username: acct });
       } else {
         res.status(401).json({ error: "invalid credentials" });
       }
@@ -119,6 +121,15 @@ router.post("/login", loginLimiter, async (req, res, next) => {
       res.status(401).json({ error: "internal server error" });
     }
   }
+});
+
+router.post("/logout", (req, res) => {
+  res.clearCookie("token", COOKIE_OPTIONS);
+  res.status(200).json({ success: true });
+});
+
+router.get("/me", authenticateToken, (req, res) => {
+  res.status(200).json({ username: req.user.username });
 });
 
 module.exports = router;

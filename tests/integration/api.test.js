@@ -61,6 +61,14 @@ const createToken = (username = "testuser") => {
   return jwt.sign({ username }, process.env.SECRET);
 };
 
+const extractCookieToken = (res) => {
+  const setCookie = res.headers["set-cookie"];
+  if (!setCookie) return null;
+  const cookieStr = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+  const match = cookieStr.match(/token=([^;]+)/);
+  return match ? match[1] : null;
+};
+
 describe("API routes", () => {
   describe("GET /api/v1/stories", () => {
     it("returns stories as JSON", async () => {
@@ -164,7 +172,7 @@ describe("API routes", () => {
 
       const res = await request(app)
         .get("/api/v1/hidden")
-        .set("Authorization", `bearer ${token}`);
+        .set("Cookie", `token=${token}`);
 
       expect(res.status).toBe(200);
       expect(res.body.sort()).toEqual([123, 456]);
@@ -179,7 +187,7 @@ describe("API routes", () => {
     it("returns 401 with invalid token", async () => {
       const res = await request(app)
         .get("/api/v1/hidden")
-        .set("Authorization", "bearer invalid-token");
+        .set("Cookie", "token=invalid-token");
 
       expect(res.status).toBe(401);
     });
@@ -192,7 +200,7 @@ describe("API routes", () => {
 
       const res = await request(app)
         .post("/api/v1/hidden")
-        .set("Authorization", `bearer ${token}`)
+        .set("Cookie", `token=${token}`)
         .send({ hidden: 789 });
 
       expect(res.status).toBe(200);
@@ -209,7 +217,7 @@ describe("API routes", () => {
   });
 
   describe("POST /api/v1/login", () => {
-    it("returns token on successful login", async () => {
+    it("returns username and sets cookie on successful login", async () => {
       hackernews.login.mockResolvedValue(true);
 
       const res = await request(app)
@@ -217,7 +225,10 @@ describe("API routes", () => {
         .send({ goto: "news", acct: "validuser", pw: "validpass" });
 
       expect(res.status).toBe(200);
-      expect(res.body.token).toBeDefined();
+      expect(res.body.username).toBe("validuser");
+      expect(res.body.token).toBeUndefined();
+      const cookieToken = extractCookieToken(res);
+      expect(cookieToken).toBeTruthy();
     });
 
     it("returns 401 on failed login", async () => {
@@ -256,7 +267,8 @@ describe("API routes", () => {
         .send({ goto: "news", acct: "expiryuser", pw: "validpass" });
 
       expect(res.status).toBe(200);
-      const tokenData = mockTokens[res.body.token];
+      const cookieToken = extractCookieToken(res);
+      const tokenData = mockTokens[cookieToken];
       expect(tokenData.options).toEqual({ expiresIn: '24h' });
     });
 
@@ -286,6 +298,38 @@ describe("API routes", () => {
         }
       }
       expect(got429).toBe(true);
+    });
+  });
+
+  describe("POST /api/v1/logout", () => {
+    it("clears token cookie and returns success", async () => {
+      const res = await request(app).post("/api/v1/logout");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ success: true });
+      const setCookie = res.headers["set-cookie"];
+      expect(setCookie).toBeDefined();
+      const cookieStr = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+      expect(cookieStr).toMatch(/token=/);
+    });
+  });
+
+  describe("GET /api/v1/me", () => {
+    it("returns username for authenticated user", async () => {
+      const token = createToken("testuser");
+
+      const res = await request(app)
+        .get("/api/v1/me")
+        .set("Cookie", `token=${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ username: "testuser" });
+    });
+
+    it("returns 401 without token", async () => {
+      const res = await request(app).get("/api/v1/me");
+
+      expect(res.status).toBe(401);
     });
   });
 
