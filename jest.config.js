@@ -6,4 +6,16 @@ module.exports = {
   moduleNameMapper: {
     "^@google-cloud/firestore$": "<rootDir>/tests/mocks/firestore-sdk-shim.js",
   },
+  collectCoverageFrom: [
+    "**/*.js",
+    "!node_modules/**",
+    "!hackernews-frontend/**",
+    "!coverage/**",
+    "!tests/**",
+    "!jest.config.js",
+    "!eslint.config.js",
+    "!scripts/**",
+  ],
+  coverageDirectory: "coverage",
+  coverageReporters: ["text", "text-summary", "lcov"],
 };

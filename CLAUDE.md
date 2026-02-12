@@ -19,6 +19,12 @@ cd hackernews-frontend && npm test
 # Run both
 npm test && cd hackernews-frontend && npm test && cd ..
 
+# Backend coverage
+npm run test:coverage
+
+# Frontend coverage
+cd hackernews-frontend && npm run test:coverage && cd ..
+
 # Backend lint
 npm run lint
 
@@ -162,7 +168,6 @@ All of these must be kept current with every change:
 
 ### Testing & Quality
 - Add end-to-end tests (Playwright or Cypress)
-- Add code coverage reporting
 
 ### Documentation & Governance
 - Add JSDoc to exported functions

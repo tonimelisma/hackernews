@@ -25,10 +25,17 @@ jobs:
       - name: Lint backend
         run: npm run lint
 
-      - name: Run backend tests
-        run: npm test
+      - name: Run backend tests with coverage
+        run: npm run test:coverage
         env:
           NODE_ENV: ci
+
+      - name: Upload backend coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage/
+          retention-days: 14
 
       - name: Run npm audit
         run: npm audit --audit-level=moderate
@@ -50,9 +57,16 @@ jobs:
         run: npm ci
         working-directory: hackernews-frontend
 
-      - name: Run frontend tests
-        run: npm test
+      - name: Run frontend tests with coverage
+        run: npm run test:coverage
         working-directory: hackernews-frontend
+
+      - name: Upload frontend coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: hackernews-frontend/coverage/
+          retention-days: 14
 
       - name: Build frontend
         run: npm run build

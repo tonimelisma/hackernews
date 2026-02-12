@@ -114,6 +114,22 @@ afterAll(async () => await db.closeDatabase());
 | `./services/loginService` | `vi.mock()` | Isolate App component from API (login, logout, getMe) |
 | `./Story` | `vi.mock()` | Isolate StoryList from Story rendering |
 
+## Code Coverage
+
+Coverage is collected via Jest (backend) and Vitest + v8 (frontend).
+
+```bash
+# Backend coverage
+npm run test:coverage
+
+# Frontend coverage
+cd hackernews-frontend && npm run test:coverage
+```
+
+Both generate `text`, `text-summary`, and `lcov` reports. The `coverage/` directories are gitignored.
+
+CI uploads coverage artifacts (14-day retention) via `actions/upload-artifact@v4`.
+
 ## Regression Tests for Fixed Bugs
 
 | Test File | Test Name | Original Bug |

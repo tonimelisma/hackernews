@@ -8,6 +8,7 @@
     "worker": "node worker.js",
     "worker-nodemon": "nodemon worker.js",
     "test": "jest --forceExit --detectOpenHandles --passWithNoTests",
+    "test:coverage": "jest --coverage --forceExit --detectOpenHandles",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "prepare": "husky"
