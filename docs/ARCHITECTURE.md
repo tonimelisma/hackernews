@@ -31,7 +31,7 @@ HackerNews aggregator with three runtime processes and a Firestore database.
 hackernews/
 ├── app.js                          # Express app (middleware, routes, static)
 ├── bin/www                         # HTTP server bootstrap + SECRET validation
-├── worker.js                       # Background sync worker (throng, 10m loop)
+├── worker.js                       # Background sync worker (throng, 30m loop)
 ├── package.json                    # Backend dependencies + scripts
 │
 ├── routes/
@@ -92,15 +92,15 @@ hackernews/
 ### Story Fetch (Frontend → Backend → Firestore)
 1. Frontend calls `GET /api/v1/stories?timespan=Day`
 2. `routes/api.js` parses timespan, limit, skip
-3. `storyService.getStories()` queries Firestore with time filter, sorts client-side by score
+3. `storyService.getStories()` checks 1h TTL cache; on miss, queries Firestore (limit 500), sorts by score
 4. Response: JSON array of stories
 
 ### Background Worker (Worker → HN API → Firestore)
 1. `throng(1, main)` starts single worker process
-2. Infinite loop every 10 minutes:
+2. Infinite loop every 30 minutes:
    - Fetch new story IDs from HN Firebase API
    - Add missing stories to Firestore (doc ID = zero-padded HN ID)
-   - Update scores for stale stories (tiered by age: 15m/1h/24h/14d)
+   - Update scores for stale stories (tiered by age: 1h/6h/48h, batch limit 200)
 3. No pruning — Firestore free tier (1GB) handles ~27 years of growth at ~37MB/year
 
 ### Authentication (Frontend → HN → Backend → JWT Cookie)

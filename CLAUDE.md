@@ -113,11 +113,17 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 7. **Node.js 25+ crashes the app**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. `SlowBuffer` was removed in Node 25. No upstream fix available. **Use Node.js 18 or 20.**
 
-8. **Client-side sorting for stories**: Firestore can't `where('time', '>').orderBy('score', 'desc')` — the first `orderBy` must match the inequality field. `getStories()` fetches all matching docs, sorts by score in JS, then slices for pagination.
+8. **Query optimization for stories**: "All" timespan uses `orderBy('score', 'desc').limit(500)` — Firestore sorts directly. Time-filtered timespans use `where('time', '>').orderBy('time', 'desc').limit(500)` then sort by score client-side. Both cap at `MAX_QUERY_DOCS=500` to stay within Firestore free tier quotas.
 
-9. **Hidden stories use subcollection**: `{prefix}-users/{username}/hidden/{storyId}` — avoids Firestore's 1MB doc limit (one user had 117K hidden IDs = 1.2MB).
+9. **Disk-persisted TTL cache with Day-merge**: `storyService.js` caches Firestore query results per timespan with tiered TTLs: Day=30min, Week=2d, Month=1w, Year=1mo, All=1mo. Cache is persisted to `.cache/stories.json` (gitignored) and restored on app restart. Non-Day timespans merge in fresh Day stories on every request, so new high-scoring stories appear in Week/Month/Year/All without waiting for full cache expiry. Disk persistence disabled in tests (`NODE_ENV=test`). `clearCache()` exported for tests.
 
-10. **Zero-padded story doc IDs**: Stories use `padId()` (10-digit zero-padded string) as doc ID for lexicographic ordering that matches numeric order.
+10. **Hidden stories use subcollection**: `{prefix}-users/{username}/hidden/{storyId}` — avoids Firestore's 1MB doc limit (one user had 117K hidden IDs = 1.2MB).
+
+11. **Zero-padded story doc IDs**: Stories use `padId()` (10-digit zero-padded string) as doc ID for lexicographic ordering that matches numeric order.
+
+12. **Worker quota optimization**: Runs every 30 min (not 10). Staleness thresholds: daily=1h, weekly=6h, monthly=48h. 14d-old query removed (scores stable). Each query capped at `WORKER_BATCH_LIMIT=200`.
+
+13. **`getHidden` skips user doc check**: Reads subcollection directly — empty snapshot = no hidden stories. Saves 1 Firestore read per authenticated request.
 
 ## Documentation
 
@@ -133,10 +139,10 @@ All of these must be kept current with every change:
 | Suite | Tests |
 |-------|-------|
 | Backend unit (middleware, config, hackernews, firestore) | 29 |
-| Backend integration (storyService, api, worker) | 49 |
+| Backend integration (storyService, api, worker) | 57 |
 | Frontend component (App, StoryList, Story) | 23 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total (mock-based)** | **109** |
+| **Total (mock-based)** | **117** |
 | Firestore smoke (real dev- data, standalone) | 8 |
 
 ## Project Health
@@ -187,7 +193,8 @@ All of these must be kept current with every change:
 
 ## Key Learnings
 
-- **Firestore query constraint**: Can't `where()` on one field and `orderBy()` on another. Client-side sort needed for stories (time filter + score sort). Composite indexes required for multi-inequality worker queries.
+- **Firestore query constraint**: Can't `where()` on one field and `orderBy()` on another. For "All" timespan, use `orderBy('score').limit(500)` directly. For time-filtered, use `where('time').orderBy('time').limit(500)` then sort by score client-side. Composite indexes required for multi-inequality worker queries.
+- **Firestore free tier optimization**: Spark plan allows 50K reads/20K writes per day. Key levers: `.limit()` on all queries (500 for API, 200 for worker), 1h in-memory TTL cache for story queries, 30-min worker cycle with relaxed staleness thresholds (1h/6h/48h). Removed unbounded 14d-old query.
 - **In-memory MockFirestore**: `moduleNameMapper` in `jest.config.js` redirects `@google-cloud/firestore` to an in-memory mock. Storage: flat `Map<collectionPath, Map<docId, data>>`. MockTimestamp wraps Date objects on `.set()`/`.update()`. Backend tests run in ~1 second with no credentials or network.
 - **Node.js 25+ incompatibility**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. Must mock `jsonwebtoken` in tests; use Node.js 18/20 in production.
 - **Vitest mock differences**: `vi.mock()` factory must return an object with `default` key for default exports. No `__esModule: true` needed. Axios mock: `vi.mock("axios", () => ({ default: { get: vi.fn(), post: vi.fn() } }))`.

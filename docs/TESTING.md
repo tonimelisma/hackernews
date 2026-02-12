@@ -23,10 +23,10 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
 | `tests/unit/hackernewsService.test.js` | Unit+DB | 15 | All HN API functions (axios mocked), Firestore operations |
 | `tests/unit/firestore.test.js` | Unit | 10 | getCollectionPrefix, padId, storiesCollection, usersCollection, getDb/setDb |
-| `tests/integration/storyService.test.js` | Integration | 16 | All storyService CRUD against MockFirestore |
+| `tests/integration/storyService.test.js` | Integration | 21 | All storyService CRUD, cache hit/expiry, Day-merge, query caps against MockFirestore |
 | `tests/integration/api.test.js` | Integration | 23 | Full HTTP request/response via supertest |
-| `tests/integration/worker.test.js` | Integration | 10 | syncOnce() direct tests, staleness queries, utility functions |
-| **Total** | | **78** | |
+| `tests/integration/worker.test.js` | Integration | 13 | syncOnce() direct tests, staleness queries, batch limits, utility functions |
+| **Total** | | **86** | |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -80,9 +80,14 @@ The mock consists of:
 Each test file imports setup and uses:
 ```js
 beforeAll(async () => await db.connect());
-afterEach(async () => await db.clearDatabase());
+afterEach(async () => {
+  storyService.clearCache(); // prevent cache leaking between tests
+  await db.clearDatabase();
+});
 afterAll(async () => await db.closeDatabase());
 ```
+
+Tests that use `storyService` must call `clearCache()` in `afterEach` to prevent the 1-hour TTL cache from leaking data between tests.
 
 ### JWT Mock in API Tests
 

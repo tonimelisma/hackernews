@@ -3,6 +3,8 @@ const Remote = require("./services/hackernews");
 
 const throng = require("throng");
 
+const WORKER_BATCH_LIMIT = 200;
+
 const sleep = time => {
   return new Promise(resolve => setTimeout(resolve, time));
 };
@@ -51,16 +53,11 @@ const syncOnce = async () => {
 
   // UPDATE SCORES FOR TRENDING STORIES
   try {
-    const lastEverSnap = await storiesCollection()
-      .where("updated", "<", new Date(Date.now() - 14 * 24 * 60 * 60 * 1000))
-      .get();
-    if (!lastEverSnap.empty) {
-      await Remote.updateStories(lastEverSnap.docs.map(d => d.data().id));
-    }
-
     const lastMonthSnap = await storiesCollection()
       .where("time", ">", new Date(Date.now() - 28 * 24 * 60 * 60 * 1000))
-      .where("updated", "<", new Date(Date.now() - 24 * 60 * 60 * 1000))
+      .where("updated", "<", new Date(Date.now() - 48 * 60 * 60 * 1000))
+      .orderBy("updated", "asc")
+      .limit(WORKER_BATCH_LIMIT)
       .get();
     if (!lastMonthSnap.empty) {
       await Remote.updateStories(lastMonthSnap.docs.map(d => d.data().id));
@@ -68,7 +65,9 @@ const syncOnce = async () => {
 
     const lastWeekSnap = await storiesCollection()
       .where("time", ">", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
-      .where("updated", "<", new Date(Date.now() - 60 * 60 * 1000))
+      .where("updated", "<", new Date(Date.now() - 6 * 60 * 60 * 1000))
+      .orderBy("updated", "asc")
+      .limit(WORKER_BATCH_LIMIT)
       .get();
     if (!lastWeekSnap.empty) {
       await Remote.updateStories(lastWeekSnap.docs.map(d => d.data().id));
@@ -76,7 +75,9 @@ const syncOnce = async () => {
 
     const last24hSnap = await storiesCollection()
       .where("time", ">", new Date(Date.now() - 24 * 60 * 60 * 1000))
-      .where("updated", "<", new Date(Date.now() - 15 * 60 * 1000))
+      .where("updated", "<", new Date(Date.now() - 60 * 60 * 1000))
+      .orderBy("updated", "asc")
+      .limit(WORKER_BATCH_LIMIT)
       .get();
     if (!last24hSnap.empty) {
       await Remote.updateStories(last24hSnap.docs.map(d => d.data().id));
@@ -94,7 +95,7 @@ const main = async () => {
     while (true) {
       console.log("Starting background sync job...");
       await syncOnce();
-      await sleep(10 * 60 * 1000);
+      await sleep(30 * 60 * 1000);
     }
   } catch (e) {
     console.error("fatal error:", e);
@@ -105,4 +106,4 @@ if (require.main === module) {
   throng(1, main);
 }
 
-module.exports = { main, syncOnce, formatBytes, sleep };
+module.exports = { main, syncOnce, formatBytes, sleep, WORKER_BATCH_LIMIT };

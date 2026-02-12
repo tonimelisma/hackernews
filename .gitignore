@@ -64,3 +64,6 @@ typings/
 
 # Migration data (exported from MongoDB)
 scripts/data/
+
+# Story cache (persisted across restarts)
+.cache/

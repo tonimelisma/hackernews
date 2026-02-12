@@ -74,11 +74,21 @@ gcloud firestore indexes composite create --project=melisma-essentials --databas
 
 ### `getStories(timespan, limit, skip)` — `storyService.js`
 
-Firestore can't `where('time', '>', X).orderBy('score', 'desc')` — the first `orderBy` must match the inequality field. Instead: fetch all docs matching the time filter, sort client-side by score, then slice for pagination. With ~20K docs max, this is acceptable.
+Two query paths, both capped at `MAX_QUERY_DOCS=500`:
+
+- **"All" timespan**: `orderBy('score', 'desc').limit(500)` — Firestore sorts directly, no client-side sort needed.
+- **Time-filtered** (Day/Week/Month/Year): `where('time', '>', X).orderBy('time', 'desc').limit(500)` — fetches the 500 most recent matching stories, then sorts by score client-side.
+
+Results are cached with per-timespan TTLs: Day=30min, Week=2d, Month=1w, Year=1mo, All=1mo. Cache is persisted to `.cache/stories.json` and restored on app restart. Non-Day timespans always merge in fresh Day stories, so new high-scoring stories appear quickly without full cache refresh. `clearCache()` resets the cache (used in tests).
 
 ### Worker — stale story detection
 
-Uses multi-inequality: `where('time', '>').where('updated', '<')`. Firestore supports this (since 2023) but requires the composite index above.
+Uses multi-inequality: `where('time', '>').where('updated', '<').orderBy('updated', 'asc').limit(200)`. Runs every 30 minutes with three staleness tiers:
+- **Daily stories**: stale after 1h
+- **Weekly stories**: stale after 6h
+- **Monthly stories**: stale after 48h
+
+Each query is capped at `WORKER_BATCH_LIMIT=200` to prevent unbounded reads. The 14-day-old catch-all query has been removed (scores are stable after 2 weeks). Requires the composite index above.
 
 ### Worker — find latest story
 

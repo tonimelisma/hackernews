@@ -4,7 +4,7 @@ const { storiesCollection, padId } = require("../../services/firestore");
 jest.mock("../../services/hackernews");
 const Remote = require("../../services/hackernews");
 
-const { syncOnce, formatBytes, sleep } = require("../../worker");
+const { syncOnce, formatBytes, sleep, WORKER_BATCH_LIMIT } = require("../../worker");
 
 beforeAll(async () => await db.connect());
 afterEach(async () => {
@@ -15,29 +15,31 @@ afterAll(async () => await db.closeDatabase());
 
 describe("worker logic (simulated)", () => {
   describe("stale story detection", () => {
-    it("finds stories updated more than 14d ago", async () => {
+    it("finds monthly stories stale for 48h", async () => {
+      const now = Date.now();
       await Promise.all([
         storiesCollection().doc(padId(1)).set({
           id: 1,
           score: 100,
-          time: new Date(),
+          time: new Date(now - 10 * 24 * 60 * 60 * 1000), // 10d ago (within month)
           title: "Recently updated",
           by: "a",
-          updated: new Date(),
+          updated: new Date(), // just updated
         }),
         storiesCollection().doc(padId(2)).set({
           id: 2,
           score: 100,
-          time: new Date(),
+          time: new Date(now - 10 * 24 * 60 * 60 * 1000), // 10d ago (within month)
           title: "Stale",
           by: "a",
-          updated: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000), // 15d ago
+          updated: new Date(now - 49 * 60 * 60 * 1000), // 49h ago
         }),
       ]);
 
-      // Simulate worker's stale story query
+      // Simulate worker's monthly stale story query
       const staleSnap = await storiesCollection()
-        .where("updated", "<", new Date(Date.now() - 14 * 24 * 60 * 60 * 1000))
+        .where("time", ">", new Date(now - 28 * 24 * 60 * 60 * 1000))
+        .where("updated", "<", new Date(now - 48 * 60 * 60 * 1000))
         .get();
 
       expect(staleSnap.docs).toHaveLength(1);
@@ -149,14 +151,15 @@ describe("syncOnce()", () => {
   });
 
   it("updates stale stories", async () => {
-    // Seed a story updated 15 days ago
+    const now = Date.now();
+    // Seed a story within the month window, updated 49h ago (stale for monthly threshold)
     await storiesCollection().doc(padId(100)).set({
       id: 100,
       score: 50,
-      time: new Date(),
+      time: new Date(now - 10 * 24 * 60 * 60 * 1000), // 10d ago (within 28d)
       title: "Stale story",
       by: "a",
-      updated: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
+      updated: new Date(now - 49 * 60 * 60 * 1000), // 49h ago
     });
 
     Remote.getNewStories.mockResolvedValue([50]); // no new stories
@@ -183,6 +186,38 @@ describe("syncOnce()", () => {
 
     expect(Remote.updateStories).not.toHaveBeenCalled();
   });
+
+  it("limits trending batch to WORKER_BATCH_LIMIT", async () => {
+    const now = Date.now();
+    // Seed more stories than WORKER_BATCH_LIMIT, all stale
+    const promises = [];
+    for (let i = 1; i <= WORKER_BATCH_LIMIT + 50; i++) {
+      promises.push(
+        storiesCollection().doc(padId(i)).set({
+          id: i,
+          score: 50,
+          time: new Date(now - 2 * 24 * 60 * 60 * 1000), // 2d ago (within week)
+          title: `Story ${i}`,
+          by: "a",
+          updated: new Date(now - 7 * 60 * 60 * 1000), // 7h ago (stale for 6h threshold)
+        })
+      );
+    }
+    await Promise.all(promises);
+
+    Remote.getNewStories.mockResolvedValue([1]); // no new stories
+
+    await syncOnce();
+
+    // Should have been called with at most WORKER_BATCH_LIMIT IDs per query
+    const calls = Remote.updateStories.mock.calls;
+    for (const call of calls) {
+      expect(call[0].length).toBeLessThanOrEqual(WORKER_BATCH_LIMIT);
+    }
+    // At least one call should have exactly WORKER_BATCH_LIMIT (the weekly query hits the cap)
+    const hasMaxBatch = calls.some(call => call[0].length === WORKER_BATCH_LIMIT);
+    expect(hasMaxBatch).toBe(true);
+  });
 });
 
 describe("utility functions", () => {
@@ -199,5 +234,9 @@ describe("utility functions", () => {
     jest.advanceTimersByTime(1000);
     await promise;
     jest.useRealTimers();
+  });
+
+  it("exports WORKER_BATCH_LIMIT", () => {
+    expect(WORKER_BATCH_LIMIT).toBe(200);
   });
 });
