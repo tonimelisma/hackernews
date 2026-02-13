@@ -2,7 +2,7 @@
 
 ## Overview
 
-The app uses Google Cloud Firestore (project: `melisma-essentials`, database: `hackernews`) with environment-prefixed collections to separate dev/ci/prod data in a single database.
+The app uses Google Cloud Firestore (project: `melisma-hackernews`, default database) with environment-prefixed collections to separate dev/ci/prod data in a single database.
 
 | `NODE_ENV` | Prefix | Collections |
 |---|---|---|
@@ -66,7 +66,7 @@ Required for multi-inequality queries in the worker's score update logic:
 
 Create via:
 ```bash
-gcloud firestore indexes composite create --project=melisma-essentials --database=hackernews \
+gcloud firestore indexes composite create --project=melisma-hackernews \
   --collection-group={prefix}-stories --field-config=field-path=time,order=ASCENDING --field-config=field-path=updated,order=ASCENDING
 ```
 

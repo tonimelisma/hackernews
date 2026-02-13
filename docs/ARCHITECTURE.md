@@ -9,7 +9,7 @@ HackerNews aggregator with three runtime processes and a Firestore database.
 | Web Server | Node.js/Express | `bin/www` → `app.js` | REST API + static frontend |
 | Background Worker | Node.js | `worker.js` | Sync stories from HN, update scores |
 | Frontend | React (Vite) | `hackernews-frontend/src/index.jsx` | SPA served as static files |
-| Database | Google Cloud Firestore | — | Stories, users (project: `melisma-essentials`, db: `hackernews`) |
+| Database | Google Cloud Firestore | — | Stories, users (project: `melisma-hackernews`, default db) |
 
 ## Process Diagram
 

@@ -17,8 +17,7 @@ const path = require("path");
 const TARGET_PREFIX = process.env.TARGET_PREFIX || "prod";
 
 const db = new Firestore({
-  projectId: "melisma-essentials",
-  databaseId: "hackernews",
+  projectId: "melisma-hackernews",
 });
 
 const storiesCol = db.collection(`${TARGET_PREFIX}-stories`);

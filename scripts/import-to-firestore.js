@@ -67,8 +67,7 @@ if (USERS_ONLY && STORIES_ONLY) {
 const TARGET_PREFIX = process.env.TARGET_PREFIX || "prod";
 
 const db = new Firestore({
-  projectId: "melisma-essentials",
-  databaseId: "hackernews",
+  projectId: "melisma-hackernews",
 });
 
 const storiesCol = db.collection(`${TARGET_PREFIX}-stories`);
@@ -76,8 +75,8 @@ const usersCol = db.collection(`${TARGET_PREFIX}-users`);
 
 const padId = (id) => String(id).padStart(10, "0");
 
-const BATCH_SIZE = 50;
-const BATCH_DELAY_MS = 5000;
+const BATCH_SIZE = 500;
+const BATCH_DELAY_MS = 500;
 const MAX_RETRIES = 5;
 
 const DATA_DIR = path.join(__dirname, "data");

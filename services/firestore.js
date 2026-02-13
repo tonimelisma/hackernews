@@ -5,8 +5,7 @@ let db;
 const getDb = () => {
   if (!db) {
     db = new Firestore({
-      projectId: "melisma-essentials",
-      databaseId: "hackernews",
+      projectId: "melisma-hackernews",
     });
   }
   return db;
