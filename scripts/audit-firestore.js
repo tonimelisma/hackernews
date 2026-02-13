@@ -25,16 +25,8 @@ const storiesCol = db.collection(`${TARGET_PREFIX}-stories`);
 const usersCol = db.collection(`${TARGET_PREFIX}-users`);
 
 async function countCollection(collection) {
-  let count = 0;
-  const PAGE = 10000;
-  let snapshot = await collection.select().limit(PAGE).get();
-  count += snapshot.docs.length;
-  while (snapshot.docs.length === PAGE) {
-    const last = snapshot.docs[snapshot.docs.length - 1];
-    snapshot = await collection.select().startAfter(last).limit(PAGE).get();
-    count += snapshot.docs.length;
-  }
-  return count;
+  const snapshot = await collection.count().get();
+  return snapshot.data().count;
 }
 
 async function main() {
@@ -51,11 +43,13 @@ async function main() {
 
   // Count users and their hidden subcollections
   console.log(`\nCounting ${TARGET_PREFIX}-users...`);
-  const usersSnapshot = await usersCol.select().get();
-  const userCount = usersSnapshot.docs.length;
+  const userCount = await countCollection(usersCol);
   console.log(`  Users: ${userCount}`);
 
+  // To count hidden subcollections we still need to know user doc IDs
+  // Use select() to get just IDs (minimal reads: 1 per user)
   let totalHidden = 0;
+  const usersSnapshot = await usersCol.select().get();
   for (const userDoc of usersSnapshot.docs) {
     const hiddenCol = usersCol.doc(userDoc.id).collection("hidden");
     const hiddenCount = await countCollection(hiddenCol);

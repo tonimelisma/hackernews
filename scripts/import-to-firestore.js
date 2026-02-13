@@ -10,6 +10,7 @@
  *   --users-only      Import only users + hidden subcollections (skip stories)
  *   --stories-only    Import only stories (skip users)
  *   --limit N         Import only the N newest stories (by time descending)
+ *   --no-dedup        Skip existing-doc check (saves ~19K reads). Safe because batch.set() is idempotent.
  *
  * Environment:
  *   TARGET_PREFIX     Collection prefix (default: "prod")
@@ -36,6 +37,7 @@ const args = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
 const USERS_ONLY = args.includes("--users-only");
 const STORIES_ONLY = args.includes("--stories-only");
+const NO_DEDUP = args.includes("--no-dedup");
 
 let MAX_WRITES = Infinity;
 const maxIdx = args.indexOf("--max-writes");
@@ -121,9 +123,14 @@ async function commitWithRetry(batch, label) {
       await batch.commit();
       return;
     } catch (e) {
-      if (e.code === 4 || (e.message && e.message.includes("RESOURCE_EXHAUSTED"))) {
+      const isRetryable =
+        e.code === 4 || // RESOURCE_EXHAUSTED
+        e.code === 13 || // INTERNAL (transient gRPC errors)
+        e.code === 14 || // UNAVAILABLE
+        (e.message && e.message.includes("RESOURCE_EXHAUSTED"));
+      if (isRetryable && attempt < MAX_RETRIES) {
         const backoff = BATCH_DELAY_MS * Math.pow(2, attempt);
-        console.log(`  ${label}: RESOURCE_EXHAUSTED, backing off ${backoff / 1000}s (attempt ${attempt}/${MAX_RETRIES})...`);
+        console.log(`  ${label}: ${e.details || e.message}, backing off ${backoff / 1000}s (attempt ${attempt}/${MAX_RETRIES})...`);
         await sleep(backoff);
       } else {
         throw e;
@@ -166,29 +173,40 @@ async function importStories(stories, progress) {
   }
 
   if (DRY_RUN) {
-    // In dry-run, still check existing docs to get accurate count
-    console.log("Fetching existing docs for accurate dry-run count...");
-    const existingDocs = await getExistingDocIds(storiesCol);
-    console.log(`Already in Firestore: ${existingDocs.size} stories`);
+    if (NO_DEDUP) {
+      console.log("Dry-run with --no-dedup: counting all remaining as writes (no Firestore reads)");
+      console.log(`Dry-run: would write ${remaining.length} stories (dedup skipped)`);
+      writesThisRun += remaining.length;
+    } else {
+      console.log("Fetching existing docs for accurate dry-run count...");
+      const existingDocs = await getExistingDocIds(storiesCol);
+      console.log(`Already in Firestore: ${existingDocs.size} stories`);
 
-    let wouldWrite = 0;
-    let wouldSkip = 0;
-    for (const story of remaining) {
-      const docId = padId(story.id);
-      if (existingDocs.has(docId)) {
-        wouldSkip++;
-      } else {
-        wouldWrite++;
+      let wouldWrite = 0;
+      let wouldSkip = 0;
+      for (const story of remaining) {
+        const docId = padId(story.id);
+        if (existingDocs.has(docId)) {
+          wouldSkip++;
+        } else {
+          wouldWrite++;
+        }
       }
+      console.log(`Dry-run: would write ${wouldWrite} stories, skip ${wouldSkip} existing`);
+      writesThisRun += wouldWrite;
     }
-    console.log(`Dry-run: would write ${wouldWrite} stories, skip ${wouldSkip} existing`);
-    writesThisRun += wouldWrite;
     return;
   }
 
   // Real import
-  const existingDocs = await getExistingDocIds(storiesCol);
-  console.log(`Already in Firestore: ${existingDocs.size} stories`);
+  let existingDocs;
+  if (NO_DEDUP) {
+    existingDocs = new Set();
+    console.log("--no-dedup: skipping existing doc check (0 reads)");
+  } else {
+    existingDocs = await getExistingDocIds(storiesCol);
+    console.log(`Already in Firestore: ${existingDocs.size} stories`);
+  }
 
   let batch = db.batch();
   let batchCount = 0;
@@ -302,9 +320,12 @@ async function importUsers(users, progress) {
         break;
       } catch (e) {
         if (attempt === MAX_RETRIES) throw e;
-        if (e.code === 4 || (e.message && e.message.includes("RESOURCE_EXHAUSTED"))) {
+        const isRetryable =
+          e.code === 4 || e.code === 13 || e.code === 14 ||
+          (e.message && e.message.includes("RESOURCE_EXHAUSTED"));
+        if (isRetryable) {
           const backoff = BATCH_DELAY_MS * Math.pow(2, attempt);
-          console.log(`  User ${user.username}: RESOURCE_EXHAUSTED, backing off ${backoff / 1000}s...`);
+          console.log(`  User ${user.username}: ${e.details || e.message}, backing off ${backoff / 1000}s...`);
           await sleep(backoff);
         } else {
           throw e;
@@ -398,6 +419,9 @@ async function main() {
   console.log(`Mode: ${DRY_RUN ? "DRY RUN" : "LIVE"}`);
   console.log(`Max writes: ${MAX_WRITES === Infinity ? "unlimited" : MAX_WRITES}`);
   console.log(`Import scope: ${USERS_ONLY ? "users only" : STORIES_ONLY ? "stories only" : "all"}`);
+  if (NO_DEDUP) {
+    console.log(`Dedup: DISABLED (--no-dedup)`);
+  }
   if (LIMIT < Infinity) {
     console.log(`Story limit: ${LIMIT} newest`);
   }

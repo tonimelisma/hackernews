@@ -41,6 +41,10 @@ cd hackernews-frontend && npm start
 npm run worker
 ```
 
+## Working Style
+
+- **One command at a time.** Never chain shell commands with `&&`, `||`, or `;`. Run each command as a separate Bash tool call. This makes output easier to read and debug.
+
 ## Definition of Done
 
 You own this repo. You are the maintainer. There is no "someone else" — if there are uncommitted changes, failing tests, or stale docs, that's YOUR unfinished work from a previous session. You clean it up. Every iteration of work must end with the repo in a clean, working, documented state. No excuses.
