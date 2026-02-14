@@ -1,4 +1,5 @@
 const axios = require("axios");
+const qs = require("qs");
 const { storiesCollection, padId } = require("./firestore");
 
 const newStoriesUrl =
@@ -18,8 +19,11 @@ const alltimeTopStoriesUrl = "https://www.hntoplinks.com/all/";
 const login = async (goto, acct, pw) => {
   const response = await axios.post(
     loginUrl,
-    new URLSearchParams({ goto, acct, pw }),
-    { withCredentials: true }
+    qs.stringify({ goto, acct, pw }),
+    {
+      withCredentials: true,
+      headers: { "Content-Type": "application/x-www-form-urlencoded" }
+    }
   );
   if (response.status === 200) {
     if (response.request.path === "/login") {
