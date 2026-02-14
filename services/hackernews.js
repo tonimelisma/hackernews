@@ -17,14 +17,28 @@ const yearlyTopStoriesUrl = "https://www.hntoplinks.com/year/";
 const alltimeTopStoriesUrl = "https://www.hntoplinks.com/all/";
 
 const login = async (goto, acct, pw) => {
+  const qsBody = qs.stringify({ goto, acct, pw });
+  const uspBody = new URLSearchParams({ goto, acct, pw }).toString();
+
+  console.log("[login-debug] acct:", acct);
+  console.log("[login-debug] pw chars:", [...pw].map(c => `${c}(${c.charCodeAt(0)})`).join(" "));
+  console.log("[login-debug] qs.stringify:     ", qsBody);
+  console.log("[login-debug] URLSearchParams:  ", uspBody);
+  console.log("[login-debug] bodies identical: ", qsBody === uspBody);
+
   const response = await axios.post(
     loginUrl,
-    qs.stringify({ goto, acct, pw }),
+    qsBody,
     {
       withCredentials: true,
       headers: { "Content-Type": "application/x-www-form-urlencoded" }
     }
   );
+
+  console.log("[login-debug] request Content-Type:", response.request.getHeader ? response.request.getHeader("Content-Type") : "(mock)");
+  console.log("[login-debug] response status:", response.status);
+  console.log("[login-debug] response redirect path:", response.request.path);
+
   if (response.status === 200) {
     if (response.request.path === "/login") {
       console.error("login failed (redirected to /login):", response.status);
