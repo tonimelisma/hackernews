@@ -143,4 +143,4 @@ jobs:
           version: production
 
       - name: Stop staging service
-        run: gcloud app versions delete v1 --service=staging --project=melisma-hackernews --quiet
+        run: gcloud app versions stop v1 --service=staging --project=melisma-hackernews --quiet
