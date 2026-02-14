@@ -108,7 +108,7 @@ jobs:
         with:
           deliverables: staging.yaml
           project_id: melisma-hackernews
-          version: staging
+          version: v1
 
   deploy-production:
     needs: deploy-staging
@@ -143,4 +143,4 @@ jobs:
           version: production
 
       - name: Stop staging service
-        run: gcloud app versions delete staging --service=staging --project=melisma-hackernews --quiet
+        run: gcloud app versions delete v1 --service=staging --project=melisma-hackernews --quiet
