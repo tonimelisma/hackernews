@@ -123,7 +123,7 @@ const App = () => {
             onChange={({ target }) => setPassword(target.value)}
           />
         </div>
-        <button type="submit" className="btn btn-dark btn-md mb-2 form-group">
+        <button type="submit" className="btn btn-primary btn-md mb-2 form-group">
           Login
         </button>
         {loginError ? (

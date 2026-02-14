@@ -9,3 +9,7 @@ html {
 main {
   padding-top: 3.5em;
 }
+
+[data-bs-theme="dark"] a:not(.btn) {
+  color: #6ea8fe;
+}
