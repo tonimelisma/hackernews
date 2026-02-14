@@ -27,19 +27,19 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `tests/integration/storyService.test.js` | Integration | 21 | All storyService CRUD, cache hit/expiry, Day-merge, query caps against MockFirestore |
 | `tests/integration/api.test.js` | Integration | 26 | Full HTTP request/response via supertest (incl. `/_ah/worker` endpoint) |
 | `tests/integration/worker.test.js` | Integration | 13 | syncOnce() direct tests, staleness queries, batch limits, utility functions |
-| **Total** | | **98** | |
+| **Total** | | **106** | |
 
 ### Frontend (Vitest + React Testing Library)
 
 | File | Type | Tests | What it covers |
 |------|------|-------|----------------|
-| `src/App.test.jsx` | Component | 8 | App rendering, timespan, loading, auth |
-| `src/components/StoryList.test.jsx` | Component | 4 | List rendering, hidden filtering |
+| `src/App.test.jsx` | Component | 16 | App rendering, timespan, loading, auth, hiddenLoaded, localStorage |
+| `src/components/StoryList.test.jsx` | Component | 4 | List rendering, hidden filtering (react-virtuoso mocked) |
 | `src/components/Story.test.jsx` | Component | 11 | Story card: title, author, score, time, favicon, hide, URL safety |
 | `src/hooks/useTheme.test.js` | Hook | 4 | Theme detection, live changes, cleanup |
 | `src/services/storyService.test.js` | Unit | 4 | Axios calls for stories/hidden |
 | `src/services/loginService.test.js` | Unit | 4 | Axios calls for login, logout, getMe |
-| **Total** | | **35** | |
+| **Total** | | **43** | |
 
 ## Key Technical Details
 
@@ -120,8 +120,10 @@ Tests that use `storyService` must call `clearCache()` in `afterEach` to prevent
 | `dayjs` | `vi.mock("dayjs")` | Consistent time output |
 | `./services/storyService` | `vi.mock()` | Isolate App component from API |
 | `./services/loginService` | `vi.mock()` | Isolate App component from API (login, logout, getMe) |
+| `react-virtuoso` | `vi.mock()` | Render all items synchronously in tests (jsdom lacks DOM measurements) |
 | `./Story` | `vi.mock()` | Isolate StoryList from Story rendering |
 | `window.matchMedia` | `Object.defineProperty` in `setupTests.js` | jsdom lacks matchMedia; needed for `useTheme` hook |
+| `localStorage` | `vi.stubGlobal()` in `setupTests.js` | Node.js 22+ experimental localStorage conflicts with jsdom |
 
 ## Code Coverage
 

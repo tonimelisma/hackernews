@@ -70,13 +70,13 @@ hackernews/
 │   ├── build/                      # Production build output (gitignored)
 │   └── src/
 │       ├── index.jsx               # createRoot entry point (React 19)
-│       ├── App.jsx                 # Main component: stories, auth, timespan filtering
+│       ├── App.jsx                 # Main component: stories, auth, timespan filtering, localStorage hidden
 │       ├── App.css                 # Styles
 │       ├── hooks/
 │       │   └── useTheme.js        # System dark/light mode detection (prefers-color-scheme)
 │       ├── components/
 │       │   ├── Story.jsx           # Single story card (favicon, title, author, score, time, hide)
-│       │   └── StoryList.jsx       # Story list with hidden filtering
+│       │   └── StoryList.jsx       # Virtualized story list (react-virtuoso) with hidden filtering
 │       └── services/
 │           ├── storyService.js     # Axios client for /stories, /hidden
 │           └── loginService.js     # Axios client for /login, /logout, /me

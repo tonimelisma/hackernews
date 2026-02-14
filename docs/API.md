@@ -19,7 +19,7 @@ Fetch stories sorted by score descending.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `timespan` | string | `"All"` | Filter: `Day`, `Week`, `Month`, `Year`, `All` |
-| `limit` | number | 500 | Max results (capped at `config.limitResults` = 500) |
+| `limit` | number | 500 | Max results (must be > 0, capped at `config.limitResults` = 500) |
 | `skip` | number | — | Pagination offset |
 
 **Response:** `200 OK`
@@ -73,12 +73,15 @@ Add a story ID to authenticated user's hidden list.
 { "hidden": 12345 }
 ```
 
+**Validation:** `hidden` must be a non-negative integer. Returns `400` with `{ "error": "invalid story id" }` if invalid.
+
 **Response:** `200 OK`
 ```json
 { "hidden": 12345 }
 ```
 
 **Error responses:**
+- `400` — invalid story id: `{ "error": "invalid story id" }`
 - `401` — missing/invalid token: `{ "error": "authentication error" }`
 - `500` — internal error: `{ "error": "internal server error" }`
 
@@ -120,6 +123,11 @@ JWT expires after **24 hours**. Signed with `process.env.SECRET` (validated on s
 **Response (bad request):** `400`
 ```json
 { "error": "missing fields" }
+```
+
+**Response (server error):** `500`
+```json
+{ "error": "internal server error" }
 ```
 
 ---

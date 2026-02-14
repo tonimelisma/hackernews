@@ -2,6 +2,15 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import StoryList from "./StoryList";
 
+// Mock react-virtuoso so all items render synchronously
+vi.mock("react-virtuoso", () => ({
+  Virtuoso: ({ data, itemContent }) => (
+    <div data-testid="virtuoso">
+      {data.map((item, index) => itemContent(index, item))}
+    </div>
+  ),
+}));
+
 // Mock Story component for isolation
 vi.mock("./Story", () => ({
   default: function MockStory({ story }) {

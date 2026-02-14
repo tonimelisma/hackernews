@@ -1,15 +1,22 @@
 import React from "react";
+import { Virtuoso } from "react-virtuoso";
 import Story from "./Story";
 
-// story.by, descendants, score, time, title, url
-
 const StoryList = ({ stories, hidden, addHidden }) => {
-  const filterHiddenStories = (story) => !hidden.includes(story.id);
   const filteredStories = hidden.length
-    ? stories.filter(filterHiddenStories)
+    ? stories.filter((story) => !hidden.includes(story.id))
     : stories;
-  return filteredStories.map((story) => (
-    <Story key={story.id} story={story} addHidden={addHidden} />
-  ));
+
+  if (filteredStories.length === 0) return null;
+
+  return (
+    <Virtuoso
+      useWindowScroll
+      data={filteredStories}
+      itemContent={(index, story) => (
+        <Story key={story.id} story={story} addHidden={addHidden} />
+      )}
+    />
+  );
 };
 export default StoryList;

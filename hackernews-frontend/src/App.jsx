@@ -10,20 +10,35 @@ import loginService from "./services/loginService";
 import StoryList from "./components/StoryList";
 import useTheme from "./hooks/useTheme";
 
+const loadLocalHidden = () => {
+  try {
+    const saved = localStorage.getItem("hiddenStories");
+    return saved ? JSON.parse(saved) : [];
+  } catch { return []; }
+};
+
+const saveLocalHidden = (hidden) => {
+  try { localStorage.setItem("hiddenStories", JSON.stringify(hidden)); }
+  catch { /* full or unavailable */ }
+};
+
 const App = () => {
   useTheme();
   const [stories, setStories] = useState([]);
   const [timespan, setTimespan] = useState("Day");
-  const [hidden, setHidden] = useState([]);
+  const [hidden, setHidden] = useState(() => loadLocalHidden());
+  const [hiddenLoaded, setHiddenLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [loggedInUser, setLoggedInUser] = useState("");
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     setLoading(true);
+    setError(null);
     storyService
       .getAll(timespan)
       .then((response) => {
@@ -31,6 +46,7 @@ const App = () => {
         setLoading(false);
       })
       .catch(() => {
+        setError("Failed to load stories.");
         setLoading(false);
       });
   }, [timespan]);
@@ -45,6 +61,7 @@ const App = () => {
       .catch(() => {
         setLoggedIn(false);
         setLoggedInUser("");
+        setHiddenLoaded(true);
       });
   }, []);
 
@@ -53,19 +70,28 @@ const App = () => {
       storyService
         .getHidden()
         .then((response) => {
-          setHidden(response.data);
+          const local = loadLocalHidden();
+          const merged = [...new Set([...response.data, ...local])];
+          setHidden(merged);
+          saveLocalHidden(merged);
+          setHiddenLoaded(true);
         })
         .catch(() => {
-          setHidden([]);
+          setHiddenLoaded(true);
         });
     }
   }, [loggedIn]);
 
   const addHidden = (id) => {
+    const previousHidden = hidden;
     const updatedHidden = hidden.concat(id);
     setHidden(updatedHidden);
+    saveLocalHidden(updatedHidden);
     if (loggedIn) {
-      storyService.addHidden(id);
+      storyService.addHidden(id).catch(() => {
+        setHidden(previousHidden);
+        saveLocalHidden(previousHidden);
+      });
     }
   };
 
@@ -95,7 +121,6 @@ const App = () => {
     }
     setLoggedIn(false);
     setLoggedInUser("");
-    setHidden([]);
   };
 
   const loginForm = () => {
@@ -208,23 +233,18 @@ const App = () => {
   };
 
   const timespanButtons = () => {
+    const timespans = ["Day", "Week", "Month", "Year", "All"];
     return (
       <>
-        <button className="btn btn-light" onClick={() => setTimespan("Day")}>
-          Day
-        </button>
-        <button className="btn btn-light" onClick={() => setTimespan("Week")}>
-          Week
-        </button>
-        <button className="btn btn-light" onClick={() => setTimespan("Month")}>
-          Month
-        </button>
-        <button className="btn btn-light" onClick={() => setTimespan("Year")}>
-          Year
-        </button>
-        <button className="btn btn-light" onClick={() => setTimespan("All")}>
-          All
-        </button>
+        {timespans.map((span) => (
+          <button
+            key={span}
+            className={`btn ${timespan === span ? "btn-primary" : "btn-light"}`}
+            onClick={() => setTimespan(span)}
+          >
+            {span}
+          </button>
+        ))}
       </>
     );
   };
@@ -233,12 +253,13 @@ const App = () => {
     <div>
       {navBar()}
       <main>
-        {loading ? (
+        {error && <div className="alert alert-danger m-3">{error}</div>}
+        {(loading || !hiddenLoaded) ? (
           <div className="alert alert-primary align-middle m-3" role="alert">
             Loading... <div className="spinner-border" role="status" />
           </div>
         ) : (
-          <StoryList stories={stories} hidden={hidden} addHidden={addHidden} />
+          !error && <StoryList stories={stories} hidden={hidden} addHidden={addHidden} />
         )}
       </main>
     </div>

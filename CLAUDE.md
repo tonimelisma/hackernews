@@ -135,7 +135,11 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 12. **Worker via App Engine Cron**: `cron.yaml` fires `GET /_ah/worker` every 15 minutes on the production service. The endpoint checks `X-Appengine-Cron: true` header (App Engine strips this from external requests). Calls `syncOnce()` from `worker.js`. Staleness thresholds: daily=1h, weekly=6h, monthly=48h. Each query capped at `WORKER_BATCH_LIMIT=200`.
 
-13. **Dark mode via system preference**: Bootstrap 5.3's `data-bs-theme` attribute on `<html>`. A synchronous `<script>` in `index.html` sets the attribute before first paint (no flash). `useTheme` hook listens for live OS changes. Navbar stays `navbar-dark bg-dark` in both modes. Story cards use `bg-body-secondary` (theme-aware). No manual toggle — system detection only.
+13. **react-virtuoso for story lists**: `StoryList.jsx` uses `<Virtuoso useWindowScroll>` to render only visible stories from up to 500 items. Tests mock `react-virtuoso` to render all items synchronously.
+
+14. **Hidden stories localStorage persistence**: Anonymous users' hidden state persists via `localStorage` (`hiddenStories` key). On login, server hidden IDs are merged with localStorage. `hiddenLoaded` state gates `StoryList` rendering to prevent flash of unhidden stories.
+
+15. **Dark mode via system preference**: Bootstrap 5.3's `data-bs-theme` attribute on `<html>`. A synchronous `<script>` in `index.html` sets the attribute before first paint (no flash). `useTheme` hook listens for live OS changes. Navbar stays `navbar-dark bg-dark` in both modes. Story cards use `bg-body-secondary` (theme-aware). No manual toggle — system detection only.
 
 14. **`getHidden` skips user doc check**: Reads subcollection directly — empty snapshot = no hidden stories. Saves 1 Firestore read per authenticated request.
 
@@ -158,12 +162,12 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, firestore, firestoreLogger) | 38 |
-| Backend integration (storyService, api, worker) | 61 |
-| Frontend component (App, StoryList, Story) | 23 |
+| Backend unit (middleware, config, hackernews, firestore, firestoreLogger) | 39 |
+| Backend integration (storyService, api, worker) | 67 |
+| Frontend component (App, StoryList, Story) | 31 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total (mock-based)** | **134** |
+| **Total (mock-based)** | **149** |
 | Firestore smoke (real dev- data, standalone) | 8 |
 
 ## Project Health
@@ -174,12 +178,12 @@ All of these must be kept current with every change:
 |----------|-------|---------|
 | Functionality | B | Core features work; hntoplinks scraper is brittle (regex) |
 | Security | A- | Helmet, CORS, rate limiting, JWT in HTTP-only cookie, SECRET validation |
-| Testing | A- | 134 tests, in-memory mock, ~1s backend runs |
+| Testing | A- | 149 tests, in-memory mock, ~1s backend runs |
 | Code Quality | A- | Modernized boilerplate, a11y fixes, bug fixes, dead code removed |
 | Architecture | B | Firestore migration, lazy singleton, env-prefixed collections |
 | Documentation | B+ | CLAUDE.md + 4 reference docs, proper README |
 | DevOps / CI | A- | App Engine Standard, GitHub Actions CI/CD with staging auto-deploy + prod approval gate, WIF auth, npm audit, ESLint, pre-commit hooks |
-| Performance | C+ | Client-side sort for Firestore constraint; no virtualization |
+| Performance | B- | Client-side sort for Firestore constraint; react-virtuoso for list rendering |
 | Dependencies | A- | 0 vulnerabilities in both backend and frontend |
 
 ### Open Issues
@@ -195,9 +199,6 @@ All of these must be kept current with every change:
 
 ### Frontend
 - Replace FontAwesome 5 packages with lighter alternative
-- Add virtualization for large story lists
-- Bug: hiding stories requires login — non-logged-in users lose hidden state on refresh
-- Bug: hidden stories flash briefly on page refresh before being filtered out (stories render before hidden IDs are fetched)
 
 ### Testing & Quality
 - Add end-to-end tests (Playwright or Cypress)
@@ -231,3 +232,7 @@ All of these must be kept current with every change:
 - **App Engine cron requires Cloud Scheduler IAM**: `gcloud app deploy cron.yaml` requires `cloudscheduler.locations.list` permission. The CI service account needs `roles/cloudscheduler.admin`.
 - **Bootstrap `data-bs-auto-close="outside"`**: Prevents dropdown from closing on clicks inside the menu (e.g., login form). Without it, clicking the Login button closes the dropdown before the user sees the result.
 - **App Engine static file caching**: App Engine sets all deployed file mtimes to `1980-01-01`. Express weak ETags are `W/"size-mtime"`. If `index.html` stays the same byte size across deploys (Vite hashes are fixed-length), the ETag doesn't change and browsers get 304 for stale HTML referencing nonexistent JS bundles. Fix: serve `index.html` with `Cache-Control: no-cache`; serve hashed `/assets/*` with `immutable, max-age=1y`.
+- **react-virtuoso for list virtualization**: `<Virtuoso useWindowScroll data={...} itemContent={...} />` renders only visible items. In tests, mock with a simple `({ data, itemContent }) => data.map(...)` to render all items synchronously. Must mock in every test file that renders a component using Virtuoso (both StoryList.test.jsx and App.test.jsx).
+- **Hidden stories localStorage persistence**: Anonymous users' hidden state persists via localStorage (`hiddenStories` key). On login, server hidden IDs are merged with localStorage (deduplicated via `Set`). `hiddenLoaded` state gates StoryList rendering to prevent flash of unhidden stories on page refresh.
+- **Batched Firestore operations**: All parallel Firestore reads/writes use `BATCH_SIZE=20` batching (in `services/hackernews.js`): `getItems`, `checkStoryExists`, `addStories`, `updateStories`. Prevents unbounded concurrent connections.
+- **Node 22+ `--localstorage-file` warning suppression**: Override `process.emit` in `jest.config.js` (runs before any test) to filter out the experimental localStorage warning. Must be in jest.config.js, not in test setup files which load too late.

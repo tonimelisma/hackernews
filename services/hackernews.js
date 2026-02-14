@@ -69,6 +69,7 @@ const getTopStories = async time => {
     return [...new Set(ids)];
   } catch (e) {
     console.error("getTopStories error:", e);
+    return [];
   }
 };
 
@@ -78,6 +79,7 @@ const getNewStories = async () => {
     return newStories.data;
   } catch (e) {
     console.error("getNewStories error:", e);
+    return [];
   }
 };
 
@@ -90,27 +92,37 @@ const getItem = async itemId => {
   }
 };
 
+const BATCH_SIZE = 20;
+
 const getItems = async itemIdList => {
-  const promiseArray = itemIdList.map(async storyId => {
-    const storyData = await getItem(storyId);
-    if (storyData) {
-      return storyData;
-    }
-  });
-  const itemDataList = await Promise.all(promiseArray);
-  return itemDataList.filter(Boolean);
+  const results = [];
+  for (let i = 0; i < itemIdList.length; i += BATCH_SIZE) {
+    const batch = itemIdList.slice(i, i + BATCH_SIZE);
+    const promiseArray = batch.map(async storyId => {
+      const storyData = await getItem(storyId);
+      if (storyData) {
+        return storyData;
+      }
+    });
+    const batchResults = await Promise.all(promiseArray);
+    results.push(...batchResults.filter(Boolean));
+  }
+  return results;
 };
 
 const checkStoryExists = async storyIdList => {
-  const promiseArray = storyIdList.map(async storyId => {
-    const doc = await storiesCollection().doc(padId(storyId)).get();
-    return doc.exists;
-  });
-  const results = await Promise.all(promiseArray);
-
   const missingStories = [];
-  for (let i = 0; i < storyIdList.length; i++) {
-    if (!results[i]) missingStories.push(storyIdList[i]);
+  for (let i = 0; i < storyIdList.length; i += BATCH_SIZE) {
+    const batch = storyIdList.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async storyId => {
+        const doc = await storiesCollection().doc(padId(storyId)).get();
+        return { storyId, exists: doc.exists };
+      })
+    );
+    for (const { storyId, exists } of results) {
+      if (!exists) missingStories.push(storyId);
+    }
   }
   return missingStories;
 };
@@ -118,53 +130,53 @@ const checkStoryExists = async storyIdList => {
 const addStories = async storyIdList => {
   const latestRemoteStoryData = await getItems(storyIdList);
 
-  const promiseArray = latestRemoteStoryData.map(async storyData => {
-    try {
-      if (storyData) {
-        return storiesCollection().doc(padId(storyData.id)).set({
-          by: storyData.by,
-          descendants: storyData.descendants,
-          id: storyData.id,
-          kids: storyData.kids,
-          score: storyData.score,
-          time: new Date(storyData.time * 1000),
-          title: storyData.title,
-          url: storyData.url,
-          updated: new Date()
-        });
-      }
-    } catch (e) {
-      console.error("addStories set error:", e, storyData);
-    }
-  });
-  try {
-    await Promise.all(promiseArray);
-  } catch (e) {
-    console.error("addStories batch error:", e);
+  for (let i = 0; i < latestRemoteStoryData.length; i += BATCH_SIZE) {
+    const batch = latestRemoteStoryData.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async storyData => {
+        try {
+          if (storyData) {
+            return storiesCollection().doc(padId(storyData.id)).set({
+              by: storyData.by,
+              descendants: storyData.descendants,
+              id: storyData.id,
+              kids: storyData.kids,
+              score: storyData.score,
+              time: new Date(storyData.time * 1000),
+              title: storyData.title,
+              url: storyData.url,
+              updated: new Date()
+            });
+          }
+        } catch (e) {
+          console.error("addStories set error:", e, storyData);
+        }
+      })
+    );
   }
 };
 
 const updateStories = async storyIdList => {
   const latestRemoteStoryData = await getItems(storyIdList);
 
-  const promiseArray = latestRemoteStoryData.map(async storyData => {
-    try {
-      if (storyData) {
-        return storiesCollection().doc(padId(storyData.id)).update({
-          descendants: storyData.descendants,
-          kids: storyData.kids,
-          score: storyData.score,
-          updated: new Date()
-        });
-      }
-    } catch (e) {
-      console.error("updateStories update error:", e, storyData);
-    }
-  });
-  try {
-    await Promise.all(promiseArray);
-  } catch (e) {
-    console.error("updateStories batch error:", e);
+  for (let i = 0; i < latestRemoteStoryData.length; i += BATCH_SIZE) {
+    const batch = latestRemoteStoryData.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async storyData => {
+        try {
+          if (storyData) {
+            return storiesCollection().doc(padId(storyData.id)).update({
+              descendants: storyData.descendants,
+              kids: storyData.kids,
+              score: storyData.score,
+              updated: new Date()
+            });
+          }
+        } catch (e) {
+          console.error("updateStories update error:", e, storyData);
+        }
+      })
+    );
   }
 };
 

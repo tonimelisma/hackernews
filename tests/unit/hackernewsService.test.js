@@ -63,14 +63,14 @@ describe("services/hackernews", () => {
       );
     });
 
-    it("returns undefined on error", async () => {
+    it("returns empty array on error", async () => {
       axios.get.mockRejectedValue(new Error("network error"));
 
       const consoleSpy = jest
         .spyOn(console, "error")
         .mockImplementation(() => {});
       const result = await hackernews.getNewStories();
-      expect(result).toBeUndefined();
+      expect(result).toEqual([]);
       consoleSpy.mockRestore();
     });
   });
@@ -101,6 +101,17 @@ describe("services/hackernews", () => {
 
       expect(result).toEqual(["111", "222"]);
       expect(axios.get).toHaveBeenCalledTimes(2);
+    });
+
+    it("returns empty array on error", async () => {
+      axios.get.mockRejectedValue(new Error("network error"));
+
+      const consoleSpy = jest
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      const result = await hackernews.getTopStories("daily");
+      expect(result).toEqual([]);
+      consoleSpy.mockRestore();
     });
 
     it("uses weekly URL for weekly timespan", async () => {

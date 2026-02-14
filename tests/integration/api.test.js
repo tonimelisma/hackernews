@@ -143,6 +143,30 @@ describe("API routes", () => {
       expect(res.body[0].score).toBe(200);
     });
 
+    it("defaults negative limit to config.limitResults", async () => {
+      await Promise.all([
+        seedStory({ id: 1 }),
+        seedStory({ id: 2 }),
+      ]);
+
+      const res = await request(app).get("/api/v1/stories?limit=-1");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(2);
+    });
+
+    it("defaults zero limit to config.limitResults", async () => {
+      await Promise.all([
+        seedStory({ id: 1 }),
+        seedStory({ id: 2 }),
+      ]);
+
+      const res = await request(app).get("/api/v1/stories?limit=0");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(2);
+    });
+
     it("defaults invalid timespan to All", async () => {
       await seedStory({ id: 1 });
 
@@ -207,6 +231,42 @@ describe("API routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ hidden: 789 });
+    });
+
+    it("returns 400 for non-integer hidden id", async () => {
+      const token = createToken("testuser");
+
+      const res = await request(app)
+        .post("/api/v1/hidden")
+        .set("Cookie", `token=${token}`)
+        .send({ hidden: "abc" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("invalid story id");
+    });
+
+    it("returns 400 for negative hidden id", async () => {
+      const token = createToken("testuser");
+
+      const res = await request(app)
+        .post("/api/v1/hidden")
+        .set("Cookie", `token=${token}`)
+        .send({ hidden: -1 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("invalid story id");
+    });
+
+    it("returns 400 for missing hidden id", async () => {
+      const token = createToken("testuser");
+
+      const res = await request(app)
+        .post("/api/v1/hidden")
+        .set("Cookie", `token=${token}`)
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("invalid story id");
     });
 
     it("returns 401 without token", async () => {
@@ -283,6 +343,17 @@ describe("API routes", () => {
 
       const userDoc = await usersCollection().doc("newuser").get();
       expect(userDoc.exists).toBe(true);
+    });
+
+    it("returns 500 on internal error during login", async () => {
+      hackernews.login.mockRejectedValue(new Error("network failure"));
+
+      const res = await request(app)
+        .post("/api/v1/login")
+        .send({ goto: "news", acct: "user", pw: "pass" });
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe("internal server error");
     });
 
     // Must be last: exhausts the rate limiter's 10-request quota for the process

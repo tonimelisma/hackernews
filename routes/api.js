@@ -45,7 +45,7 @@ const authenticateToken = (req, res, next) => {
   }
 };
 
-router.get("/stories", async (req, res, next) => {
+router.get("/stories", async (req, res) => {
   const parseTimespan = timespan => {
     if (!timespan) return "All";
     switch (timespan) {
@@ -60,7 +60,7 @@ router.get("/stories", async (req, res, next) => {
   };
 
   const limit =
-    !isNaN(req.query.limit) && req.query.limit <= config.limitResults
+    !isNaN(req.query.limit) && req.query.limit > 0 && req.query.limit <= config.limitResults
       ? parseInt(req.query.limit)
       : config.limitResults;
 
@@ -86,7 +86,7 @@ router.get("/stories", async (req, res, next) => {
   }
 });
 
-router.get("/hidden", authenticateToken, async (req, res, next) => {
+router.get("/hidden", authenticateToken, async (req, res) => {
   const ctx = createFirestoreContext();
   try {
     const hidden = await storyService.getHidden(req.user.username, ctx);
@@ -98,7 +98,10 @@ router.get("/hidden", authenticateToken, async (req, res, next) => {
   }
 });
 
-router.post("/hidden", authenticateToken, async (req, res, next) => {
+router.post("/hidden", authenticateToken, async (req, res) => {
+  if (!Number.isInteger(req.body.hidden) || req.body.hidden < 0) {
+    return res.status(400).json({ error: "invalid story id" });
+  }
   const ctx = createFirestoreContext();
   try {
     await storyService.upsertHidden(req.user.username, req.body.hidden, ctx);
@@ -110,7 +113,7 @@ router.post("/hidden", authenticateToken, async (req, res, next) => {
   }
 });
 
-router.post("/login", loginLimiter, async (req, res, next) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const goto = req.body.goto;
   const pw = req.body.pw;
   const acct = req.body.acct;
@@ -131,7 +134,7 @@ router.post("/login", loginLimiter, async (req, res, next) => {
       }
     } catch (e) {
       console.error("login error:", e);
-      res.status(401).json({ error: "internal server error" });
+      res.status(500).json({ error: "internal server error" });
     }
   }
 });
