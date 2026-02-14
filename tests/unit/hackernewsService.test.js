@@ -16,20 +16,20 @@ afterAll(async () => await db.closeDatabase());
 
 describe("services/hackernews", () => {
   describe("login", () => {
-    it("returns true when login redirects to /news", async () => {
+    it("returns true when HN response has no 'Bad login'", async () => {
       axios.post.mockResolvedValue({
-        status: 302,
-        headers: { location: "news" },
+        status: 200,
+        data: "<html><body>Hacker News</body></html>",
       });
 
       const result = await hackernews.login("news", "testuser", "testpass");
       expect(result).toBe(true);
     });
 
-    it("returns false when login stays on /login", async () => {
+    it("returns false when HN response contains 'Bad login'", async () => {
       axios.post.mockResolvedValue({
-        status: 302,
-        headers: { location: "login?goto=news" },
+        status: 200,
+        data: "<html><body>Bad login.<br><br><b>Login</b></body></html>",
       });
 
       const consoleSpy = jest

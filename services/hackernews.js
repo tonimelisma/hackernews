@@ -21,24 +21,18 @@ const login = async (goto, acct, pw) => {
       loginUrl,
       new URLSearchParams({ goto, acct, pw }).toString(),
       {
-        maxRedirects: 0,
-        validateStatus: (status) => status >= 200 && status < 400,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
       }
     );
-    // HN returns 302 on both success and failure:
-    //   success → Location points to the goto page (e.g. "news")
-    //   failure → Location points back to "login"
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.location || "";
-      if (location.includes("login")) {
-        console.error("login failed (HN redirected back to login)");
-        return false;
-      }
-      return true;
+    // HN returns "Bad login." in the response body on failure.
+    // On success, it redirects to the goto page (axios follows automatically).
+    // Checking the body is the most robust detection method — it works
+    // regardless of redirect behavior, HTTP version, or Node.js version.
+    if (typeof response.data === "string" && response.data.includes("Bad login")) {
+      console.error("login failed (HN returned 'Bad login')");
+      return false;
     }
-    // No redirect — treat as failure
-    console.error("login: unexpected response status", response.status);
-    return false;
+    return true;
   } catch (e) {
     console.error("login request error:", e.message);
     return false;

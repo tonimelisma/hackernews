@@ -134,8 +134,8 @@ Express serves the Vite build output from `hackernews-frontend/build/` with a tw
 
 ### Authentication (Frontend → HN → Backend → JWT Cookie)
 1. Frontend POSTs credentials to `/api/v1/login`
-2. Backend proxies login to `news.ycombinator.com/login` with `maxRedirects: 0`
-3. If HN's 302 Location header points to a non-login page → success → issue JWT (24h expiry) as HTTP-only cookie + upsert user
+2. Backend proxies login to `news.ycombinator.com/login` (axios follows redirects)
+3. If HN response body does NOT contain "Bad login" → success → issue JWT (24h expiry) as HTTP-only cookie + upsert user
 4. Cookie (`token`) sent automatically with all `/api` requests (httpOnly, secure in prod, sameSite=strict)
 5. On page load, frontend calls `GET /me` to check login state
 6. Protected routes (`/hidden`, `/me`) verify JWT via `authenticateToken` middleware and extract username
