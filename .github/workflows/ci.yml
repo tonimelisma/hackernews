@@ -141,6 +141,3 @@ jobs:
           deliverables: app.yaml cron.yaml
           project_id: melisma-hackernews
           version: production
-
-      - name: Stop staging service
-        run: gcloud app versions stop v1 --service=staging --project=melisma-hackernews --quiet
