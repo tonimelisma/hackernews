@@ -29,6 +29,20 @@ app.use(express.static(path.join(__dirname, "hackernews-frontend/build")));
 // ROUTES
 app.use("/api/v1", apiRouter);
 
+app.get("/_ah/worker", async (req, res) => {
+  if (req.get("X-Appengine-Cron") !== "true") {
+    return res.status(403).json({ error: "forbidden" });
+  }
+  try {
+    const { syncOnce } = require("./worker");
+    await syncOnce();
+    res.status(200).json({ status: "sync complete" });
+  } catch (e) {
+    console.error("worker endpoint error:", e);
+    res.status(500).json({ error: "sync failed" });
+  }
+});
+
 // ERRORS
 app.use(middleware.unknownEndpoint);
 app.use(middleware.errorHandler);

@@ -7,6 +7,7 @@ The app uses Google Cloud Firestore (project: `melisma-hackernews`, default data
 | `NODE_ENV` | Prefix | Collections |
 |---|---|---|
 | `production` | `prod-` | `prod-stories`, `prod-users` |
+| `staging` | `staging-` | `staging-stories`, `staging-users` |
 | `ci` | `ci-` | `ci-stories`, `ci-users` |
 | anything else | `dev-` | `dev-stories`, `dev-users` |
 

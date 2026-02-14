@@ -22,11 +22,11 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `tests/unit/middleware.test.js` | Unit | 3 | `unknownEndpoint` (404), `errorHandler` (500 + next) |
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
 | `tests/unit/hackernewsService.test.js` | Unit+DB | 15 | All HN API functions (axios mocked), Firestore operations |
-| `tests/unit/firestore.test.js` | Unit | 10 | getCollectionPrefix, padId, storiesCollection, usersCollection, getDb/setDb |
+| `tests/unit/firestore.test.js` | Unit | 11 | getCollectionPrefix (incl. staging), padId, storiesCollection, usersCollection, getDb/setDb |
 | `tests/integration/storyService.test.js` | Integration | 21 | All storyService CRUD, cache hit/expiry, Day-merge, query caps against MockFirestore |
-| `tests/integration/api.test.js` | Integration | 23 | Full HTTP request/response via supertest |
+| `tests/integration/api.test.js` | Integration | 26 | Full HTTP request/response via supertest (incl. `/_ah/worker` endpoint) |
 | `tests/integration/worker.test.js` | Integration | 13 | syncOnce() direct tests, staleness queries, batch limits, utility functions |
-| **Total** | | **86** | |
+| **Total** | | **90** | |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -108,6 +108,7 @@ Tests that use `storyService` must call `clearCache()` in `afterEach` to prevent
 | `axios` | `jest.mock("axios")` | Avoid real HTTP calls to HN API |
 | `jsonwebtoken` | `jest.mock("jsonwebtoken")` | SlowBuffer removed in Node 25 |
 | `services/hackernews` | `jest.mock()` | Isolate API route tests and worker tests from HN service |
+| `worker` | `jest.mock()` | Isolate `/_ah/worker` endpoint tests from actual sync logic |
 | `console.log` | `jest.spyOn` | Suppress noise from production code |
 
 ### Frontend

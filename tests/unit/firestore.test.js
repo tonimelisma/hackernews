@@ -21,6 +21,12 @@ describe("services/firestore", () => {
       expect(getCollectionPrefix()).toBe("prod");
     });
 
+    it("returns 'staging' for staging", () => {
+      process.env.NODE_ENV = "staging";
+      const { getCollectionPrefix } = require("../../services/firestore");
+      expect(getCollectionPrefix()).toBe("staging");
+    });
+
     it("returns 'ci' for ci", () => {
       process.env.NODE_ENV = "ci";
       const { getCollectionPrefix } = require("../../services/firestore");

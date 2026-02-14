@@ -335,6 +335,45 @@ describe("API routes", () => {
     });
   });
 
+  describe("GET /_ah/worker", () => {
+    let mockSyncOnce;
+
+    beforeEach(() => {
+      mockSyncOnce = jest.fn().mockResolvedValue();
+      jest.mock("../../worker", () => ({
+        syncOnce: (...args) => mockSyncOnce(...args),
+      }));
+    });
+
+    it("returns 403 without X-Appengine-Cron header", async () => {
+      const res = await request(app).get("/_ah/worker");
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe("forbidden");
+    });
+
+    it("returns 200 and runs sync with cron header", async () => {
+      const res = await request(app)
+        .get("/_ah/worker")
+        .set("X-Appengine-Cron", "true");
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("sync complete");
+      expect(mockSyncOnce).toHaveBeenCalled();
+    });
+
+    it("returns 500 when sync fails", async () => {
+      mockSyncOnce.mockRejectedValue(new Error("sync error"));
+
+      const res = await request(app)
+        .get("/_ah/worker")
+        .set("X-Appengine-Cron", "true");
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe("sync failed");
+    });
+  });
+
   describe("Unknown endpoint", () => {
     it("returns 404 for unknown routes", async () => {
       const res = await request(app).get("/api/v1/nonexistent");

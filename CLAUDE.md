@@ -2,7 +2,7 @@
 
 ## Project Summary
 
-HackerNews aggregator: a Node.js/Express backend with a React frontend. The backend scrapes Hacker News stories, stores them in Google Cloud Firestore, and serves them via a REST API. A background worker (`worker.js`) periodically syncs new stories and updates scores. The frontend displays top stories with filtering by timespan and user-hidden stories.
+HackerNews aggregator: a Node.js/Express backend with a React frontend, deployed on Google App Engine Standard. The backend scrapes Hacker News stories, stores them in Google Cloud Firestore, and serves them via a REST API. An App Engine Cron job triggers `/_ah/worker` every 15 minutes to sync new stories and update scores. The frontend displays top stories with filtering by timespan and user-hidden stories.
 
 ## Quick Reference Commands
 
@@ -72,8 +72,8 @@ You own this repo. You are the maintainer. There is no "someone else" — if the
 
 ```
 hackernews/
-├── app.js                  # Express app setup (middleware, routes, static files)
-├── worker.js               # Background sync worker (throng, infinite loop)
+├── app.js                  # Express app setup (middleware, routes, static files, /_ah/worker)
+├── worker.js               # Background sync (syncOnce export, throng for local dev)
 ├── routes/api.js           # REST API routes (/stories, /hidden, /login, /logout, /me)
 ├── services/
 │   ├── firestore.js        # Firestore client singleton, collection refs, padId()
@@ -83,6 +83,10 @@ hackernews/
 │   ├── config.js           # Environment config (limitResults)
 │   └── middleware.js        # Express error handlers
 ├── eslint.config.js        # ESLint flat config (backend)
+├── app.yaml                # App Engine production config
+├── staging.yaml            # App Engine staging config
+├── cron.yaml               # App Engine Cron (15-min worker sync)
+├── .gcloudignore           # Files excluded from App Engine deploy
 ├── hackernews-frontend/    # React frontend (Vite + Vitest)
 │   └── src/
 │       ├── App.jsx         # Main component (stories, auth, filtering)
@@ -97,6 +101,7 @@ hackernews/
 ├── tests/integration/
 │   └── firestore-smoke.test.js  # Standalone smoke tests against real Firestore (not Jest)
 ├── scripts/                # Migration scripts (import, audit, export)
+├── .github/workflows/ci.yml # CI + deploy pipeline (staging auto, prod manual)
 ├── .husky/pre-commit       # Pre-commit hook (lint-staged)
 └── docs/                   # LLM-geared documentation
 ```
@@ -107,7 +112,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 1. **Firestore lazy singleton**: `services/firestore.js` creates the Firestore client on first use via `getDb()`. No module-load side effects. `setDb()` allows test injection.
 
-2. **Environment-prefixed collections**: Collections are prefixed by `NODE_ENV`: `dev-stories`/`prod-stories`/`ci-stories`. Logic in `services/firestore.js:getCollectionPrefix()`.
+2. **Environment-prefixed collections**: Collections are prefixed by `NODE_ENV`: `prod-`/`staging-`/`ci-`/`dev-` (default). Logic in `services/firestore.js:getCollectionPrefix()`.
 
 3. **In-memory MockFirestore for tests**: Tests use `jest.config.js` `moduleNameMapper` to replace `@google-cloud/firestore` with an in-memory mock (`tests/mocks/firestore-mock.js`). The real SDK never loads — no credentials, no network, no `--experimental-vm-modules` needed. The mock implements the exact Firestore API surface used by this project (collection/doc/query/batch/subcollections). `_clear()` wipes all data between tests.
 
@@ -127,11 +132,15 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 11. **Zero-padded story doc IDs**: Stories use `padId()` (10-digit zero-padded string) as doc ID for lexicographic ordering that matches numeric order.
 
-12. **Worker quota optimization**: Runs every 30 min (not 10). Staleness thresholds: daily=1h, weekly=6h, monthly=48h. 14d-old query removed (scores stable). Each query capped at `WORKER_BATCH_LIMIT=200`.
+12. **Worker via App Engine Cron**: `cron.yaml` fires `GET /_ah/worker` every 15 minutes on the production service. The endpoint checks `X-Appengine-Cron: true` header (App Engine strips this from external requests). Calls `syncOnce()` from `worker.js`. Staleness thresholds: daily=1h, weekly=6h, monthly=48h. Each query capped at `WORKER_BATCH_LIMIT=200`.
 
 13. **Dark mode via system preference**: Bootstrap 5.3's `data-bs-theme` attribute on `<html>`. A synchronous `<script>` in `index.html` sets the attribute before first paint (no flash). `useTheme` hook listens for live OS changes. Navbar stays `navbar-dark bg-dark` in both modes. Story cards use `bg-body-secondary` (theme-aware). No manual toggle — system detection only.
 
 14. **`getHidden` skips user doc check**: Reads subcollection directly — empty snapshot = no hidden stories. Saves 1 Firestore read per authenticated request.
+
+15. **App Engine deployment**: Production (`app.yaml`) and staging (`staging.yaml`) services. `env_variables.yaml` (gitignored) holds the JWT `SECRET`. `gcp-build` script in `package.json` builds the frontend during deploy. Staging uses `BOOTSTRAP_ON_START=true` for fire-and-forget initial sync on startup.
+
+16. **CI/CD pipeline**: GitHub Actions deploys to staging on every push to master (after tests pass), then to production after manual approval via GitHub environment protection rules. Uses Workload Identity Federation for keyless GCP auth.
 
 ## Documentation
 
@@ -146,27 +155,27 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, firestore) | 29 |
-| Backend integration (storyService, api, worker) | 57 |
+| Backend unit (middleware, config, hackernews, firestore) | 30 |
+| Backend integration (storyService, api, worker) | 60 |
 | Frontend component (App, StoryList, Story) | 23 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total (mock-based)** | **121** |
+| **Total (mock-based)** | **125** |
 | Firestore smoke (real dev- data, standalone) | 8 |
 
 ## Project Health
 
-**Overall: B** — Working application with solid test coverage and good documentation.
+**Overall: B+** — Working application with solid test coverage, good documentation, and automated cloud deployment.
 
 | Category | Grade | Summary |
 |----------|-------|---------|
 | Functionality | B | Core features work; hntoplinks scraper is brittle (regex) |
 | Security | A- | Helmet, CORS, rate limiting, JWT in HTTP-only cookie, SECRET validation |
-| Testing | A- | 109 tests, in-memory mock, ~1s backend runs |
+| Testing | A- | 125 tests, in-memory mock, ~1s backend runs |
 | Code Quality | A- | Modernized boilerplate, a11y fixes, bug fixes, dead code removed |
 | Architecture | B | Firestore migration, lazy singleton, env-prefixed collections |
 | Documentation | B+ | CLAUDE.md + 4 reference docs, proper README |
-| DevOps / CI | B+ | GitHub Actions Node 22, npm audit + build in CI, ESLint in CI, pre-commit hooks; no Docker |
+| DevOps / CI | A- | App Engine Standard, GitHub Actions CI/CD with staging auto-deploy + prod approval gate, WIF auth, npm audit, ESLint, pre-commit hooks |
 | Performance | C+ | Client-side sort for Firestore constraint; no virtualization |
 | Dependencies | A- | 0 vulnerabilities in both backend and frontend |
 
@@ -180,9 +189,6 @@ All of these must be kept current with every change:
 - Frontend: **0 vulnerabilities** — `npm audit` enforced in CI at `moderate` level (Vite replaced CRA)
 
 ## Backlog
-
-### Build & Tooling
-- Migrate Heroku → VPS (Docker Compose + nginx + certbot)
 
 ### Frontend
 - Replace FontAwesome 5 packages with lighter alternative
@@ -216,3 +222,7 @@ All of these must be kept current with every change:
 - **Bootstrap 5 data attributes**: Use `data-bs-toggle`/`data-bs-dismiss` (not `data-toggle`/`data-dismiss`). Class `dropdown-menu-right` was renamed to `dropdown-menu-end`.
 - **`errorHandler` must not call `next()`**: Calling `next(error)` after `res.status().json()` triggers "headers already sent" errors if another error handler exists downstream.
 - **Vite build output**: `build.outDir` set to `"build"` in `vite.config.js` to match Express static path in `app.js`. `build/` is gitignored.
+- **App Engine `gcp-build`**: `package.json` script runs `cd hackernews-frontend && npm ci && npm run build` during deploy. App Engine runs this automatically after `npm install`.
+- **App Engine Cron + `X-Appengine-Cron`**: App Engine strips the `X-Appengine-Cron` header from external requests. The `/_ah/worker` endpoint checks for this header to ensure only App Engine Cron can trigger syncs.
+- **Workload Identity Federation for CI/CD**: GitHub Actions authenticates to GCP via OIDC tokens (no service account keys). Requires WIF pool + provider + attribute condition restricting to the specific repo.
+- **`env_variables.yaml` for App Engine secrets**: Gitignored file included by `app.yaml`/`staging.yaml`. In CI/CD, written from `secrets.APP_SECRET` during the deploy step. Must NOT be in `.gcloudignore` (needs to be deployed).

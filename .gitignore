@@ -67,3 +67,6 @@ scripts/data/
 
 # Story cache (persisted across restarts)
 .cache/
+
+# App Engine secrets
+env_variables.yaml

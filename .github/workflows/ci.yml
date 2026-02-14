@@ -75,3 +75,65 @@ jobs:
       - name: Run npm audit
         run: npm audit --audit-level=moderate
         working-directory: hackernews-frontend
+
+  deploy-staging:
+    needs: [backend-tests, frontend-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: ${{ vars.GCP_SA_EMAIL }}
+
+      - name: Write env_variables.yaml
+        run: |
+          cat > env_variables.yaml << 'EOF'
+          env_variables:
+            SECRET: "${{ secrets.APP_SECRET }}"
+          EOF
+
+      - name: Deploy to App Engine (staging)
+        uses: google-github-actions/deploy-appengine@v2
+        with:
+          deliverables: staging.yaml
+          project_id: melisma-hackernews
+
+  deploy-production:
+    needs: deploy-staging
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: ${{ vars.GCP_SA_EMAIL }}
+
+      - name: Write env_variables.yaml
+        run: |
+          cat > env_variables.yaml << 'EOF'
+          env_variables:
+            SECRET: "${{ secrets.APP_SECRET }}"
+          EOF
+
+      - name: Deploy to App Engine (production)
+        uses: google-github-actions/deploy-appengine@v2
+        with:
+          deliverables: app.yaml cron.yaml
+          project_id: melisma-hackernews

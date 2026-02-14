@@ -1,0 +1,19 @@
+runtime: nodejs20
+service: staging
+instance_class: F1
+
+automatic_scaling:
+  max_instances: 1
+  min_instances: 0
+
+env_variables:
+  NODE_ENV: "staging"
+  BOOTSTRAP_ON_START: "true"
+
+includes:
+  - env_variables.yaml
+
+handlers:
+  - url: /.*
+    script: auto
+    secure: always

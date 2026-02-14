@@ -1,0 +1,18 @@
+runtime: nodejs20
+service: default
+instance_class: F1
+
+automatic_scaling:
+  max_instances: 2
+  min_instances: 0
+
+env_variables:
+  NODE_ENV: "production"
+
+includes:
+  - env_variables.yaml
+
+handlers:
+  - url: /.*
+    script: auto
+    secure: always

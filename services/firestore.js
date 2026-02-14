@@ -17,6 +17,7 @@ const setDb = (newDb) => {
 
 const getCollectionPrefix = () => {
   if (process.env.NODE_ENV === "production") return "prod";
+  if (process.env.NODE_ENV === "staging") return "staging";
   if (process.env.NODE_ENV === "ci") return "ci";
   return "dev";
 };

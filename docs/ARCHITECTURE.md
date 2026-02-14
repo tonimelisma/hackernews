@@ -11,6 +11,19 @@ HackerNews aggregator with three runtime processes and a Firestore database.
 | Frontend | React (Vite) | `hackernews-frontend/src/index.jsx` | SPA served as static files |
 | Database | Google Cloud Firestore | — | Stories, users (project: `melisma-hackernews`, default db) |
 
+## Deployment
+
+Hosted on **Google App Engine Standard** (project: `melisma-hackernews`, region: `europe-west1`).
+
+| Service | Config | URL |
+|---------|--------|-----|
+| Production (default) | `app.yaml` | `melisma-hackernews.appspot.com` |
+| Staging | `staging.yaml` | `staging-dot-melisma-hackernews.appspot.com` |
+
+- **Cron**: `cron.yaml` fires `GET /_ah/worker` every 15 minutes on the default (production) service
+- **Staging bootstrap**: `BOOTSTRAP_ON_START=true` triggers a one-time sync on startup (no cron worker in staging)
+- **CI/CD**: GitHub Actions deploys to staging on push to master, then to production after manual approval
+
 ## Process Diagram
 
 ```
@@ -18,10 +31,11 @@ HackerNews aggregator with three runtime processes and a Firestore database.
 │   Frontend   │────▶│  Express API  │────▶│ Firestore │
 │  (React SPA) │     │  /api/v1/*    │     │           │
 └──────────────┘     └───────────────┘     └───────────┘
-                                                 ▲
-                     ┌───────────────┐           │
-                     │    Worker     │───────────┘
-                     │  (throng)     │──────▶ HN API + hntoplinks
+                            ▲                     ▲
+                     ┌──────┴────────┐           │
+                     │ App Engine    │           │
+                     │ Cron → /_ah/  │───────────┘
+                     │   worker      │──────▶ HN API + hntoplinks
                      └───────────────┘
 ```
 
@@ -82,7 +96,12 @@ hackernews/
 │
 ├── docs/                           # LLM-geared documentation
 │
-├── .github/workflows/ci.yml       # GitHub Actions CI pipeline
+├── app.yaml                       # App Engine production config (default service)
+├── staging.yaml                   # App Engine staging config (staging service)
+├── cron.yaml                      # App Engine cron (15-min worker sync)
+├── env_variables.yaml             # App Engine secrets (gitignored)
+├── .gcloudignore                  # Files excluded from App Engine deploy
+├── .github/workflows/ci.yml      # GitHub Actions CI + deploy pipeline
 ├── .husky/pre-commit              # Pre-commit hook (lint-staged → ESLint)
 ├── eslint.config.js               # ESLint flat config (backend)
 ├── CLAUDE.md                       # Governance document + Definition of Done
@@ -97,13 +116,15 @@ hackernews/
 3. `storyService.getStories()` checks 1h TTL cache; on miss, queries Firestore (limit 500), sorts by score
 4. Response: JSON array of stories
 
-### Background Worker (Worker → HN API → Firestore)
-1. `throng(1, main)` starts single worker process
-2. Infinite loop every 30 minutes:
+### Background Worker (Cron → Express → HN API → Firestore)
+1. App Engine Cron fires `GET /_ah/worker` every 15 minutes (production only)
+2. Endpoint validates `X-Appengine-Cron: true` header (App Engine strips from external requests)
+3. Calls `syncOnce()` from `worker.js`:
    - Fetch new story IDs from HN Firebase API
    - Add missing stories to Firestore (doc ID = zero-padded HN ID)
    - Update scores for stale stories (tiered by age: 1h/6h/48h, batch limit 200)
-3. No pruning — Firestore free tier (1GB) handles ~27 years of growth at ~37MB/year
+4. No pruning — Firestore free tier (1GB) handles ~27 years of growth at ~37MB/year
+5. For staging: `BOOTSTRAP_ON_START=true` runs a one-time sync on server startup (no cron)
 
 ### Authentication (Frontend → HN → Backend → JWT Cookie)
 1. Frontend POSTs credentials to `/api/v1/login`
@@ -120,16 +141,17 @@ hackernews/
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `NODE_ENV` | No | `"production"` → `prod-` collections, `"ci"` → `ci-` collections, anything else → `dev-` |
+| `NODE_ENV` | No | `"production"` → `prod-`, `"staging"` → `staging-`, `"ci"` → `ci-`, anything else → `dev-` |
 | `SECRET` | Yes | JWT signing secret. Validated on startup in `bin/www` — server exits if missing |
-| `PORT` | No | HTTP listen port (default: 3000) |
+| `PORT` | No | HTTP listen port (default: 3000, set by App Engine in cloud) |
+| `BOOTSTRAP_ON_START` | No | `"true"` runs `syncOnce()` on server startup (used in staging) |
 
 ### Firestore Authentication
 
 | Environment | Auth Method |
 |---|---|
 | Local dev | Application Default Credentials via `gcloud auth application-default login` |
-| Production | Service account key or workload identity (depends on deployment) |
+| App Engine (staging/prod) | Automatic via App Engine default service account |
 
 ### Config Constants (`util/config.js`)
 

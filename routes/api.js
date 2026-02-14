@@ -20,7 +20,7 @@ const isValidUsername = (input) => {
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
+  secure: process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging",
   sameSite: "strict",
   maxAge: 24 * 60 * 60 * 1000,
   path: "/api",

@@ -92,4 +92,12 @@ function onListening() {
     ? 'pipe ' + addr
     : 'port ' + addr.port;
   debug('Listening on ' + bind);
+
+  if (process.env.BOOTSTRAP_ON_START === "true") {
+    const { syncOnce } = require("../worker");
+    console.log("Bootstrap: running initial sync...");
+    syncOnce()
+      .then(() => console.log("Bootstrap: initial sync complete"))
+      .catch((e) => console.error("Bootstrap: initial sync failed:", e));
+  }
 }
