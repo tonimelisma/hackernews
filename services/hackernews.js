@@ -18,7 +18,7 @@ const alltimeTopStoriesUrl = "https://www.hntoplinks.com/all/";
 const login = async (goto, acct, pw) => {
   const response = await axios.post(
     loginUrl,
-    new URLSearchParams({ goto, acct, pw }).toString(),
+    new URLSearchParams({ goto, acct, pw }),
     { withCredentials: true }
   );
   if (response.status === 200) {
