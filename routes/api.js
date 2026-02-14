@@ -28,6 +28,9 @@ const COOKIE_OPTIONS = {
 
 const authenticateToken = (req, res, next) => {
   const token = req.cookies && req.cookies.token;
+  if (!token) {
+    return res.status(401).json({ error: "authentication error" });
+  }
   try {
     const decodedToken = jwt.verify(token, process.env.SECRET);
     if (!decodedToken.username) {

@@ -11,7 +11,17 @@ const middleware = require("./util/middleware");
 
 const app = express();
 
-app.use(helmet());
+app.set("trust proxy", 1);
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      "img-src": ["'self'", "data:", "https://www.google.com"],
+      "script-src": ["'self'", "'unsafe-inline'"],
+    },
+  },
+}));
 app.use(logger(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
 const corsOrigin = process.env.NODE_ENV === "development"

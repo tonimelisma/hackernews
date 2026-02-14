@@ -123,7 +123,7 @@ const App = () => {
             onChange={({ target }) => setPassword(target.value)}
           />
         </div>
-        <button type="submit" className="btn-dark btn-md mb-2 form-group">
+        <button type="submit" className="btn btn-dark btn-md mb-2 form-group">
           Login
         </button>
         {loginError ? (
@@ -210,19 +210,19 @@ const App = () => {
   const timespanButtons = () => {
     return (
       <>
-        <button className="btn btn-outline-light" onClick={() => setTimespan("Day")}>
+        <button className="btn btn-light" onClick={() => setTimespan("Day")}>
           Day
         </button>
-        <button className="btn btn-outline-light" onClick={() => setTimespan("Week")}>
+        <button className="btn btn-light" onClick={() => setTimespan("Week")}>
           Week
         </button>
-        <button className="btn btn-outline-light" onClick={() => setTimespan("Month")}>
+        <button className="btn btn-light" onClick={() => setTimespan("Month")}>
           Month
         </button>
-        <button className="btn btn-outline-light" onClick={() => setTimespan("Year")}>
+        <button className="btn btn-light" onClick={() => setTimespan("Year")}>
           Year
         </button>
-        <button className="btn btn-outline-light" onClick={() => setTimespan("All")}>
+        <button className="btn btn-light" onClick={() => setTimespan("All")}>
           All
         </button>
       </>
