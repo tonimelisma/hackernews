@@ -60,35 +60,41 @@ const clearCache = () => {
   cache.clear();
 };
 
-const getHidden = async (reqUsername) => {
+const getHidden = async (reqUsername, ctx) => {
   const hiddenSnap = await usersCollection()
     .doc(reqUsername)
     .collection("hidden")
     .get();
+  ctx?.read("users/hidden", hiddenSnap.docs.length);
   return hiddenSnap.empty ? [] : hiddenSnap.docs.map((doc) => Number(doc.id));
 };
 
-const upsertHidden = async (reqUsername, reqHidden) => {
+const upsertHidden = async (reqUsername, reqHidden, ctx) => {
   await usersCollection().doc(reqUsername).set({}, { merge: true });
+  ctx?.write("users", 1);
   await usersCollection()
     .doc(reqUsername)
     .collection("hidden")
     .doc(String(reqHidden))
     .set({ addedAt: Date.now() });
+  ctx?.write("users/hidden", 1);
 };
 
-const upsertUser = async (loginUsername) => {
+const upsertUser = async (loginUsername, ctx) => {
   await usersCollection().doc(loginUsername).set({}, { merge: true });
+  ctx?.write("users", 1);
 };
 
 // Fetch stories from cache or Firestore (raw, no merge)
-const fetchFromCacheOrFirestore = async (timespan) => {
+const fetchFromCacheOrFirestore = async (timespan, ctx) => {
   const ttl = CACHE_TTLS[timespan] || CACHE_TTLS.All;
   const cached = cache.get(timespan);
   if (cached && Date.now() - cached.timestamp < ttl) {
+    ctx?.cacheHit();
     return cached.data;
   }
 
+  ctx?.cacheMiss();
   let stories;
 
   if (timespan === "All" || !getTimespanDate(timespan)) {
@@ -97,6 +103,7 @@ const fetchFromCacheOrFirestore = async (timespan) => {
       .orderBy("score", "desc")
       .limit(MAX_QUERY_DOCS)
       .get();
+    ctx?.read("stories", snapshot.docs.length);
     stories = snapshot.docs.map(docToStory);
   } else {
     // Time-filtered: cap at MAX_QUERY_DOCS most recent, then sort by score client-side
@@ -106,6 +113,7 @@ const fetchFromCacheOrFirestore = async (timespan) => {
       .orderBy("time", "desc")
       .limit(MAX_QUERY_DOCS)
       .get();
+    ctx?.read("stories", snapshot.docs.length);
     stories = snapshot.docs.map(docToStory);
     stories.sort((a, b) => b.score - a.score);
   }
@@ -129,15 +137,15 @@ const mergeStories = (base, dayStories) => {
   return merged.slice(0, MAX_QUERY_DOCS);
 };
 
-const getStories = async (timespan, limit, skip = undefined) => {
+const getStories = async (timespan, limit, skip = undefined, ctx) => {
   const skipN = isNaN(skip) ? 0 : skip;
 
-  let stories = await fetchFromCacheOrFirestore(timespan);
+  let stories = await fetchFromCacheOrFirestore(timespan, ctx);
 
   // For non-Day timespans, merge in fresh Day stories so new high-scoring
   // stories appear in longer views without waiting for full cache expiry
   if (timespan !== "Day") {
-    const freshDay = await fetchFromCacheOrFirestore("Day");
+    const freshDay = await fetchFromCacheOrFirestore("Day", ctx);
     stories = mergeStories(stories, freshDay);
   }
 
@@ -166,7 +174,7 @@ const docToStory = (doc) => {
     descendants: data.descendants,
     id: data.id,
     score: data.score,
-    time: data.time,
+    time: data.time?.toDate ? data.time.toDate() : data.time,
     title: data.title,
     url: data.url,
   };

@@ -95,6 +95,11 @@ describe("services/storyService", () => {
       expect(story.title).toBeDefined();
     });
 
+    it("converts Firestore Timestamps to Date objects", async () => {
+      const result = await storyService.getStories("All", 1);
+      expect(result[0].time).toBeInstanceOf(Date);
+    });
+
     it("returns cached data on second call", async () => {
       const first = await storyService.getStories("All", 500);
       // Add another story after caching (outside Day range so merge doesn't pick it up)

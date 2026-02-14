@@ -59,6 +59,7 @@ hackernews/
 │
 ├── util/
 │   ├── config.js                   # dotenv config (limitResults)
+│   ├── firestoreLogger.js          # Per-request Firestore operation & cache analytics logging
 │   └── middleware.js               # unknownEndpoint (404) + errorHandler (500)
 │
 ├── hackernews-frontend/            # React Vite project

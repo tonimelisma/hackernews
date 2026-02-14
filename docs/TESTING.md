@@ -23,10 +23,11 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
 | `tests/unit/hackernewsService.test.js` | Unit+DB | 15 | All HN API functions (axios mocked), Firestore operations |
 | `tests/unit/firestore.test.js` | Unit | 11 | getCollectionPrefix (incl. staging), padId, storiesCollection, usersCollection, getDb/setDb |
+| `tests/unit/firestoreLogger.test.js` | Unit | 8 | createFirestoreContext: counters, read/write, cache hit/miss, log format, collections Set |
 | `tests/integration/storyService.test.js` | Integration | 21 | All storyService CRUD, cache hit/expiry, Day-merge, query caps against MockFirestore |
 | `tests/integration/api.test.js` | Integration | 26 | Full HTTP request/response via supertest (incl. `/_ah/worker` endpoint) |
 | `tests/integration/worker.test.js` | Integration | 13 | syncOnce() direct tests, staleness queries, batch limits, utility functions |
-| **Total** | | **90** | |
+| **Total** | | **98** | |
 
 ### Frontend (Vitest + React Testing Library)
 

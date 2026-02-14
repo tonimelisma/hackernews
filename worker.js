@@ -1,5 +1,6 @@
 const { storiesCollection } = require("./services/firestore");
 const Remote = require("./services/hackernews");
+const { createFirestoreContext } = require("./util/firestoreLogger");
 
 const throng = require("throng");
 
@@ -22,6 +23,10 @@ const formatBytes = (bytes, decimals = 2) => {
 }
 
 const syncOnce = async () => {
+  const ctx = createFirestoreContext();
+  let newCount = 0;
+  let updatedCount = 0;
+
   // LOAD LATEST STORIES
   try {
     // Find latest story by doc ID (zero-padded, so lexicographic = numeric order)
@@ -29,12 +34,15 @@ const syncOnce = async () => {
       .orderBy("id", "desc")
       .limit(1)
       .get();
+    ctx.read("stories", latestSnap.docs.length);
 
     const latestRemoteStoryIds = await Remote.getNewStories();
 
     if (latestSnap.empty) {
       console.log("empty db, bootstrapping...");
       await Remote.addStories(latestRemoteStoryIds);
+      ctx.write("stories", latestRemoteStoryIds.length);
+      newCount = latestRemoteStoryIds.length;
     } else {
       const latestLocalId = latestSnap.docs[0].data().id;
       if (latestLocalId < latestRemoteStoryIds[0]) {
@@ -43,6 +51,8 @@ const syncOnce = async () => {
           checkStoryId => checkStoryId > latestLocalId
         );
         await Remote.addStories(newStoryIds);
+        ctx.write("stories", newStoryIds.length);
+        newCount = newStoryIds.length;
       } else {
         console.log("all stories in local db already");
       }
@@ -59,8 +69,11 @@ const syncOnce = async () => {
       .orderBy("updated", "asc")
       .limit(WORKER_BATCH_LIMIT)
       .get();
+    ctx.read("stories", lastMonthSnap.docs.length);
     if (!lastMonthSnap.empty) {
       await Remote.updateStories(lastMonthSnap.docs.map(d => d.data().id));
+      ctx.write("stories", lastMonthSnap.docs.length);
+      updatedCount += lastMonthSnap.docs.length;
     }
 
     const lastWeekSnap = await storiesCollection()
@@ -69,8 +82,11 @@ const syncOnce = async () => {
       .orderBy("updated", "asc")
       .limit(WORKER_BATCH_LIMIT)
       .get();
+    ctx.read("stories", lastWeekSnap.docs.length);
     if (!lastWeekSnap.empty) {
       await Remote.updateStories(lastWeekSnap.docs.map(d => d.data().id));
+      ctx.write("stories", lastWeekSnap.docs.length);
+      updatedCount += lastWeekSnap.docs.length;
     }
 
     const last24hSnap = await storiesCollection()
@@ -79,15 +95,23 @@ const syncOnce = async () => {
       .orderBy("updated", "asc")
       .limit(WORKER_BATCH_LIMIT)
       .get();
+    ctx.read("stories", last24hSnap.docs.length);
     if (!last24hSnap.empty) {
       await Remote.updateStories(last24hSnap.docs.map(d => d.data().id));
+      ctx.write("stories", last24hSnap.docs.length);
+      updatedCount += last24hSnap.docs.length;
     }
   } catch (e) {
     console.error("error updating stories:", e);
   }
 
   const memoryUsage = process.memoryUsage();
-  console.log("sync complete | rss: %s, heap: %s", formatBytes(memoryUsage.rss), formatBytes(memoryUsage.heapUsed));
+  ctx.log("WORKER sync", {
+    new: newCount,
+    updated: updatedCount,
+    rss: formatBytes(memoryUsage.rss),
+    heap: formatBytes(memoryUsage.heapUsed),
+  });
 };
 
 const main = async () => {

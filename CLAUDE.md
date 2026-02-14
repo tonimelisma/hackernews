@@ -81,6 +81,7 @@ hackernews/
 │   └── hackernews.js       # HN API client + hntoplinks scraper
 ├── util/
 │   ├── config.js           # Environment config (limitResults)
+│   ├── firestoreLogger.js  # Per-request Firestore operation & cache analytics logging
 │   └── middleware.js        # Express error handlers
 ├── eslint.config.js        # ESLint flat config (backend)
 ├── app.yaml                # App Engine production config
@@ -157,12 +158,12 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, firestore) | 30 |
-| Backend integration (storyService, api, worker) | 60 |
+| Backend unit (middleware, config, hackernews, firestore, firestoreLogger) | 38 |
+| Backend integration (storyService, api, worker) | 61 |
 | Frontend component (App, StoryList, Story) | 23 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total (mock-based)** | **125** |
+| **Total (mock-based)** | **134** |
 | Firestore smoke (real dev- data, standalone) | 8 |
 
 ## Project Health
@@ -173,7 +174,7 @@ All of these must be kept current with every change:
 |----------|-------|---------|
 | Functionality | B | Core features work; hntoplinks scraper is brittle (regex) |
 | Security | A- | Helmet, CORS, rate limiting, JWT in HTTP-only cookie, SECRET validation |
-| Testing | A- | 125 tests, in-memory mock, ~1s backend runs |
+| Testing | A- | 134 tests, in-memory mock, ~1s backend runs |
 | Code Quality | A- | Modernized boilerplate, a11y fixes, bug fixes, dead code removed |
 | Architecture | B | Firestore migration, lazy singleton, env-prefixed collections |
 | Documentation | B+ | CLAUDE.md + 4 reference docs, proper README |
@@ -197,7 +198,6 @@ All of these must be kept current with every change:
 - Add virtualization for large story lists
 - Bug: hiding stories requires login — non-logged-in users lose hidden state on refresh
 - Bug: hidden stories flash briefly on page refresh before being filtered out (stories render before hidden IDs are fetched)
-- Bug: story timestamps show "a month ago" — API returns Firestore Timestamp objects (`{_seconds, _nanoseconds}`) instead of Date/ISO strings; dayjs can't parse them
 
 ### Testing & Quality
 - Add end-to-end tests (Playwright or Cypress)
@@ -218,7 +218,7 @@ All of these must be kept current with every change:
 - **Rate limiter state persists across tests** — rate-limit test must be last in its describe block.
 - **`bin/www` for startup checks**: SECRET validation lives in `bin/www` (not `app.js`) so tests can `require('../../app')` without triggering exit.
 - **jsdom lacks `window.matchMedia`**: Must stub in `setupTests.js` (global) for any component using `useTheme`. Tests that need specific matchMedia behavior reassign `window.matchMedia` in `beforeEach`.
-- **Logging convention**: `console.error` for errors (catch blocks), `console.log` for operational info (startup, sync progress). `tests/setup.js` suppresses both globally.
+- **Logging convention**: `console.error` for errors (catch blocks), `console.log` for operational info (startup, sync progress). `tests/setup.js` suppresses both globally. Per-request Firestore analytics use `[firestore]`-tagged structured log lines via `util/firestoreLogger.js` — tracks reads, writes, cache hits/misses, collections touched, and latency. `ctx` parameter is optional on all service functions (backwards-compatible).
 - **Pre-commit hooks**: husky + lint-staged run `eslint --fix` on staged `.js` files. Backend ESLint config ignores `hackernews-frontend/`.
 - **Bootstrap 5 data attributes**: Use `data-bs-toggle`/`data-bs-dismiss` (not `data-toggle`/`data-dismiss`). Class `dropdown-menu-right` was renamed to `dropdown-menu-end`.
 - **`errorHandler` must not call `next()`**: Calling `next(error)` after `res.status().json()` triggers "headers already sent" errors if another error handler exists downstream.

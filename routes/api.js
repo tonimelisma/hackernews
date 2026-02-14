@@ -6,6 +6,7 @@ const rateLimit = require("express-rate-limit");
 
 const storyService = require("../services/storyService");
 const hackernewsService = require("../services/hackernews");
+const { createFirestoreContext } = require("../util/firestoreLogger");
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -65,17 +66,20 @@ router.get("/stories", async (req, res, next) => {
 
   const timespan = parseTimespan(req.query.timespan);
 
+  const ctx = createFirestoreContext();
   try {
     const stories =
       !isNaN(req.query.skip) && req.query.skip > 0
         ? await storyService.getStories(
           timespan,
           limit,
-          parseInt(req.query.skip)
+          parseInt(req.query.skip),
+          ctx
         )
-        : await storyService.getStories(timespan, limit);
+        : await storyService.getStories(timespan, limit, undefined, ctx);
 
     res.json(stories);
+    ctx.log("GET /stories", { timespan, count: stories.length });
   } catch (e) {
     console.error("GET /stories error:", e);
     res.status(500).json({ error: "internal server error" });
@@ -83,9 +87,11 @@ router.get("/stories", async (req, res, next) => {
 });
 
 router.get("/hidden", authenticateToken, async (req, res, next) => {
+  const ctx = createFirestoreContext();
   try {
-    const hidden = await storyService.getHidden(req.user.username);
+    const hidden = await storyService.getHidden(req.user.username, ctx);
     res.status(200).json(hidden);
+    ctx.log("GET /hidden", { user: req.user.username });
   } catch (e) {
     console.error("GET /hidden error:", e);
     res.status(500).json({ error: "internal server error" });
@@ -93,9 +99,11 @@ router.get("/hidden", authenticateToken, async (req, res, next) => {
 });
 
 router.post("/hidden", authenticateToken, async (req, res, next) => {
+  const ctx = createFirestoreContext();
   try {
-    await storyService.upsertHidden(req.user.username, req.body.hidden);
+    await storyService.upsertHidden(req.user.username, req.body.hidden, ctx);
     res.status(200).json({ hidden: req.body.hidden });
+    ctx.log("POST /hidden", { user: req.user.username });
   } catch (e) {
     console.error("POST /hidden error:", e);
     res.status(500).json({ error: "internal server error" });
@@ -110,12 +118,14 @@ router.post("/login", loginLimiter, async (req, res, next) => {
     res.status(400).json({ error: "missing fields" });
   } else {
     try {
+      const ctx = createFirestoreContext();
       const loginCorrect = await hackernewsService.login(goto, acct, pw);
       if (loginCorrect) {
         const token = jwt.sign({ username: acct }, process.env.SECRET, { expiresIn: '24h' });
-        await storyService.upsertUser(acct);
+        await storyService.upsertUser(acct, ctx);
         res.cookie("token", token, COOKIE_OPTIONS);
         res.status(200).json({ username: acct });
+        ctx.log("POST /login", { user: acct });
       } else {
         res.status(401).json({ error: "invalid credentials" });
       }
