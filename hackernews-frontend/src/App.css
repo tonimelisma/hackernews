@@ -13,3 +13,14 @@ main {
 [data-bs-theme="dark"] a:not(.btn) {
   color: #b6d4fe;
 }
+
+[data-bs-theme="dark"] .btn-outline-secondary {
+  --bs-btn-color: #dee2e6;
+  --bs-btn-border-color: #dee2e6;
+  --bs-btn-hover-bg: #dee2e6;
+  --bs-btn-hover-border-color: #dee2e6;
+  --bs-btn-hover-color: #212529;
+  --bs-btn-active-bg: #dee2e6;
+  --bs-btn-active-border-color: #dee2e6;
+  --bs-btn-active-color: #212529;
+}
