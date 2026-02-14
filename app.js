@@ -34,7 +34,22 @@ app.use(cookieParser());
 app.use(express.urlencoded({ extended: false }));
 
 // STATIC
-app.use(express.static(path.join(__dirname, "hackernews-frontend/build")));
+// Hashed assets are immutable — cache forever
+const buildPath = path.join(__dirname, "hackernews-frontend/build");
+app.use("/assets", express.static(path.join(buildPath, "assets"), {
+  maxAge: "1y",
+  immutable: true,
+}));
+// index.html must never be cached — App Engine sets all file mtimes to
+// 1980-01-01, so Express ETags (based on size+mtime) don't change between
+// deploys, causing browsers to serve stale HTML referencing old JS hashes.
+app.use(express.static(buildPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith(".html")) {
+      res.setHeader("Cache-Control", "no-cache");
+    }
+  },
+}));
 
 // ROUTES
 app.use("/api/v1", apiRouter);
