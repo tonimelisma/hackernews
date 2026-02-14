@@ -140,6 +140,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 15. **App Engine deployment**: Production (`app.yaml`) and staging (`staging.yaml`) services. `env_variables.yaml` (gitignored) holds the JWT `SECRET`. `gcp-build` script in `package.json` builds the frontend during deploy. Staging uses `BOOTSTRAP_ON_START=true` for fire-and-forget initial sync on startup.
 
+17. **Static file caching strategy**: App Engine sets all deployed file mtimes to `1980-01-01`. Express ETags are based on `filesize + mtime`, so if `index.html` stays the same byte size between deploys (Vite hashes are same length), the ETag never changes and browsers get stale 304s. Fix: `index.html` is served with `Cache-Control: no-cache`; hashed `/assets/*` files are served with `max-age=1y, immutable`.
+
 16. **CI/CD pipeline**: GitHub Actions deploys to staging on every push to master (after tests pass), then to production after manual approval via GitHub environment protection rules. Uses Workload Identity Federation for keyless GCP auth. CI service account requires `roles/cloudscheduler.admin` for `cron.yaml` deployment (App Engine cron uses Cloud Scheduler under the hood).
 
 ## Documentation
@@ -228,3 +230,4 @@ All of these must be kept current with every change:
 - **HN login redirect detection**: HN returns 302 on both success and failure. Use `maxRedirects: 0` + inspect `Location` header directly — don't follow redirects and check `response.request.path`, which is fragile across Node.js versions and environments (broke on Node 22/App Engine).
 - **App Engine cron requires Cloud Scheduler IAM**: `gcloud app deploy cron.yaml` requires `cloudscheduler.locations.list` permission. The CI service account needs `roles/cloudscheduler.admin`.
 - **Bootstrap `data-bs-auto-close="outside"`**: Prevents dropdown from closing on clicks inside the menu (e.g., login form). Without it, clicking the Login button closes the dropdown before the user sees the result.
+- **App Engine static file caching**: App Engine sets all deployed file mtimes to `1980-01-01`. Express weak ETags are `W/"size-mtime"`. If `index.html` stays the same byte size across deploys (Vite hashes are fixed-length), the ETag doesn't change and browsers get 304 for stale HTML referencing nonexistent JS bundles. Fix: serve `index.html` with `Cache-Control: no-cache`; serve hashed `/assets/*` with `immutable, max-age=1y`.

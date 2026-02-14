@@ -127,6 +127,11 @@ hackernews/
 4. No pruning — Firestore free tier (1GB) handles ~27 years of growth at ~37MB/year
 5. For staging: `BOOTSTRAP_ON_START=true` runs a one-time sync on server startup (no cron)
 
+### Static File Serving
+Express serves the Vite build output from `hackernews-frontend/build/` with a two-tier caching strategy:
+- **`/assets/*`** (hashed filenames): `Cache-Control: public, max-age=31536000, immutable` — safe to cache forever since filenames change on content change
+- **`index.html`**: `Cache-Control: no-cache` — forces browser to revalidate on every visit. Required because App Engine sets all deployed file mtimes to `1980-01-01`, making Express ETags size-only (stale across deploys if file size doesn't change)
+
 ### Authentication (Frontend → HN → Backend → JWT Cookie)
 1. Frontend POSTs credentials to `/api/v1/login`
 2. Backend proxies login to `news.ycombinator.com/login` with `maxRedirects: 0`
