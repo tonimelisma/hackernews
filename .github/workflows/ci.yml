@@ -76,6 +76,8 @@ jobs:
         run: npm audit --audit-level=moderate
         working-directory: hackernews-frontend
 
+  # NOTE: deploy-staging requires the App Engine "default" service to already exist.
+  # For new projects, bootstrap once: gcloud app deploy app.yaml cron.yaml --project melisma-hackernews
   deploy-staging:
     needs: [backend-tests, frontend-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'

@@ -23,6 +23,7 @@ Hosted on **Google App Engine Standard** (project: `melisma-hackernews`, region:
 - **Cron**: `cron.yaml` fires `GET /_ah/worker` every 15 minutes on the default (production) service
 - **Staging bootstrap**: `BOOTSTRAP_ON_START=true` triggers a one-time sync on startup (no cron worker in staging)
 - **CI/CD**: GitHub Actions deploys to staging on push to master, then to production after manual approval
+- **Bootstrap**: App Engine requires the `default` service to exist before deploying named services (like `staging`). For new projects, run `gcloud app deploy app.yaml cron.yaml --project melisma-hackernews` once manually before CI can deploy staging
 
 ## Process Diagram
 
