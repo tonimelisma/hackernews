@@ -35,7 +35,9 @@ app.get("/_ah/worker", async (req, res) => {
   }
   try {
     const { syncOnce } = require("./worker");
+    const { clearCache } = require("./services/storyService");
     await syncOnce();
+    clearCache();
     res.status(200).json({ status: "sync complete" });
   } catch (e) {
     console.error("worker endpoint error:", e);

@@ -95,9 +95,13 @@ function onListening() {
 
   if (process.env.BOOTSTRAP_ON_START === "true") {
     const { syncOnce } = require("../worker");
+    const { clearCache } = require("../services/storyService");
     console.log("Bootstrap: running initial sync...");
     syncOnce()
-      .then(() => console.log("Bootstrap: initial sync complete"))
+      .then(() => {
+        clearCache();
+        console.log("Bootstrap: initial sync complete, cache cleared");
+      })
       .catch((e) => console.error("Bootstrap: initial sync failed:", e));
   }
 }
