@@ -166,7 +166,7 @@ const App = () => {
           {timespanButtons()}
         </div>
         <div className="btn-group">
-          <button type="button" className="btn" data-bs-toggle="dropdown">
+          <button type="button" className="btn" data-bs-toggle="dropdown" data-bs-auto-close="outside">
             {loggedIn ? (
               <FontAwesomeIcon
                 icon={faUserCircle}

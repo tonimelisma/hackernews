@@ -140,7 +140,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 15. **App Engine deployment**: Production (`app.yaml`) and staging (`staging.yaml`) services. `env_variables.yaml` (gitignored) holds the JWT `SECRET`. `gcp-build` script in `package.json` builds the frontend during deploy. Staging uses `BOOTSTRAP_ON_START=true` for fire-and-forget initial sync on startup.
 
-16. **CI/CD pipeline**: GitHub Actions deploys to staging on every push to master (after tests pass), then to production after manual approval via GitHub environment protection rules. Uses Workload Identity Federation for keyless GCP auth.
+16. **CI/CD pipeline**: GitHub Actions deploys to staging on every push to master (after tests pass), then to production after manual approval via GitHub environment protection rules. Uses Workload Identity Federation for keyless GCP auth. CI service account requires `roles/cloudscheduler.admin` for `cron.yaml` deployment (App Engine cron uses Cloud Scheduler under the hood).
 
 ## Documentation
 
@@ -225,3 +225,6 @@ All of these must be kept current with every change:
 - **App Engine Cron + `X-Appengine-Cron`**: App Engine strips the `X-Appengine-Cron` header from external requests. The `/_ah/worker` endpoint checks for this header to ensure only App Engine Cron can trigger syncs.
 - **Workload Identity Federation for CI/CD**: GitHub Actions authenticates to GCP via OIDC tokens (no service account keys). Requires WIF pool + provider + attribute condition restricting to the specific repo.
 - **`env_variables.yaml` for App Engine secrets**: Gitignored file included by `app.yaml`/`staging.yaml`. In CI/CD, written from `secrets.APP_SECRET` during the deploy step. Must NOT be in `.gcloudignore` (needs to be deployed).
+- **HN login redirect detection**: HN returns 302 on both success and failure. Use `maxRedirects: 0` + inspect `Location` header directly — don't follow redirects and check `response.request.path`, which is fragile across Node.js versions and environments (broke on Node 22/App Engine).
+- **App Engine cron requires Cloud Scheduler IAM**: `gcloud app deploy cron.yaml` requires `cloudscheduler.locations.list` permission. The CI service account needs `roles/cloudscheduler.admin`.
+- **Bootstrap `data-bs-auto-close="outside"`**: Prevents dropdown from closing on clicks inside the menu (e.g., login form). Without it, clicking the Login button closes the dropdown before the user sees the result.

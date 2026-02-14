@@ -22,7 +22,7 @@ Hosted on **Google App Engine Standard** (project: `melisma-hackernews`, region:
 
 - **Cron**: `cron.yaml` fires `GET /_ah/worker` every 15 minutes on the default (production) service
 - **Staging bootstrap**: `BOOTSTRAP_ON_START=true` triggers a one-time sync on startup (no cron worker in staging)
-- **CI/CD**: GitHub Actions deploys to staging on push to master, then to production after manual approval
+- **CI/CD**: GitHub Actions deploys to staging on push to master, then to production after manual approval. CI service account needs `roles/cloudscheduler.admin` for `cron.yaml` deployment
 - **Bootstrap**: App Engine requires the `default` service to exist before deploying named services (like `staging`). For new projects, run `gcloud app deploy app.yaml cron.yaml --project melisma-hackernews` once manually before CI can deploy staging
 
 ## Process Diagram
@@ -129,8 +129,8 @@ hackernews/
 
 ### Authentication (Frontend → HN → Backend → JWT Cookie)
 1. Frontend POSTs credentials to `/api/v1/login`
-2. Backend proxies login to `news.ycombinator.com/login`
-3. If HN redirects to `/news` → success → issue JWT (24h expiry) as HTTP-only cookie + upsert user
+2. Backend proxies login to `news.ycombinator.com/login` with `maxRedirects: 0`
+3. If HN's 302 Location header points to a non-login page → success → issue JWT (24h expiry) as HTTP-only cookie + upsert user
 4. Cookie (`token`) sent automatically with all `/api` requests (httpOnly, secure in prod, sameSite=strict)
 5. On page load, frontend calls `GET /me` to check login state
 6. Protected routes (`/hidden`, `/me`) verify JWT via `authenticateToken` middleware and extract username

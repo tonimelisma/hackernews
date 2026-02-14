@@ -18,8 +18,8 @@ describe("services/hackernews", () => {
   describe("login", () => {
     it("returns true when login redirects to /news", async () => {
       axios.post.mockResolvedValue({
-        status: 200,
-        request: { path: "/news" },
+        status: 302,
+        headers: { location: "news" },
       });
 
       const result = await hackernews.login("news", "testuser", "testpass");
@@ -28,26 +28,23 @@ describe("services/hackernews", () => {
 
     it("returns false when login stays on /login", async () => {
       axios.post.mockResolvedValue({
-        status: 200,
-        request: { path: "/login" },
+        status: 302,
+        headers: { location: "login?goto=news" },
       });
 
       const consoleSpy = jest
-        .spyOn(console, "log")
+        .spyOn(console, "error")
         .mockImplementation(() => {});
       const result = await hackernews.login("news", "testuser", "wrongpass");
       expect(result).toBe(false);
       consoleSpy.mockRestore();
     });
 
-    it("returns false for non-200 status", async () => {
-      axios.post.mockResolvedValue({
-        status: 403,
-        request: { path: "/login" },
-      });
+    it("returns false on network error", async () => {
+      axios.post.mockRejectedValue(new Error("network error"));
 
       const consoleSpy = jest
-        .spyOn(console, "log")
+        .spyOn(console, "error")
         .mockImplementation(() => {});
       const result = await hackernews.login("news", "testuser", "testpass");
       expect(result).toBe(false);

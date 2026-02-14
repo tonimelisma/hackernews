@@ -16,20 +16,33 @@ const yearlyTopStoriesUrl = "https://www.hntoplinks.com/year/";
 const alltimeTopStoriesUrl = "https://www.hntoplinks.com/all/";
 
 const login = async (goto, acct, pw) => {
-  const response = await axios.post(
-    loginUrl,
-    new URLSearchParams({ goto, acct, pw }).toString(),
-    { withCredentials: true }
-  );
-  if (response.status === 200) {
-    if (response.request.path === "/login") {
-      console.error("login failed (redirected to /login):", response.status);
-      return false;
-    } else if (response.request.path === "/news") {
+  try {
+    const response = await axios.post(
+      loginUrl,
+      new URLSearchParams({ goto, acct, pw }).toString(),
+      {
+        maxRedirects: 0,
+        validateStatus: (status) => status >= 200 && status < 400,
+      }
+    );
+    // HN returns 302 on both success and failure:
+    //   success → Location points to the goto page (e.g. "news")
+    //   failure → Location points back to "login"
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.location || "";
+      if (location.includes("login")) {
+        console.error("login failed (HN redirected back to login)");
+        return false;
+      }
       return true;
     }
+    // No redirect — treat as failure
+    console.error("login: unexpected response status", response.status);
+    return false;
+  } catch (e) {
+    console.error("login request error:", e.message);
+    return false;
   }
-  return false;
 };
 
 const getTopStories = async time => {
