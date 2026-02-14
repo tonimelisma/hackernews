@@ -16,20 +16,20 @@ afterAll(async () => await db.closeDatabase());
 
 describe("services/hackernews", () => {
   describe("login", () => {
-    it("returns true when HN response has no 'Bad login'", async () => {
+    it("returns true when redirected to /news", async () => {
       axios.post.mockResolvedValue({
         status: 200,
-        data: "<html><body>Hacker News</body></html>",
+        request: { path: "/news" },
       });
 
       const result = await hackernews.login("news", "testuser", "testpass");
       expect(result).toBe(true);
     });
 
-    it("returns false when HN response contains 'Bad login'", async () => {
+    it("returns false when redirected back to /login", async () => {
       axios.post.mockResolvedValue({
         status: 200,
-        data: "<html><body>Bad login.<br><br><b>Login</b></body></html>",
+        request: { path: "/login" },
       });
 
       const consoleSpy = jest
@@ -40,15 +40,14 @@ describe("services/hackernews", () => {
       consoleSpy.mockRestore();
     });
 
-    it("returns false on network error", async () => {
-      axios.post.mockRejectedValue(new Error("network error"));
+    it("returns false for unexpected redirect path", async () => {
+      axios.post.mockResolvedValue({
+        status: 200,
+        request: { path: "/other" },
+      });
 
-      const consoleSpy = jest
-        .spyOn(console, "error")
-        .mockImplementation(() => {});
       const result = await hackernews.login("news", "testuser", "testpass");
       expect(result).toBe(false);
-      consoleSpy.mockRestore();
     });
   });
 

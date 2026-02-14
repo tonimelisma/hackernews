@@ -16,27 +16,20 @@ const yearlyTopStoriesUrl = "https://www.hntoplinks.com/year/";
 const alltimeTopStoriesUrl = "https://www.hntoplinks.com/all/";
 
 const login = async (goto, acct, pw) => {
-  try {
-    const response = await axios.post(
-      loginUrl,
-      new URLSearchParams({ goto, acct, pw }).toString(),
-      {
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      }
-    );
-    // HN returns "Bad login." in the response body on failure.
-    // On success, it redirects to the goto page (axios follows automatically).
-    // Checking the body is the most robust detection method — it works
-    // regardless of redirect behavior, HTTP version, or Node.js version.
-    if (typeof response.data === "string" && response.data.includes("Bad login")) {
-      console.error("login failed (HN returned 'Bad login')");
+  const response = await axios.post(
+    loginUrl,
+    new URLSearchParams({ goto, acct, pw }).toString(),
+    { withCredentials: true }
+  );
+  if (response.status === 200) {
+    if (response.request.path === "/login") {
+      console.error("login failed (redirected to /login):", response.status);
       return false;
+    } else if (response.request.path === "/news") {
+      return true;
     }
-    return true;
-  } catch (e) {
-    console.error("login request error:", e.message);
-    return false;
   }
+  return false;
 };
 
 const getTopStories = async time => {
