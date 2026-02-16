@@ -47,26 +47,29 @@ npm run worker
 
 ## Definition of Done
 
+**This is a MANDATORY exit gate. You MUST run through every item below before considering any unit of work complete. Do not skip items. Do not defer them. If any gate fails, stop and fix it before finishing.**
+
 You own this repo. You are the maintainer. There is no "someone else" — if there are uncommitted changes, failing tests, or stale docs, that's YOUR unfinished work from a previous session. You clean it up. Every iteration of work must end with the repo in a clean, working, documented state. No excuses.
 
-### Before finishing any unit of work:
+### Mandatory Exit Checklist — run ALL gates before finishing:
 
-1. **All tests pass.** Run both suites, fix anything that breaks:
+1. **GATE: All tests pass.** Run both suites. If anything fails, stop and fix it.
    ```bash
-   npm test && cd hackernews-frontend && npm test && cd ..
+   npm test
+   cd hackernews-frontend && npm test
    ```
-2. **Repo is clean.** `git status` shows no uncommitted changes. You test, commit, and push. Always.
-3. **Bugs get regression tests first.** When you find a bug, write a failing test that reproduces it *before* writing the fix. The test proves the bug exists and proves the fix works.
-4. **All docs are updated.** Every iteration, review and update all documentation to reflect the current state of the code:
+2. **GATE: Repo is clean and pushed.** `git status` shows no uncommitted changes. Commit and push. Always.
+3. **GATE: Bugs get regression tests first.** When you find a bug, write a failing test that reproduces it *before* writing the fix. The test proves the bug exists and proves the fix works.
+4. **GATE: All docs are updated.** Every iteration, review and update all documentation to reflect the current state of the code:
    - This file (`CLAUDE.md`) — architecture, gotchas, test counts
    - All files under `docs/` (see Documentation section below)
-5. **No broken windows.** If you encounter a test failure, a stale doc, uncommitted changes, warnings, code smells, or inconsistent state — you fix it. It's your repo. There is no "someone else's problem." Never dismiss anything as "pre-existing noise" or "expected warnings." If it's in the output, you own it. Fix it or document exactly why it can't be fixed yet.
-6. **Repo health checked.** Before finishing, check:
+5. **GATE: No broken windows.** If you encounter a test failure, a stale doc, uncommitted changes, warnings, code smells, or inconsistent state — you fix it. It's your repo. There is no "someone else's problem." Never dismiss anything as "pre-existing noise" or "expected warnings." If it's in the output, you own it. Fix it or document exactly why it can't be fixed yet.
+6. **GATE: Repo health checked.** Before finishing, run all of these:
    - `gh pr list --state open` — review open PRs, close stale ones
    - `gh run list --limit 5` — CI must be green on master
    - `git branch -r` — delete stale remote branches
    If CI is failing on master, that's YOUR broken build. Fix it first.
-7. **Dependencies are up to date.** Run `ncu` in both root and `hackernews-frontend/`. If anything is outdated, update it (`ncu -u && npm install`), run tests, and commit. No stale versions.
+7. **GATE: Dependencies are up to date.** Run `ncu` in both root and `hackernews-frontend/`. If anything is outdated, update it (`ncu -u && npm install`), run tests, and commit. No stale versions.
 
 ## Architecture Overview
 
