@@ -4,7 +4,7 @@ const { storiesCollection, usersCollection } = require("./firestore");
 
 const MAX_QUERY_DOCS = 500;
 const CACHE_FILE = path.join(__dirname, "..", ".cache", "stories.json");
-const IS_TEST = process.env.NODE_ENV === "test";
+const IS_TEST = process.env.NODE_ENV === "test" || process.env.NODE_ENV === "ci";
 
 // Per-timespan cache TTLs: Day is freshest, older timespans rarely change
 const CACHE_TTLS = {
