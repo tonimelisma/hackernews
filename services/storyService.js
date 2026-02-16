@@ -3,7 +3,7 @@ const { storiesCollection, usersCollection, cacheCollection, getDb } = require("
 const stripUndefined = (obj) =>
   Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 
-const MAX_QUERY_DOCS = 500;
+const MAX_QUERY_DOCS = 2000;
 const HIDDEN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // Per-timespan cache TTLs: Day is freshest, older timespans rarely change
@@ -171,7 +171,7 @@ const fetchFromCacheOrFirestore = async (timespan, ctx) => {
       .limit(MAX_QUERY_DOCS)
       .get();
     const ms = Date.now() - t0;
-    ctx?.query("stories", "orderBy=score:desc limit=500", snapshot.docs.length, ms);
+    ctx?.query("stories", "orderBy=score:desc limit=2000", snapshot.docs.length, ms);
     ctx?.read("stories", snapshot.docs.length);
     stories = snapshot.docs.map(docToStory);
   } else {
@@ -276,7 +276,7 @@ const patchStoryCache = async (updatedStories, ctx) => {
     let changed = false;
     for (const story of data.stories) {
       const update = updatesById.get(story.id);
-      if (update) {
+      if (update && update.score !== undefined && update.score !== null) {
         story.score = update.score;
         story.descendants = update.descendants;
         changed = true;

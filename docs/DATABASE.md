@@ -53,7 +53,7 @@ Document ID: timespan name (`Day`, `Week`, `Month`, `Year`, `All`)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `stories` | array of objects | Cached story data (up to 500 stories) |
+| `stories` | array of objects | Cached story data (up to 2000 stories) |
 | `stories[].by` | string | Author username |
 | `stories[].descendants` | number | Comment count |
 | `stories[].id` | number | HN story ID |
@@ -65,7 +65,7 @@ Document ID: timespan name (`Day`, `Week`, `Month`, `Year`, `All`)
 
 **Why epoch millis for `time`:** Avoids Firestore Timestamp round-trip conversion. Stories are converted back to Date objects when read from cache.
 
-**Size:** ~200KB per doc (500 stories x ~400 bytes), well under Firestore's 1MB doc limit.
+**Size:** ~400-800KB per doc (up to 2000 stories x ~400 bytes), within Firestore's 1MB doc limit.
 
 **Purpose:** L2 cache layer. When App Engine scales to zero, the in-memory L1 cache is lost. L2 prevents cold-start Year requests from costing 20K+ Firestore reads (1 read instead). `clearCache()` batch-deletes all 5 cache docs.
 
@@ -97,10 +97,12 @@ gcloud firestore indexes composite create --project=melisma-hackernews \
 
 ### `getStories(timespan, limit, skip)` — `storyService.js`
 
-Two query paths, final output capped at `MAX_QUERY_DOCS=500`:
+Two query paths, final output capped at `MAX_QUERY_DOCS=2000`:
 
-- **"All" timespan**: `orderBy('score', 'desc').limit(500)` — Firestore sorts directly, no client-side sort needed.
-- **Time-filtered** (Day/Week/Month/Year): `where('time', '>', X).orderBy('time', 'desc')` (no limit) — fetches all stories in the time range, sorts by score client-side, keeps top 500. No `limit()` because Firestore requires the first `orderBy` to match the inequality field — limiting by time would miss high-scoring older stories.
+- **"All" timespan**: `orderBy('score', 'desc').limit(2000)` — Firestore sorts directly, no client-side sort needed.
+- **Time-filtered** (Day/Week/Month/Year): `where('time', '>', X).orderBy('time', 'desc')` (no limit) — fetches all stories in the time range, sorts by score client-side, keeps top 2000. No `limit()` because Firestore requires the first `orderBy` to match the inequality field — limiting by time would miss high-scoring older stories.
+
+The 2000 buffer ensures power users with many hidden stories still see a full page after server-side hidden filtering (sliced to `limitResults=500`).
 
 Results are cached in a two-tier system: L1 (in-memory Map) and L2 (Firestore `{prefix}-cache/{timespan}` docs) with per-timespan TTLs: Day=30min, Week=2d, Month=1w, Year=1mo, All=1mo. Non-Day timespans always merge in fresh Day stories, so new high-scoring stories appear quickly without full cache refresh. `clearCache()` is async and clears both L1 and L2.
 

@@ -118,7 +118,7 @@ hackernews/
 3. `storyService.getStories()` checks two-tier cache:
    - **L1 (in-memory Map)**: per-timespan TTL check → return immediately on hit
    - **L2 (Firestore `{prefix}-cache/{timespan}` doc)**: read cache doc, check `cachedAt` vs TTL → promote to L1 on hit
-   - **L3 (expensive query)**: queries Firestore stories collection, sorts by score, caches top 500 in both L1 and L2
+   - **L3 (expensive query)**: queries Firestore stories collection, sorts by score, caches top 2000 in both L1 and L2
 4. Non-Day timespans merge fresh Day stories so new high-scoring stories appear quickly
 5. If authenticated, hidden story IDs are filtered out (with 5-min per-user hidden cache)
 6. Response: JSON array of stories

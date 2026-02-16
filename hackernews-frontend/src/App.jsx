@@ -76,6 +76,11 @@ const App = () => {
           setHidden(merged);
           saveLocalHidden(merged);
           setHiddenLoaded(true);
+
+          // Sync localStorage-only hidden IDs to server (best-effort)
+          const serverIds = new Set(response.data);
+          const localOnly = local.filter(id => !serverIds.has(id));
+          localOnly.forEach(id => storyService.addHidden(id).catch(() => {}));
         })
         .catch(() => {
           setHiddenLoaded(true);

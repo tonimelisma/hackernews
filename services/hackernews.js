@@ -187,7 +187,9 @@ const updateStories = async (storyIdList, ctx) => {
             }));
             successCount++;
             ctx?.write("stories", 1);
-            updated.push({ id: storyData.id, score: storyData.score, descendants: storyData.descendants });
+            if (storyData.score !== undefined && storyData.score !== null) {
+              updated.push({ id: storyData.id, score: storyData.score, descendants: storyData.descendants });
+            }
           }
         } catch (e) {
           console.error("updateStories update error:", e, storyData);

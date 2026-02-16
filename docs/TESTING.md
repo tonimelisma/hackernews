@@ -21,25 +21,25 @@ npm test && cd hackernews-frontend && npm test && cd ..
 |------|------|-------|----------------|
 | `tests/unit/middleware.test.js` | Unit | 3 | `unknownEndpoint` (404), `errorHandler` (500 + next) |
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
-| `tests/unit/hackernewsService.test.js` | Unit+DB | 26 | All HN API functions (axios mocked), Firestore operations, ctx tracking, updateStories return value |
+| `tests/unit/hackernewsService.test.js` | Unit+DB | 27 | All HN API functions (axios mocked), Firestore operations, ctx tracking, updateStories return value, undefined score filtering |
 | `tests/unit/firestore.test.js` | Unit | 11 | getCollectionPrefix (incl. staging), padId, storiesCollection, usersCollection, getDb/setDb |
 | `tests/unit/firestoreLogger.test.js` | Unit | 13 | createFirestoreContext: counters, read/write, L1/L2/MISS cache, per-collection breakdown, query inline logging |
-| `tests/integration/storyService.test.js` | Integration | 38 | All storyService CRUD, L1/L2 cache, hidden cache+dedup, cache expiry, Day-merge, query caps, patchStoryCache |
+| `tests/integration/storyService.test.js` | Integration | 39 | All storyService CRUD, L1/L2 cache, hidden cache+dedup, cache expiry, Day-merge, query caps, patchStoryCache (incl. undefined score guard) |
 | `tests/integration/api.test.js` | Integration | 34 | Full HTTP request/response via supertest (incl. `/_ah/worker` endpoint) |
 | `tests/integration/worker.test.js` | Integration | 13 | syncOnce() direct tests, compound staleness queries, batch limits, L2 cache patching, utility functions |
-| **Total** | | **139** | |
+| **Total** | | **141** | |
 
 ### Frontend (Vitest + React Testing Library)
 
 | File | Type | Tests | What it covers |
 |------|------|-------|----------------|
-| `src/App.test.jsx` | Component | 17 | App rendering, timespan, loading, auth, hiddenLoaded, localStorage, login button disable |
+| `src/App.test.jsx` | Component | 18 | App rendering, timespan, loading, auth, hiddenLoaded, localStorage, login button disable, hidden sync to server |
 | `src/components/StoryList.test.jsx` | Component | 4 | List rendering, hidden filtering (react-virtuoso mocked) |
 | `src/components/Story.test.jsx` | Component | 11 | Story card: title, author, score, time, favicon, hide, URL safety |
 | `src/hooks/useTheme.test.js` | Hook | 4 | Theme detection, live changes, cleanup |
 | `src/services/storyService.test.js` | Unit | 4 | Axios calls for stories/hidden |
 | `src/services/loginService.test.js` | Unit | 4 | Axios calls for login, logout, getMe |
-| **Total** | | **44** | |
+| **Total** | | **45** | |
 
 ## Key Technical Details
 
@@ -178,3 +178,6 @@ The test file is excluded from regular Jest runs via `testPathIgnorePatterns` in
 | `storyService.test.js` | "L2 cache handles self-post stories with no url field" | L2 cache write crash on `url: undefined` for Ask HN posts |
 | `storyService.test.js` | "deduplicates concurrent getHidden calls for same user" | Race condition: simultaneous requests doubled Firestore reads |
 | `App.test.jsx` | "disables login button while login is in flight" | Double login POST from rapid button clicks |
+| `App.test.jsx` | "syncs localStorage-only hidden IDs to server on login" | Hidden stories not syncing across devices |
+| `hackernewsService.test.js` | "skips stories with undefined score in return value" | Worker `updateStories` returning undefined scores for deleted/flagged stories |
+| `storyService.test.js` | "skips updates with undefined score" | `patchStoryCache` writing undefined scores to Firestore cache docs |

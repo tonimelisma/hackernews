@@ -128,7 +128,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 7. **Node.js 25+ crashes the app**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. `SlowBuffer` was removed in Node 25. No upstream fix available. **Use Node.js 18 or 20.**
 
-8. **Query optimization for stories**: "All" timespan uses `orderBy('score', 'desc').limit(500)` — Firestore sorts directly. Time-filtered timespans use `where('time', '>').orderBy('time', 'desc')` (no limit) to fetch all stories in the range, then sort by score client-side and keep top `MAX_QUERY_DOCS=500`. Firestore requires the first `orderBy` to match the inequality field, so we can't sort by score server-side for time-filtered queries. Cache TTLs (30d for Year) ensure the unlimited query runs rarely. Worker staleness queries use compound inequality (`time > threshold AND updated < staleness`) — requires composite index on `(time ASC, updated ASC)`.
+8. **Query optimization for stories**: "All" timespan uses `orderBy('score', 'desc').limit(2000)` — Firestore sorts directly. Time-filtered timespans use `where('time', '>').orderBy('time', 'desc')` (no limit) to fetch all stories in the range, then sort by score client-side and keep top `MAX_QUERY_DOCS=2000`. Firestore requires the first `orderBy` to match the inequality field, so we can't sort by score server-side for time-filtered queries. The 2000 buffer ensures power users with thousands of hidden stories still see a full page of results after server-side hidden filtering (sliced to `limitResults=500`). Cache TTLs (30d for Year) ensure the unlimited query runs rarely. Worker staleness queries use compound inequality (`time > threshold AND updated < staleness`) — requires composite index on `(time ASC, updated ASC)`.
 
 9. **Two-tier story cache (L1 in-memory + L2 Firestore)**: `storyService.js` caches Firestore query results per timespan with tiered TTLs: Day=30min, Week=2d, Month=1w, Year=1mo, All=1mo. L1 is an in-memory `Map`. L2 stores cached stories in `{prefix}-cache/{timespan}` Firestore docs (stories with `time` as epoch millis, plus `cachedAt` timestamp). On L1 miss, L2 is checked before running the expensive L3 stories query. L2 prevents cold-start Year requests from costing 20K+ Firestore reads. Non-Day timespans merge in fresh Day stories on every request. `clearCache()` is async and clears both L1 and L2 (batch-deletes all cache docs). Tests must `await clearCache()` in afterEach. The worker patches L2 cache docs in-place via `patchStoryCache()` after updating story scores — L1 expires naturally at its TTL and picks up the patched L2.
 
@@ -140,7 +140,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 13. **react-virtuoso for story lists**: `StoryList.jsx` uses `<Virtuoso useWindowScroll>` to render only visible stories from up to 500 items. Tests mock `react-virtuoso` to render all items synchronously.
 
-14. **Hidden stories localStorage persistence**: Anonymous users' hidden state persists via `localStorage` (`hiddenStories` key). On login, server hidden IDs are merged with localStorage. `hiddenLoaded` state gates `StoryList` rendering to prevent flash of unhidden stories.
+14. **Hidden stories localStorage persistence**: Anonymous users' hidden state persists via `localStorage` (`hiddenStories` key). On login, server hidden IDs are merged with localStorage, and any localStorage-only IDs are synced back to the server (fire-and-forget). `hiddenLoaded` state gates `StoryList` rendering to prevent flash of unhidden stories.
 
 18. **Hidden stories in-memory cache + deduplication**: `getHidden()` caches per-user hidden IDs for 5 minutes (`HIDDEN_CACHE_TTL`). `upsertHidden()` invalidates the cache. Concurrent requests for the same user are deduplicated via `hiddenPending` Map (returns same in-flight Promise). Prevents a user with 3,594 hidden stories from triggering 3,594 Firestore reads on every page load, and avoids doubling reads when `GET /stories` and `GET /hidden` race on page load.
 
@@ -171,12 +171,12 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, firestore, firestoreLogger) | 54 |
-| Backend integration (storyService, api, worker) | 85 |
-| Frontend component (App, StoryList, Story) | 32 |
+| Backend unit (middleware, config, hackernews, firestore, firestoreLogger) | 55 |
+| Backend integration (storyService, api, worker) | 86 |
+| Frontend component (App, StoryList, Story) | 33 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total (mock-based)** | **183** |
+| **Total (mock-based)** | **186** |
 | Firestore smoke (real dev- data, standalone) | 8 |
 
 ## Project Health
@@ -187,7 +187,7 @@ All of these must be kept current with every change:
 |----------|-------|---------|
 | Functionality | B | Core features work; hntoplinks scraper is brittle (regex) |
 | Security | A- | Helmet, CORS, rate limiting, JWT in HTTP-only cookie, SECRET validation |
-| Testing | A- | 165 tests, in-memory mock, ~1s backend runs |
+| Testing | A- | 186 tests, in-memory mock, ~1s backend runs |
 | Code Quality | A- | Modernized boilerplate, a11y fixes, bug fixes, dead code removed |
 | Architecture | B | Firestore migration, lazy singleton, env-prefixed collections |
 | Documentation | B+ | CLAUDE.md + 4 reference docs, proper README |
@@ -219,8 +219,8 @@ All of these must be kept current with every change:
 
 ## Key Learnings
 
-- **Firestore query constraint**: Can't `where()` on one field and `orderBy()` on another (first `orderBy` must match inequality field). For "All" timespan, use `orderBy('score').limit(500)` directly. For time-filtered, use `where('time').orderBy('time')` (no limit) then sort by score and slice client-side. Using `limit(500)` on time-filtered queries is wrong — it returns the 500 most recent by time, not the 500 highest by score, causing Year to show only ~10 days of stories. Composite indexes required for multi-inequality worker queries.
-- **Firestore free tier optimization**: Spark plan allows 50K reads/20K writes per day. Key levers: `.limit()` on all queries (500 for API, 200 for worker), 1h in-memory TTL cache for story queries, 30-min worker cycle with relaxed staleness thresholds (1h/6h/48h). Removed unbounded 14d-old query.
+- **Firestore query constraint**: Can't `where()` on one field and `orderBy()` on another (first `orderBy` must match inequality field). For "All" timespan, use `orderBy('score').limit(2000)` directly. For time-filtered, use `where('time').orderBy('time')` (no limit) then sort by score and slice client-side. Using `limit()` on time-filtered queries is wrong — it returns the N most recent by time, not the N highest by score, causing Year to show only recent stories. Composite indexes required for multi-inequality worker queries.
+- **Firestore free tier optimization**: Spark plan allows 50K reads/20K writes per day. Key levers: `.limit()` on all queries (2000 for API, 200 for worker), 1h in-memory TTL cache for story queries, 30-min worker cycle with relaxed staleness thresholds (1h/6h/48h). Removed unbounded 14d-old query.
 - **In-memory MockFirestore**: `moduleNameMapper` in `jest.config.js` redirects `@google-cloud/firestore` to an in-memory mock. Storage: flat `Map<collectionPath, Map<docId, data>>`. MockTimestamp wraps Date objects on `.set()`/`.update()`. Backend tests run in ~1 second with no credentials or network.
 - **Node.js 25+ incompatibility**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. Must mock `jsonwebtoken` in tests; use Node.js 18/20 in production.
 - **Vitest mock differences**: `vi.mock()` factory must return an object with `default` key for default exports. No `__esModule: true` needed. Axios mock: `vi.mock("axios", () => ({ default: { get: vi.fn(), post: vi.fn() } }))`.
@@ -250,4 +250,6 @@ All of these must be kept current with every change:
 - **Hidden stories in-memory cache + dedup**: A user with 3,594 hidden stories triggers 3,594 reads per `GET /stories` request. 5-minute TTL per-user cache reduces this to one read per 5 minutes. `upsertHidden` invalidates the cache entry. `hiddenPending` Map deduplicates concurrent requests for the same user.
 - **L2 cache `saveToFirestoreCache` try/catch**: Firestore `.set()` throws synchronously on validation errors (e.g., `undefined` values) before returning a Promise, so `.catch()` on the Promise doesn't help. The entire body is wrapped in try/catch for defense-in-depth. `storiesToCacheDoc()` uses `stripUndefined()` to prevent the issue at source.
 - **Firestore operation logging with per-collection breakdown**: `[firestore]` summary lines now show `reads=stories:42,cache:1` instead of `reads=43`. `[firestore-query]` inline logs show each query as it happens with doc count and timing. L1/L2/MISS cache tracking distinguishes in-memory hits from Firestore cache hits.
-- **Worker L2 cache patching**: `updateStories()` returns `[{id, score, descendants}]` for successfully updated stories. `patchStoryCache()` reads each L2 cache doc, patches matching story scores in-place, re-sorts by score, and batch-writes back. L1 expires naturally at its TTL and picks up the patched L2. Cost: 5 reads + up to 5 writes per worker cycle (~960 ops/day). MockWriteBatch needed `set()` method added for tests.
+- **Worker L2 cache patching**: `updateStories()` returns `[{id, score, descendants}]` for successfully updated stories (skips deleted/flagged stories with `undefined` score). `patchStoryCache()` reads each L2 cache doc, patches matching story scores in-place (guarded against `undefined`/`null` scores), re-sorts by score, and batch-writes back. L1 expires naturally at its TTL and picks up the patched L2. Cost: 5 reads + up to 5 writes per worker cycle (~960 ops/day). MockWriteBatch needed `set()` method added for tests.
+- **MAX_QUERY_DOCS=2000 for hidden-heavy users**: The story cache stores top 2000 stories per timespan. Server-side hidden filtering removes hidden stories from this pool before slicing to `limitResults=500`. A power user with 1000+ hidden stories in the top 500 would see only recent unhidden stories with `MAX_QUERY_DOCS=500`. Increasing to 2000 ensures enough unhidden stories survive filtering. L2 cache doc size: ~800KB for 2000 stories (within Firestore 1MB limit).
+- **Hidden stories cross-device sync**: localStorage-only hidden IDs (from failed or interrupted POSTs) are synced to the server on page load. After merging server + localStorage hidden IDs, IDs present in localStorage but not on the server are POSTed back (fire-and-forget, best-effort). This ensures hiding a story on desktop eventually syncs to phone.

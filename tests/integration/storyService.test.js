@@ -478,6 +478,30 @@ describe("services/storyService", () => {
       expect(hiddenAfter).toEqual([100]);
     });
 
+    it("skips updates with undefined score", async () => {
+      const now = Date.now();
+      await Promise.all([
+        seedStory({ id: 1, score: 100, time: new Date(now - 1000 * 60 * 60) }),
+        seedStory({ id: 2, score: 200, time: new Date(now - 1000 * 60 * 60 * 2) }),
+      ]);
+
+      // Populate L2 cache
+      await storyService.getStories("All", 500);
+
+      // Patch with one valid and one undefined-score update
+      await storyService.patchStoryCache([
+        { id: 1, score: 999, descendants: 50 },
+        { id: 2, score: undefined, descendants: undefined },
+      ]);
+
+      // Story 1 should be updated, story 2 should keep original score
+      const doc = await cacheCollection().doc("All").get();
+      const story1 = doc.data().stories.find(s => s.id === 1);
+      const story2 = doc.data().stories.find(s => s.id === 2);
+      expect(story1.score).toBe(999);
+      expect(story2.score).toBe(200);
+    });
+
     it("patches multiple timespans", async () => {
       const now = Date.now();
       await seedStory({ id: 1, score: 100, time: new Date(now - 1000 * 60 * 60) }); // 1h ago (in Day + All)

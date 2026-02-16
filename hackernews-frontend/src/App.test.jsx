@@ -351,4 +351,23 @@ describe("App", () => {
       expect(saved).toHaveLength(3);
     });
   });
+
+  it("syncs localStorage-only hidden IDs to server on login", async () => {
+    localStorage.setItem("hiddenStories", JSON.stringify([1, 2]));
+    loginService.getMe.mockResolvedValue({ username: "testuser" });
+    storyService.getHidden.mockResolvedValue({ data: [2, 3] });
+    storyService.addHidden.mockResolvedValue({});
+    storyService.getAll.mockResolvedValue({ data: [] });
+
+    render(<App />);
+
+    // ID 1 is in localStorage but not on server — should be POSTed
+    await waitFor(() => {
+      expect(storyService.addHidden).toHaveBeenCalledWith(1);
+    });
+    // ID 2 is on both server and localStorage — should NOT be POSTed
+    expect(storyService.addHidden).not.toHaveBeenCalledWith(2);
+    // ID 3 is on server only — should NOT be POSTed
+    expect(storyService.addHidden).not.toHaveBeenCalledWith(3);
+  });
 });

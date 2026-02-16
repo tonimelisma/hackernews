@@ -453,5 +453,35 @@ describe("services/hackernews", () => {
       const result = await hackernews.updateStories([]);
       expect(result).toEqual([]);
     });
+
+    it("skips stories with undefined score in return value", async () => {
+      await storiesCollection().doc(padId(910)).set({
+        id: 910,
+        title: "Normal Story",
+        by: "author",
+        score: 50,
+        descendants: 5,
+        time: new Date(),
+        updated: new Date(Date.now() - 100000),
+      });
+      await storiesCollection().doc(padId(911)).set({
+        id: 911,
+        title: "Deleted Story",
+        by: "author",
+        score: 30,
+        descendants: 2,
+        time: new Date(),
+        updated: new Date(Date.now() - 100000),
+      });
+
+      axios.get
+        .mockResolvedValueOnce({ data: { id: 910, score: 150, descendants: 30 } })
+        .mockResolvedValueOnce({ data: { id: 911 } }); // deleted/flagged — no score
+
+      const result = await hackernews.updateStories([910, 911]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({ id: 910, score: 150, descendants: 30 });
+    });
   });
 });
