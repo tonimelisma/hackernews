@@ -30,10 +30,12 @@ const syncOnce = async () => {
   // LOAD LATEST STORIES
   try {
     // Find latest story by doc ID (zero-padded, so lexicographic = numeric order)
+    const t0 = Date.now();
     const latestSnap = await storiesCollection()
       .orderBy("id", "desc")
       .limit(1)
       .get();
+    ctx.query("stories", "latest orderBy=id:desc limit=1", latestSnap.docs.length, Date.now() - t0);
     ctx.read("stories", latestSnap.docs.length);
 
     const latestRemoteStoryIds = await Remote.getNewStories();
@@ -62,17 +64,20 @@ const syncOnce = async () => {
   }
 
   // UPDATE SCORES FOR TRENDING STORIES
+  // Compound inequality queries: time > threshold AND updated < staleness
+  // Requires composite index on (time ASC, updated ASC) for each collection
   try {
     const monthTimeThreshold = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000);
+    const t0m = Date.now();
     const lastMonthSnap = await storiesCollection()
+      .where("time", ">", monthTimeThreshold)
       .where("updated", "<", new Date(Date.now() - 48 * 60 * 60 * 1000))
       .orderBy("updated", "asc")
       .limit(WORKER_BATCH_LIMIT)
       .get();
+    ctx.query("stories", `stale-monthly time>${monthTimeThreshold.toISOString()} updated<48h`, lastMonthSnap.docs.length, Date.now() - t0m);
     ctx.read("stories", lastMonthSnap.docs.length);
-    const monthStaleIds = lastMonthSnap.docs
-      .filter(d => d.data().time.toDate() > monthTimeThreshold)
-      .map(d => d.data().id);
+    const monthStaleIds = lastMonthSnap.docs.map(d => d.data().id);
     if (monthStaleIds.length > 0) {
       await Remote.updateStories(monthStaleIds);
       ctx.write("stories", monthStaleIds.length);
@@ -80,15 +85,16 @@ const syncOnce = async () => {
     }
 
     const weekTimeThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const t0w = Date.now();
     const lastWeekSnap = await storiesCollection()
+      .where("time", ">", weekTimeThreshold)
       .where("updated", "<", new Date(Date.now() - 6 * 60 * 60 * 1000))
       .orderBy("updated", "asc")
       .limit(WORKER_BATCH_LIMIT)
       .get();
+    ctx.query("stories", `stale-weekly time>${weekTimeThreshold.toISOString()} updated<6h`, lastWeekSnap.docs.length, Date.now() - t0w);
     ctx.read("stories", lastWeekSnap.docs.length);
-    const weekStaleIds = lastWeekSnap.docs
-      .filter(d => d.data().time.toDate() > weekTimeThreshold)
-      .map(d => d.data().id);
+    const weekStaleIds = lastWeekSnap.docs.map(d => d.data().id);
     if (weekStaleIds.length > 0) {
       await Remote.updateStories(weekStaleIds);
       ctx.write("stories", weekStaleIds.length);
@@ -96,15 +102,16 @@ const syncOnce = async () => {
     }
 
     const dayTimeThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const t0d = Date.now();
     const last24hSnap = await storiesCollection()
+      .where("time", ">", dayTimeThreshold)
       .where("updated", "<", new Date(Date.now() - 60 * 60 * 1000))
       .orderBy("updated", "asc")
       .limit(WORKER_BATCH_LIMIT)
       .get();
+    ctx.query("stories", `stale-daily time>${dayTimeThreshold.toISOString()} updated<1h`, last24hSnap.docs.length, Date.now() - t0d);
     ctx.read("stories", last24hSnap.docs.length);
-    const dayStaleIds = last24hSnap.docs
-      .filter(d => d.data().time.toDate() > dayTimeThreshold)
-      .map(d => d.data().id);
+    const dayStaleIds = last24hSnap.docs.map(d => d.data().id);
     if (dayStaleIds.length > 0) {
       await Remote.updateStories(dayStaleIds);
       ctx.write("stories", dayStaleIds.length);

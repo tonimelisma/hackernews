@@ -98,8 +98,8 @@ function onListening() {
     const { clearCache } = require("../services/storyService");
     console.log("Bootstrap: running initial sync...");
     syncOnce()
-      .then(() => {
-        clearCache();
+      .then(async () => {
+        await clearCache();
         console.log("Bootstrap: initial sync complete, cache cleared");
       })
       .catch((e) => console.error("Bootstrap: initial sync failed:", e));

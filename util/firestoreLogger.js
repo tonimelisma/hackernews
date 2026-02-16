@@ -1,50 +1,88 @@
 const createFirestoreContext = () => {
   const startTime = Date.now();
-  const collections = new Set();
-  let reads = 0;
-  let writes = 0;
-  let cacheHits = 0;
-  let cacheMisses = 0;
+  const readsByCollection = new Map();
+  const writesByCollection = new Map();
+  let l1Hits = 0;
+  let l2Hits = 0;
+  let misses = 0;
+
+  const addToMap = (map, collection, count) => {
+    map.set(collection, (map.get(collection) || 0) + count);
+  };
+
+  const sumMap = (map) => {
+    let total = 0;
+    for (const v of map.values()) total += v;
+    return total;
+  };
+
+  const formatMap = (map) => {
+    if (map.size === 0) return "0";
+    return Array.from(map.entries()).map(([k, v]) => `${k}:${v}`).join(",");
+  };
 
   return {
-    get reads() { return reads; },
-    get writes() { return writes; },
-    get cacheHits() { return cacheHits; },
-    get cacheMisses() { return cacheMisses; },
-    get collections() { return collections; },
+    // Backward-compat aggregate getters
+    get reads() { return sumMap(readsByCollection); },
+    get writes() { return sumMap(writesByCollection); },
+    get cacheHits() { return l1Hits + l2Hits; },
+    get cacheMisses() { return misses; },
+    get collections() {
+      const s = new Set([...readsByCollection.keys(), ...writesByCollection.keys()]);
+      return s;
+    },
+
+    // Per-collection breakdown getters
+    get readsByCollection() { return readsByCollection; },
+    get writesByCollection() { return writesByCollection; },
 
     read(collection, docCount = 1) {
-      collections.add(collection);
-      reads += docCount;
+      addToMap(readsByCollection, collection, docCount);
     },
 
     write(collection, docCount = 1) {
-      collections.add(collection);
-      writes += docCount;
+      addToMap(writesByCollection, collection, docCount);
     },
 
+    // Legacy cache methods (backward compat)
     cacheHit() {
-      cacheHits++;
+      l1Hits++;
     },
 
     cacheMiss() {
-      cacheMisses++;
+      misses++;
+    },
+
+    // New L1/L2 cache tracking
+    l1CacheHit() {
+      l1Hits++;
+    },
+
+    l2CacheHit() {
+      l2Hits++;
+    },
+
+    // Inline query logging
+    query(collection, description, docCount, ms) {
+      console.log(`[firestore-query] ${collection} ${description} docs=${docCount} ms=${ms}`);
     },
 
     log(label, extra = {}) {
       const ms = Date.now() - startTime;
-      const cacheStr = (cacheHits || cacheMisses)
-        ? [cacheHits && `HIT:${cacheHits}`, cacheMisses && `MISS:${cacheMisses}`].filter(Boolean).join(",")
+      const cacheStr = (l1Hits || l2Hits || misses)
+        ? [l1Hits && `L1:${l1Hits}`, l2Hits && `L2:${l2Hits}`, misses && `MISS:${misses}`].filter(Boolean).join(",")
         : "-";
-      const colStr = collections.size ? Array.from(collections).join(",") : "-";
+      const colStr = readsByCollection.size || writesByCollection.size
+        ? Array.from(new Set([...readsByCollection.keys(), ...writesByCollection.keys()])).join(",")
+        : "-";
       const extraStr = Object.entries(extra)
         .map(([k, v]) => `${k}=${v}`)
         .join(" ");
       const parts = [
         `[firestore] ${label}`,
         `cache=${cacheStr}`,
-        `reads=${reads}`,
-        `writes=${writes}`,
+        `reads=${formatMap(readsByCollection)}`,
+        `writes=${formatMap(writesByCollection)}`,
         `collections=${colStr}`,
         `ms=${ms}`,
       ];

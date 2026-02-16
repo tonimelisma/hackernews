@@ -6,10 +6,10 @@ The app uses Google Cloud Firestore (project: `melisma-hackernews`, default data
 
 | `NODE_ENV` | Prefix | Collections |
 |---|---|---|
-| `production` | `prod-` | `prod-stories`, `prod-users` |
-| `staging` | `staging-` | `staging-stories`, `staging-users` |
-| `ci` | `ci-` | `ci-stories`, `ci-users` |
-| anything else | `dev-` | `dev-stories`, `dev-users` |
+| `production` | `prod-` | `prod-stories`, `prod-users`, `prod-cache` |
+| `staging` | `staging-` | `staging-stories`, `staging-users`, `staging-cache` |
+| `ci` | `ci-` | `ci-stories`, `ci-users`, `ci-cache` |
+| anything else | `dev-` | `dev-stories`, `dev-users`, `dev-cache` |
 
 Prefix logic lives in `services/firestore.js:getCollectionPrefix()`.
 
@@ -47,6 +47,28 @@ Document ID: story ID as string (e.g., `"42345678"`)
 
 **Why subcollection:** Firestore has a 1MB document limit. One user had 117K hidden story IDs (1.2MB as an array), exceeding this limit. Subcollection docs have no such constraint.
 
+## Cache (`{prefix}-cache`)
+
+Document ID: timespan name (`Day`, `Week`, `Month`, `Year`, `All`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `stories` | array of objects | Cached story data (up to 500 stories) |
+| `stories[].by` | string | Author username |
+| `stories[].descendants` | number | Comment count |
+| `stories[].id` | number | HN story ID |
+| `stories[].score` | number | HN score |
+| `stories[].time` | number | Story timestamp as epoch millis (not Firestore Timestamp) |
+| `stories[].title` | string | Story title |
+| `stories[].url` | string | Link URL |
+| `cachedAt` | number | Cache write timestamp (epoch millis) |
+
+**Why epoch millis for `time`:** Avoids Firestore Timestamp round-trip conversion. Stories are converted back to Date objects when read from cache.
+
+**Size:** ~200KB per doc (500 stories x ~400 bytes), well under Firestore's 1MB doc limit.
+
+**Purpose:** L2 cache layer. When App Engine scales to zero, the in-memory L1 cache is lost. L2 prevents cold-start Year requests from costing 20K+ Firestore reads (1 read instead). `clearCache()` batch-deletes all 5 cache docs.
+
 ## Connection Management
 
 | Component | Behavior |
@@ -80,7 +102,7 @@ Two query paths, final output capped at `MAX_QUERY_DOCS=500`:
 - **"All" timespan**: `orderBy('score', 'desc').limit(500)` — Firestore sorts directly, no client-side sort needed.
 - **Time-filtered** (Day/Week/Month/Year): `where('time', '>', X).orderBy('time', 'desc')` (no limit) — fetches all stories in the time range, sorts by score client-side, keeps top 500. No `limit()` because Firestore requires the first `orderBy` to match the inequality field — limiting by time would miss high-scoring older stories.
 
-Results are cached with per-timespan TTLs: Day=30min, Week=2d, Month=1w, Year=1mo, All=1mo. Cache is persisted to `.cache/stories.json` and restored on app restart. Non-Day timespans always merge in fresh Day stories, so new high-scoring stories appear quickly without full cache refresh. `clearCache()` resets the cache (used in tests).
+Results are cached in a two-tier system: L1 (in-memory Map) and L2 (Firestore `{prefix}-cache/{timespan}` docs) with per-timespan TTLs: Day=30min, Week=2d, Month=1w, Year=1mo, All=1mo. Non-Day timespans always merge in fresh Day stories, so new high-scoring stories appear quickly without full cache refresh. `clearCache()` is async and clears both L1 and L2.
 
 ### Worker — stale story detection
 

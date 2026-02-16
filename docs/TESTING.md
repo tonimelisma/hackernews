@@ -23,11 +23,11 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
 | `tests/unit/hackernewsService.test.js` | Unit+DB | 15 | All HN API functions (axios mocked), Firestore operations |
 | `tests/unit/firestore.test.js` | Unit | 11 | getCollectionPrefix (incl. staging), padId, storiesCollection, usersCollection, getDb/setDb |
-| `tests/unit/firestoreLogger.test.js` | Unit | 8 | createFirestoreContext: counters, read/write, cache hit/miss, log format, collections Set |
-| `tests/integration/storyService.test.js` | Integration | 21 | All storyService CRUD, cache hit/expiry, Day-merge, query caps against MockFirestore |
+| `tests/unit/firestoreLogger.test.js` | Unit | 13 | createFirestoreContext: counters, read/write, L1/L2/MISS cache, per-collection breakdown, query inline logging |
+| `tests/integration/storyService.test.js` | Integration | 25 | All storyService CRUD, L1/L2 cache, hidden cache, cache expiry, Day-merge, query caps |
 | `tests/integration/api.test.js` | Integration | 26 | Full HTTP request/response via supertest (incl. `/_ah/worker` endpoint) |
-| `tests/integration/worker.test.js` | Integration | 13 | syncOnce() direct tests, staleness queries, batch limits, utility functions |
-| **Total** | | **106** | |
+| `tests/integration/worker.test.js` | Integration | 13 | syncOnce() direct tests, compound staleness queries, batch limits, utility functions |
+| **Total** | | **122** | |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -83,13 +83,13 @@ Each test file imports setup and uses:
 ```js
 beforeAll(async () => await db.connect());
 afterEach(async () => {
-  storyService.clearCache(); // prevent cache leaking between tests
+  await storyService.clearCache(); // clears L1 + L2 + hidden cache
   await db.clearDatabase();
 });
 afterAll(async () => await db.closeDatabase());
 ```
 
-Tests that use `storyService` must call `clearCache()` in `afterEach` to prevent the 1-hour TTL cache from leaking data between tests.
+Tests that use `storyService` must `await clearCache()` in `afterEach` to clear both the in-memory L1 cache and Firestore L2 cache docs, preventing cache leaking between tests.
 
 ### JWT Mock in API Tests
 

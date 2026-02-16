@@ -28,6 +28,9 @@ const storiesCollection = () =>
 const usersCollection = () =>
   getDb().collection(`${getCollectionPrefix()}-users`);
 
+const cacheCollection = () =>
+  getDb().collection(`${getCollectionPrefix()}-cache`);
+
 const padId = (id) => String(id).padStart(10, "0");
 
 module.exports = {
@@ -36,5 +39,6 @@ module.exports = {
   getCollectionPrefix,
   storiesCollection,
   usersCollection,
+  cacheCollection,
   padId,
 };

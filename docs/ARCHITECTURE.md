@@ -115,8 +115,13 @@ hackernews/
 ### Story Fetch (Frontend → Backend → Firestore)
 1. Frontend calls `GET /api/v1/stories?timespan=Day`
 2. `routes/api.js` parses timespan, limit, skip
-3. `storyService.getStories()` checks per-timespan TTL cache; on miss, queries Firestore (all stories in time range, or top 500 by score for "All"), sorts by score, caches top 500
-4. Response: JSON array of stories
+3. `storyService.getStories()` checks two-tier cache:
+   - **L1 (in-memory Map)**: per-timespan TTL check → return immediately on hit
+   - **L2 (Firestore `{prefix}-cache/{timespan}` doc)**: read cache doc, check `cachedAt` vs TTL → promote to L1 on hit
+   - **L3 (expensive query)**: queries Firestore stories collection, sorts by score, caches top 500 in both L1 and L2
+4. Non-Day timespans merge fresh Day stories so new high-scoring stories appear quickly
+5. If authenticated, hidden story IDs are filtered out (with 5-min per-user hidden cache)
+6. Response: JSON array of stories
 
 ### Background Worker (Cron → Express → HN API → Firestore)
 1. App Engine Cron fires `GET /_ah/worker` every 15 minutes (production only)
@@ -124,7 +129,7 @@ hackernews/
 3. Calls `syncOnce()` from `worker.js`:
    - Fetch new story IDs from HN Firebase API
    - Add missing stories to Firestore (doc ID = zero-padded HN ID)
-   - Update scores for stale stories (tiered by age: 1h/6h/48h, batch limit 200)
+   - Update scores for stale stories via compound inequality queries (`time > X AND updated < Y`), tiered by age: 1h/6h/48h, batch limit 200
 4. No pruning — Firestore free tier (1GB) handles ~27 years of growth at ~37MB/year
 5. For staging: `BOOTSTRAP_ON_START=true` runs a one-time sync on server startup (no cron)
 

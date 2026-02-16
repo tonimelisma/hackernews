@@ -31,7 +31,7 @@ const hackernews = require("../../services/hackernews");
 
 afterEach(async () => {
   const storyService = require("../../services/storyService");
-  storyService.clearCache();
+  await storyService.clearCache();
   await db.clearDatabase();
   jest.clearAllMocks();
   // Clear token store

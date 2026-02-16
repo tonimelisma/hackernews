@@ -6,7 +6,7 @@ beforeAll(async () => await db.connect());
 const storyService = require("../../services/storyService");
 
 afterEach(async () => {
-  storyService.clearCache();
+  await storyService.clearCache();
   await db.clearDatabase();
 });
 afterAll(async () => await db.closeDatabase());
@@ -158,7 +158,7 @@ describe("services/storyService", () => {
     });
 
     it("Year returns high-scoring old stories even with >500 stories in range", async () => {
-      storyService.clearCache();
+      await storyService.clearCache();
       await db.clearDatabase();
 
       const now = Date.now();
@@ -223,6 +223,44 @@ describe("services/storyService", () => {
       const result = await storyService.getStories("All", 500, undefined, undefined, []);
       expect(result).toHaveLength(5);
     });
+
+    it("L2 cache doc is populated after L3 query", async () => {
+      const { cacheCollection } = require("../../services/firestore");
+
+      // Verify no L2 cache doc exists yet
+      const before = await cacheCollection().doc("All").get();
+      expect(before.exists).toBe(false);
+
+      // First call populates both L1 and L2
+      await storyService.getStories("All", 500);
+
+      // Verify L2 cache doc was created with correct data
+      const after = await cacheCollection().doc("All").get();
+      expect(after.exists).toBe(true);
+      const data = after.data();
+      expect(data.stories).toHaveLength(5);
+      expect(data.cachedAt).toBeDefined();
+      // Time stored as epoch millis (number), not Date
+      expect(typeof data.stories[0].time).toBe("number");
+    });
+
+    it("clearCache clears L2 Firestore cache", async () => {
+      const { cacheCollection } = require("../../services/firestore");
+
+      // Populate cache
+      await storyService.getStories("All", 500);
+
+      // Verify L2 doc exists
+      const beforeDoc = await cacheCollection().doc("All").get();
+      expect(beforeDoc.exists).toBe(true);
+
+      // Clear all caches
+      await storyService.clearCache();
+
+      // Verify L2 doc is gone
+      const afterDoc = await cacheCollection().doc("All").get();
+      expect(afterDoc.exists).toBe(false);
+    });
   });
 
   describe("getHidden", () => {
@@ -247,6 +285,20 @@ describe("services/storyService", () => {
       const result = await storyService.getHidden("nodoc");
       expect(result).toEqual([789]);
     });
+
+    it("returns cached hidden IDs on second call", async () => {
+      await usersCollection().doc("cacheuser").collection("hidden").doc("100").set({ addedAt: Date.now() });
+
+      const first = await storyService.getHidden("cacheuser");
+      expect(first).toEqual([100]);
+
+      // Add another hidden ID directly (bypassing upsertHidden to avoid cache invalidation)
+      await usersCollection().doc("cacheuser").collection("hidden").doc("200").set({ addedAt: Date.now() });
+
+      // Second call should return cached result (only 100)
+      const second = await storyService.getHidden("cacheuser");
+      expect(second).toEqual([100]);
+    });
   });
 
   describe("upsertHidden", () => {
@@ -269,6 +321,21 @@ describe("services/storyService", () => {
       const ids = hiddenSnap.docs.map((d) => Number(d.id));
       expect(ids).toContain(100);
       expect(ids).toContain(200);
+    });
+
+    it("invalidates hidden cache after upsert", async () => {
+      await usersCollection().doc("invaliduser").collection("hidden").doc("100").set({ addedAt: Date.now() });
+
+      // Populate hidden cache
+      const first = await storyService.getHidden("invaliduser");
+      expect(first).toEqual([100]);
+
+      // upsertHidden should invalidate cache
+      await storyService.upsertHidden("invaliduser", 200);
+
+      // Next getHidden should re-read from Firestore
+      const second = await storyService.getHidden("invaliduser");
+      expect(second.sort()).toEqual([100, 200]);
     });
 
     it("is idempotent (no duplicates)", async () => {

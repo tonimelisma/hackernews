@@ -61,17 +61,17 @@ describe("util/firestoreLogger", () => {
     expect(ctx.collections.has("users")).toBe(true);
   });
 
-  it("log() emits a [firestore] tagged line", () => {
+  it("log() emits a [firestore] tagged line with per-collection breakdown", () => {
     const ctx = createFirestoreContext();
     ctx.read("stories", 42);
-    ctx.cacheHit();
+    ctx.l1CacheHit();
     ctx.log("GET /stories", { timespan: "Day", count: 30 });
 
     expect(logSpy).toHaveBeenCalledTimes(1);
     const line = logSpy.mock.calls[0][0];
     expect(line).toMatch(/^\[firestore\] GET \/stories /);
-    expect(line).toContain("cache=HIT:1");
-    expect(line).toContain("reads=42");
+    expect(line).toContain("cache=L1:1");
+    expect(line).toContain("reads=stories:42");
     expect(line).toContain("writes=0");
     expect(line).toContain("collections=stories");
     expect(line).toContain("timespan=Day");
@@ -85,5 +85,66 @@ describe("util/firestoreLogger", () => {
 
     const line = logSpy.mock.calls[0][0];
     expect(line).toContain("cache=-");
+  });
+
+  it("tracks L1, L2, and MISS cache types separately", () => {
+    const ctx = createFirestoreContext();
+    ctx.l1CacheHit();
+    ctx.l1CacheHit();
+    ctx.l2CacheHit();
+    ctx.cacheMiss();
+
+    // cacheHits is sum of L1 + L2
+    expect(ctx.cacheHits).toBe(3);
+    expect(ctx.cacheMisses).toBe(1);
+
+    ctx.log("TEST");
+    const line = logSpy.mock.calls[0][0];
+    expect(line).toContain("cache=L1:2,L2:1,MISS:1");
+  });
+
+  it("shows per-collection read/write breakdown in log", () => {
+    const ctx = createFirestoreContext();
+    ctx.read("stories", 500);
+    ctx.read("cache", 1);
+    ctx.write("cache", 1);
+    ctx.log("GET /stories");
+
+    const line = logSpy.mock.calls[0][0];
+    expect(line).toContain("reads=stories:500,cache:1");
+    expect(line).toContain("writes=cache:1");
+  });
+
+  it("readsByCollection and writesByCollection expose per-collection Maps", () => {
+    const ctx = createFirestoreContext();
+    ctx.read("stories", 42);
+    ctx.read("cache", 1);
+    ctx.write("users", 2);
+
+    expect(ctx.readsByCollection.get("stories")).toBe(42);
+    expect(ctx.readsByCollection.get("cache")).toBe(1);
+    expect(ctx.writesByCollection.get("users")).toBe(2);
+  });
+
+  it("query() emits [firestore-query] tagged inline log", () => {
+    const ctx = createFirestoreContext();
+    ctx.query("stories", "orderBy=score:desc limit=500", 500, 120);
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const line = logSpy.mock.calls[0][0];
+    expect(line).toMatch(/^\[firestore-query\] stories/);
+    expect(line).toContain("docs=500");
+    expect(line).toContain("ms=120");
+  });
+
+  it("l1CacheHit and legacy cacheHit both increment L1 counter", () => {
+    const ctx = createFirestoreContext();
+    ctx.cacheHit();
+    ctx.l1CacheHit();
+    expect(ctx.cacheHits).toBe(2);
+
+    ctx.log("TEST");
+    const line = logSpy.mock.calls[0][0];
+    expect(line).toContain("cache=L1:2");
   });
 });
