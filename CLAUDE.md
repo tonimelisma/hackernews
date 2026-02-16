@@ -142,11 +142,11 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 14. **Hidden stories localStorage persistence**: Anonymous users' hidden state persists via `localStorage` (`hiddenStories` key). On login, server hidden IDs are merged with localStorage. `hiddenLoaded` state gates `StoryList` rendering to prevent flash of unhidden stories.
 
-18. **Hidden stories in-memory cache**: `getHidden()` caches per-user hidden IDs for 5 minutes (`HIDDEN_CACHE_TTL`). `upsertHidden()` invalidates the cache. Prevents a user with 3,594 hidden stories from triggering 3,594 Firestore reads on every page load.
+18. **Hidden stories in-memory cache + deduplication**: `getHidden()` caches per-user hidden IDs for 5 minutes (`HIDDEN_CACHE_TTL`). `upsertHidden()` invalidates the cache. Concurrent requests for the same user are deduplicated via `hiddenPending` Map (returns same in-flight Promise). Prevents a user with 3,594 hidden stories from triggering 3,594 Firestore reads on every page load, and avoids doubling reads when `GET /stories` and `GET /hidden` race on page load.
 
 19. **Server-side hidden story filtering**: `GET /stories` optionally reads the auth cookie via `optionalAuth()`. If authenticated, fetches hidden IDs and passes them to `getStories()` which filters them out before slicing. The story cache is shared (not per-user). Anonymous users are unaffected.
 
-19. **`stripUndefined()` for Firestore writes**: HN API items may lack `kids`, `url`, or `text` fields (returned as `undefined`). Firestore throws `Cannot use "undefined" as a Firestore value`. `stripUndefined()` in `services/hackernews.js` filters out undefined values before `.set()` and `.update()` calls.
+19. **`stripUndefined()` for Firestore writes**: HN API items may lack `kids`, `url`, or `text` fields (returned as `undefined`). Firestore throws `Cannot use "undefined" as a Firestore value`. `stripUndefined()` in `services/hackernews.js` and `services/storyService.js` filters out undefined values before `.set()` and `.update()` calls. The L2 cache `storiesToCacheDoc()` also uses it — self-posts (Ask HN) have no `url` field.
 
 15. **Dark mode via system preference**: Bootstrap 5.3's `data-bs-theme` attribute on `<html>`. A synchronous `<script>` in `index.html` sets the attribute before first paint (no flash). `useTheme` hook listens for live OS changes. Navbar stays `navbar-dark bg-dark` in both modes. Story cards use `bg-body-secondary` (theme-aware). No manual toggle — system detection only.
 
@@ -172,11 +172,11 @@ All of these must be kept current with every change:
 | Suite | Tests |
 |-------|-------|
 | Backend unit (middleware, config, hackernews, firestore, firestoreLogger) | 52 |
-| Backend integration (storyService, api, worker) | 70 |
-| Frontend component (App, StoryList, Story) | 31 |
+| Backend integration (storyService, api, worker) | 72 |
+| Frontend component (App, StoryList, Story) | 32 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total (mock-based)** | **165** |
+| **Total (mock-based)** | **168** |
 | Firestore smoke (real dev- data, standalone) | 8 |
 
 ## Project Health
@@ -247,5 +247,6 @@ All of these must be kept current with every change:
 - **Node 22+ `--localstorage-file` warning suppression**: Override `process.emit` in `jest.config.js` (runs before any test) to filter out the experimental localStorage warning. Must be in jest.config.js, not in test setup files which load too late.
 - **Firestore L2 cache for cold starts**: App Engine's read-only filesystem makes disk cache dead code. The in-memory L1 cache is lost when App Engine scales to zero. L2 Firestore cache docs (`{prefix}-cache/{timespan}`) survive cold starts — a Year request goes from 20K+ reads to 1 read on L2 hit.
 - **Worker compound inequality queries**: Single `.where("updated", "<", staleness)` returns the 200 most-stale stories from the *entire* collection (years-old stories). Client-side time filtering removes them all, resulting in `updated=0`. Fix: compound queries `.where("time", ">", threshold).where("updated", "<", staleness)` — only returns actionable stories within the relevant time window. Requires composite index on `(time ASC, updated ASC)`.
-- **Hidden stories in-memory cache**: A user with 3,594 hidden stories triggers 3,594 reads per `GET /stories` request. 5-minute TTL per-user cache reduces this to one read per 5 minutes. `upsertHidden` invalidates the cache entry.
+- **Hidden stories in-memory cache + dedup**: A user with 3,594 hidden stories triggers 3,594 reads per `GET /stories` request. 5-minute TTL per-user cache reduces this to one read per 5 minutes. `upsertHidden` invalidates the cache entry. `hiddenPending` Map deduplicates concurrent requests for the same user.
+- **L2 cache `saveToFirestoreCache` try/catch**: Firestore `.set()` throws synchronously on validation errors (e.g., `undefined` values) before returning a Promise, so `.catch()` on the Promise doesn't help. The entire body is wrapped in try/catch for defense-in-depth. `storiesToCacheDoc()` uses `stripUndefined()` to prevent the issue at source.
 - **Firestore operation logging with per-collection breakdown**: `[firestore]` summary lines now show `reads=stories:42,cache:1` instead of `reads=43`. `[firestore-query]` inline logs show each query as it happens with doc count and timing. L1/L2/MISS cache tracking distinguishes in-memory hits from Firestore cache hits.

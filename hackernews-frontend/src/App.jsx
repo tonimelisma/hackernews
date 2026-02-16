@@ -35,6 +35,7 @@ const App = () => {
   const [loggedIn, setLoggedIn] = useState(false);
   const [loggedInUser, setLoggedInUser] = useState("");
   const [error, setError] = useState(null);
+  const [loggingIn, setLoggingIn] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -97,6 +98,7 @@ const App = () => {
 
   const handleLogin = async (event) => {
     event.preventDefault();
+    setLoggingIn(true);
     try {
       const response = await loginService.login({
         goto: "news",
@@ -110,6 +112,8 @@ const App = () => {
       setPassword("");
     } catch (error) {
       setLoginError(true);
+    } finally {
+      setLoggingIn(false);
     }
   };
 
@@ -148,8 +152,8 @@ const App = () => {
             onChange={({ target }) => setPassword(target.value)}
           />
         </div>
-        <button type="submit" className="btn btn-primary btn-md mb-2 form-group">
-          Login
+        <button type="submit" className="btn btn-primary btn-md mb-2 form-group" disabled={loggingIn}>
+          {loggingIn ? "Logging in\u2026" : "Login"}
         </button>
         {loginError ? (
           <div className="mb-3 text-danger">Wrong username/password</div>

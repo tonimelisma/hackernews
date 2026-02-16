@@ -1,5 +1,8 @@
 const { storiesCollection, usersCollection, cacheCollection, getDb } = require("./firestore");
 
+const stripUndefined = (obj) =>
+  Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
+
 const MAX_QUERY_DOCS = 500;
 const HIDDEN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
@@ -18,9 +21,12 @@ const cache = new Map();
 // Per-user in-memory cache for hidden story IDs
 const hiddenCache = new Map();
 
+// In-flight getHidden promises for deduplication
+const hiddenPending = new Map();
+
 // Convert stories to cache-safe format (time as epoch millis)
 const storiesToCacheDoc = (stories, timestamp) => ({
-  stories: stories.map(s => ({
+  stories: stories.map(s => stripUndefined({
     by: s.by,
     descendants: s.descendants,
     id: s.id,
@@ -54,15 +60,20 @@ const loadFromFirestoreCache = async (timespan, ttl, ctx) => {
 
 // L2: Save to Firestore cache doc (fire-and-forget)
 const saveToFirestoreCache = (timespan, stories, timestamp) => {
-  const doc = storiesToCacheDoc(stories, timestamp);
-  cacheCollection().doc(timespan).set(doc).catch(err => {
+  try {
+    const doc = storiesToCacheDoc(stories, timestamp);
+    cacheCollection().doc(timespan).set(doc).catch(err => {
+      console.error("L2 cache write failed:", err.message);
+    });
+  } catch (err) {
     console.error("L2 cache write failed:", err.message);
-  });
+  }
 };
 
 const clearCache = async () => {
   cache.clear();
   hiddenCache.clear();
+  hiddenPending.clear();
   const timespans = ["Day", "Week", "Month", "Year", "All"];
   const batch = getDb().batch();
   for (const ts of timespans) {
@@ -77,17 +88,31 @@ const getHidden = async (reqUsername, ctx) => {
     return cached.ids;
   }
 
-  const t0 = Date.now();
-  const hiddenSnap = await usersCollection()
-    .doc(reqUsername)
-    .collection("hidden")
-    .get();
-  const ms = Date.now() - t0;
-  ctx?.query("users/hidden", `user=${reqUsername}`, hiddenSnap.docs.length, ms);
-  ctx?.read("users/hidden", hiddenSnap.docs.length);
-  const ids = hiddenSnap.empty ? [] : hiddenSnap.docs.map((doc) => Number(doc.id));
-  hiddenCache.set(reqUsername, { ids, timestamp: Date.now() });
-  return ids;
+  // Deduplicate concurrent requests for the same user
+  if (hiddenPending.has(reqUsername)) {
+    return hiddenPending.get(reqUsername);
+  }
+
+  const promise = (async () => {
+    const t0 = Date.now();
+    const hiddenSnap = await usersCollection()
+      .doc(reqUsername)
+      .collection("hidden")
+      .get();
+    const ms = Date.now() - t0;
+    ctx?.query("users/hidden", `user=${reqUsername}`, hiddenSnap.docs.length, ms);
+    ctx?.read("users/hidden", hiddenSnap.docs.length);
+    const ids = hiddenSnap.empty ? [] : hiddenSnap.docs.map((doc) => Number(doc.id));
+    hiddenCache.set(reqUsername, { ids, timestamp: Date.now() });
+    return ids;
+  })();
+
+  hiddenPending.set(reqUsername, promise);
+  try {
+    return await promise;
+  } finally {
+    hiddenPending.delete(reqUsername);
+  }
 };
 
 const upsertHidden = async (reqUsername, reqHidden, ctx) => {

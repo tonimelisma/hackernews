@@ -224,6 +224,41 @@ describe("App", () => {
     });
   });
 
+  it("disables login button while login is in flight", async () => {
+    let resolveLogin;
+    loginService.login.mockReturnValue(new Promise((resolve) => { resolveLogin = resolve; }));
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(storyService.getAll).toHaveBeenCalled();
+    });
+
+    // Open login dropdown and fill form
+    const usernameInput = screen.getByLabelText("Username");
+    const passwordInput = screen.getByLabelText("Password");
+    fireEvent.change(usernameInput, { target: { value: "testuser" } });
+    fireEvent.change(passwordInput, { target: { value: "pass" } });
+
+    const loginButton = screen.getByRole("button", { name: /log/i });
+    expect(loginButton).not.toBeDisabled();
+
+    // Submit form
+    fireEvent.click(loginButton);
+
+    // Button should be disabled while request is in flight
+    await waitFor(() => {
+      expect(loginButton).toBeDisabled();
+    });
+    expect(loginButton).toHaveTextContent("Logging in");
+
+    // Resolve login — component transitions to logged-in state (form disappears)
+    resolveLogin({ username: "testuser" });
+    await waitFor(() => {
+      expect(screen.getByText(/Logged in as/)).toBeInTheDocument();
+    });
+  });
+
   it("renders timespan buttons", async () => {
     render(<App />);
 

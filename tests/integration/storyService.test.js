@@ -224,6 +224,28 @@ describe("services/storyService", () => {
       expect(result).toHaveLength(5);
     });
 
+    it("L2 cache handles self-post stories with no url field", async () => {
+      await storyService.clearCache();
+      await db.clearDatabase();
+
+      // Self-post (Ask HN) has no url — url is undefined
+      await seedStory({ id: 1, score: 100, time: new Date(), url: undefined });
+      await seedStory({ id: 2, score: 200, time: new Date(), url: "https://example.com" });
+
+      // Should not throw — stripUndefined removes url:undefined before Firestore write
+      const result = await storyService.getStories("All", 500);
+      expect(result).toHaveLength(2);
+
+      // Verify L2 cache doc was written successfully
+      const { cacheCollection } = require("../../services/firestore");
+      const doc = await cacheCollection().doc("All").get();
+      expect(doc.exists).toBe(true);
+      const cached = doc.data();
+      const noUrlStory = cached.stories.find(s => s.id === 1);
+      expect(noUrlStory.url).toBeUndefined();
+      expect(cached.stories.find(s => s.id === 2).url).toBe("https://example.com");
+    });
+
     it("L2 cache doc is populated after L3 query", async () => {
       const { cacheCollection } = require("../../services/firestore");
 
@@ -284,6 +306,21 @@ describe("services/storyService", () => {
 
       const result = await storyService.getHidden("nodoc");
       expect(result).toEqual([789]);
+    });
+
+    it("deduplicates concurrent getHidden calls for same user", async () => {
+      await usersCollection().doc("dedupuser").collection("hidden").doc("100").set({ addedAt: Date.now() });
+      await usersCollection().doc("dedupuser").collection("hidden").doc("200").set({ addedAt: Date.now() });
+
+      // Fire two concurrent requests for the same user
+      const [result1, result2] = await Promise.all([
+        storyService.getHidden("dedupuser"),
+        storyService.getHidden("dedupuser"),
+      ]);
+
+      // Both should return the same result
+      expect(result1.sort()).toEqual([100, 200]);
+      expect(result2.sort()).toEqual([100, 200]);
     });
 
     it("returns cached hidden IDs on second call", async () => {
