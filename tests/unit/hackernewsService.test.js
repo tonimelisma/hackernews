@@ -415,5 +415,43 @@ describe("services/hackernews", () => {
       const doc = await storiesCollection().doc(padId(801)).get();
       expect(doc.data().score).toBe(20);
     });
+
+    it("returns array of updated {id, score, descendants}", async () => {
+      await storiesCollection().doc(padId(900)).set({
+        id: 900,
+        title: "Story A",
+        by: "author",
+        score: 10,
+        descendants: 1,
+        time: new Date(),
+        updated: new Date(Date.now() - 100000),
+      });
+      await storiesCollection().doc(padId(901)).set({
+        id: 901,
+        title: "Story B",
+        by: "author",
+        score: 20,
+        descendants: 2,
+        time: new Date(),
+        updated: new Date(Date.now() - 100000),
+      });
+
+      axios.get
+        .mockResolvedValueOnce({ data: { id: 900, score: 150, descendants: 30 } })
+        .mockResolvedValueOnce({ data: { id: 901, score: 250, descendants: 40 } });
+
+      const result = await hackernews.updateStories([900, 901]);
+
+      expect(result).toHaveLength(2);
+      expect(result).toContainEqual({ id: 900, score: 150, descendants: 30 });
+      expect(result).toContainEqual({ id: 901, score: 250, descendants: 40 });
+    });
+
+    it("returns empty array when no stories to update", async () => {
+      axios.get.mockResolvedValue({ data: null });
+
+      const result = await hackernews.updateStories([]);
+      expect(result).toEqual([]);
+    });
   });
 });

@@ -387,6 +387,122 @@ describe("services/storyService", () => {
     });
   });
 
+  describe("patchStoryCache", () => {
+    const { cacheCollection } = require("../../services/firestore");
+
+    it("patches L2 cache doc scores in-place", async () => {
+      const now = Date.now();
+      await Promise.all([
+        seedStory({ id: 1, score: 100, time: new Date(now - 1000 * 60 * 60) }),
+        seedStory({ id: 2, score: 200, time: new Date(now - 1000 * 60 * 60 * 2) }),
+      ]);
+
+      // Populate L2 cache
+      await storyService.getStories("All", 500);
+
+      // Verify initial L2 cache
+      const before = await cacheCollection().doc("All").get();
+      expect(before.data().stories[0].score).toBe(200);
+      expect(before.data().stories[1].score).toBe(100);
+
+      // Patch with new scores
+      await storyService.patchStoryCache([
+        { id: 1, score: 999, descendants: 50 },
+      ]);
+
+      // Verify L2 cache was updated
+      const after = await cacheCollection().doc("All").get();
+      const story1 = after.data().stories.find(s => s.id === 1);
+      expect(story1.score).toBe(999);
+      expect(story1.descendants).toBe(50);
+    });
+
+    it("re-sorts stories by score after patching", async () => {
+      const now = Date.now();
+      await Promise.all([
+        seedStory({ id: 1, score: 100, time: new Date(now - 1000 * 60 * 60) }),
+        seedStory({ id: 2, score: 200, time: new Date(now - 1000 * 60 * 60 * 2) }),
+        seedStory({ id: 3, score: 300, time: new Date(now - 1000 * 60 * 60 * 3) }),
+      ]);
+
+      // Populate L2 cache (order: 3=300, 2=200, 1=100)
+      await storyService.getStories("All", 500);
+
+      // Patch story 1 to have highest score
+      await storyService.patchStoryCache([
+        { id: 1, score: 999, descendants: 0 },
+      ]);
+
+      const doc = await cacheCollection().doc("All").get();
+      const scores = doc.data().stories.map(s => s.score);
+      expect(scores).toEqual([999, 300, 200]);
+    });
+
+    it("skips missing cache docs without error", async () => {
+      // No cache docs exist — should not throw
+      await storyService.patchStoryCache([
+        { id: 1, score: 999, descendants: 0 },
+      ]);
+    });
+
+    it("does nothing when updatedStories is empty", async () => {
+      const now = Date.now();
+      await seedStory({ id: 1, score: 100, time: new Date(now - 1000 * 60 * 60) });
+      await storyService.getStories("All", 500);
+
+      await storyService.patchStoryCache([]);
+
+      // L2 cache should be unchanged
+      const doc = await cacheCollection().doc("All").get();
+      expect(doc.data().stories[0].score).toBe(100);
+    });
+
+    it("does not touch hidden cache", async () => {
+      await usersCollection().doc("patchuser").collection("hidden").doc("100").set({ addedAt: Date.now() });
+
+      // Populate hidden cache
+      const hidden = await storyService.getHidden("patchuser");
+      expect(hidden).toEqual([100]);
+
+      const now = Date.now();
+      await seedStory({ id: 1, score: 100, time: new Date(now - 1000 * 60 * 60) });
+      await storyService.getStories("All", 500);
+
+      // Patch story cache
+      await storyService.patchStoryCache([
+        { id: 1, score: 999, descendants: 0 },
+      ]);
+
+      // Hidden cache should still return cached result
+      const hiddenAfter = await storyService.getHidden("patchuser");
+      expect(hiddenAfter).toEqual([100]);
+    });
+
+    it("patches multiple timespans", async () => {
+      const now = Date.now();
+      await seedStory({ id: 1, score: 100, time: new Date(now - 1000 * 60 * 60) }); // 1h ago (in Day + All)
+
+      // Populate both Day and All L2 caches
+      await storyService.getStories("Day", 500);
+      await storyService.clearCache();
+      // Re-seed and re-populate to get both timespans with L2 docs
+      await seedStory({ id: 1, score: 100, time: new Date(now - 1000 * 60 * 60) });
+      await storyService.getStories("Day", 500);
+      await storyService.getStories("All", 500);
+
+      // Clear L1 so we can verify L2 was patched
+      await storyService.patchStoryCache([
+        { id: 1, score: 777, descendants: 42 },
+      ]);
+
+      const dayDoc = await cacheCollection().doc("Day").get();
+      expect(dayDoc.data().stories[0].score).toBe(777);
+
+      const allDoc = await cacheCollection().doc("All").get();
+      expect(allDoc.data().stories[0].score).toBe(777);
+    });
+  });
+
   describe("upsertUser", () => {
     it("creates new user when user does not exist", async () => {
       await storyService.upsertUser("brandnew");

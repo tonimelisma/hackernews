@@ -130,13 +130,13 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 8. **Query optimization for stories**: "All" timespan uses `orderBy('score', 'desc').limit(500)` — Firestore sorts directly. Time-filtered timespans use `where('time', '>').orderBy('time', 'desc')` (no limit) to fetch all stories in the range, then sort by score client-side and keep top `MAX_QUERY_DOCS=500`. Firestore requires the first `orderBy` to match the inequality field, so we can't sort by score server-side for time-filtered queries. Cache TTLs (30d for Year) ensure the unlimited query runs rarely. Worker staleness queries use compound inequality (`time > threshold AND updated < staleness`) — requires composite index on `(time ASC, updated ASC)`.
 
-9. **Two-tier story cache (L1 in-memory + L2 Firestore)**: `storyService.js` caches Firestore query results per timespan with tiered TTLs: Day=30min, Week=2d, Month=1w, Year=1mo, All=1mo. L1 is an in-memory `Map`. L2 stores cached stories in `{prefix}-cache/{timespan}` Firestore docs (stories with `time` as epoch millis, plus `cachedAt` timestamp). On L1 miss, L2 is checked before running the expensive L3 stories query. L2 prevents cold-start Year requests from costing 20K+ Firestore reads. Non-Day timespans merge in fresh Day stories on every request. `clearCache()` is async and clears both L1 and L2 (batch-deletes all cache docs). Tests must `await clearCache()` in afterEach.
+9. **Two-tier story cache (L1 in-memory + L2 Firestore)**: `storyService.js` caches Firestore query results per timespan with tiered TTLs: Day=30min, Week=2d, Month=1w, Year=1mo, All=1mo. L1 is an in-memory `Map`. L2 stores cached stories in `{prefix}-cache/{timespan}` Firestore docs (stories with `time` as epoch millis, plus `cachedAt` timestamp). On L1 miss, L2 is checked before running the expensive L3 stories query. L2 prevents cold-start Year requests from costing 20K+ Firestore reads. Non-Day timespans merge in fresh Day stories on every request. `clearCache()` is async and clears both L1 and L2 (batch-deletes all cache docs). Tests must `await clearCache()` in afterEach. The worker patches L2 cache docs in-place via `patchStoryCache()` after updating story scores — L1 expires naturally at its TTL and picks up the patched L2.
 
 10. **Hidden stories use subcollection**: `{prefix}-users/{username}/hidden/{storyId}` — avoids Firestore's 1MB doc limit (one user had 117K hidden IDs = 1.2MB).
 
 11. **Zero-padded story doc IDs**: Stories use `padId()` (10-digit zero-padded string) as doc ID for lexicographic ordering that matches numeric order.
 
-12. **Worker via App Engine Cron**: `cron.yaml` fires `GET /_ah/worker` every 15 minutes on the production service. The endpoint checks `X-Appengine-Cron: true` header (App Engine strips this from external requests). Calls `syncOnce()` from `worker.js`. Uses compound inequality queries (`time > X AND updated < Y`) with staleness thresholds: daily=1h, weekly=6h, monthly=48h. Each query capped at `WORKER_BATCH_LIMIT=200`. Requires composite index on `(time ASC, updated ASC)` — see `docs/DATABASE.md`.
+12. **Worker via App Engine Cron**: `cron.yaml` fires `GET /_ah/worker` every 15 minutes on the production service. The endpoint checks `X-Appengine-Cron: true` header (App Engine strips this from external requests). Calls `syncOnce()` from `worker.js`. Uses compound inequality queries (`time > X AND updated < Y`) with staleness thresholds: daily=1h, weekly=6h, monthly=48h. Each query capped at `WORKER_BATCH_LIMIT=200`. Requires composite index on `(time ASC, updated ASC)` — see `docs/DATABASE.md`. After updating scores, the worker patches L2 cache docs in-place via `patchStoryCache()` (5 reads + up to 5 writes per cycle = ~960 ops/day).
 
 13. **react-virtuoso for story lists**: `StoryList.jsx` uses `<Virtuoso useWindowScroll>` to render only visible stories from up to 500 items. Tests mock `react-virtuoso` to render all items synchronously.
 
@@ -171,12 +171,12 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, firestore, firestoreLogger) | 52 |
-| Backend integration (storyService, api, worker) | 78 |
+| Backend unit (middleware, config, hackernews, firestore, firestoreLogger) | 54 |
+| Backend integration (storyService, api, worker) | 85 |
 | Frontend component (App, StoryList, Story) | 32 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total (mock-based)** | **174** |
+| **Total (mock-based)** | **183** |
 | Firestore smoke (real dev- data, standalone) | 8 |
 
 ## Project Health
@@ -250,3 +250,4 @@ All of these must be kept current with every change:
 - **Hidden stories in-memory cache + dedup**: A user with 3,594 hidden stories triggers 3,594 reads per `GET /stories` request. 5-minute TTL per-user cache reduces this to one read per 5 minutes. `upsertHidden` invalidates the cache entry. `hiddenPending` Map deduplicates concurrent requests for the same user.
 - **L2 cache `saveToFirestoreCache` try/catch**: Firestore `.set()` throws synchronously on validation errors (e.g., `undefined` values) before returning a Promise, so `.catch()` on the Promise doesn't help. The entire body is wrapped in try/catch for defense-in-depth. `storiesToCacheDoc()` uses `stripUndefined()` to prevent the issue at source.
 - **Firestore operation logging with per-collection breakdown**: `[firestore]` summary lines now show `reads=stories:42,cache:1` instead of `reads=43`. `[firestore-query]` inline logs show each query as it happens with doc count and timing. L1/L2/MISS cache tracking distinguishes in-memory hits from Firestore cache hits.
+- **Worker L2 cache patching**: `updateStories()` returns `[{id, score, descendants}]` for successfully updated stories. `patchStoryCache()` reads each L2 cache doc, patches matching story scores in-place, re-sorts by score, and batch-writes back. L1 expires naturally at its TTL and picks up the patched L2. Cost: 5 reads + up to 5 writes per worker cycle (~960 ops/day). MockWriteBatch needed `set()` method added for tests.

@@ -169,6 +169,7 @@ const addStories = async (storyIdList, ctx) => {
 
 const updateStories = async (storyIdList, ctx) => {
   const latestRemoteStoryData = await getItems(storyIdList);
+  const updated = [];
 
   for (let i = 0; i < latestRemoteStoryData.length; i += BATCH_SIZE) {
     const batch = latestRemoteStoryData.slice(i, i + BATCH_SIZE);
@@ -186,6 +187,7 @@ const updateStories = async (storyIdList, ctx) => {
             }));
             successCount++;
             ctx?.write("stories", 1);
+            updated.push({ id: storyData.id, score: storyData.score, descendants: storyData.descendants });
           }
         } catch (e) {
           console.error("updateStories update error:", e, storyData);
@@ -194,6 +196,8 @@ const updateStories = async (storyIdList, ctx) => {
     );
     ctx?.query("stories", `updateStories batch size=${batch.length}`, successCount, Date.now() - t0);
   }
+
+  return updated;
 };
 
 module.exports = {

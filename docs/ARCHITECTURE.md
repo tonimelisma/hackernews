@@ -130,6 +130,7 @@ hackernews/
    - Fetch new story IDs from HN Firebase API
    - Add missing stories to Firestore (doc ID = zero-padded HN ID)
    - Update scores for stale stories via compound inequality queries (`time > X AND updated < Y`), tiered by age: 1h/6h/48h, batch limit 200
+   - Patch L2 cache docs in-place with updated scores via `patchStoryCache()` (5 reads + up to 5 writes per cycle). L1 expires naturally at its TTL and picks up the patched L2.
 4. No pruning — Firestore free tier (1GB) handles ~27 years of growth at ~37MB/year
 5. For staging: `BOOTSTRAP_ON_START=true` runs a one-time sync on server startup (no cron)
 

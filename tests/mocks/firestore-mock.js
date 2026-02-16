@@ -286,6 +286,11 @@ class MockWriteBatch {
     this._ops = [];
   }
 
+  set(ref, data) {
+    this._ops.push({ type: "set", ref, data });
+    return this;
+  }
+
   delete(ref) {
     this._ops.push({ type: "delete", ref });
     return this;
@@ -295,6 +300,8 @@ class MockWriteBatch {
     for (const op of this._ops) {
       if (op.type === "delete") {
         await op.ref.delete();
+      } else if (op.type === "set") {
+        await op.ref.set(op.data);
       }
     }
     this._ops = [];

@@ -1,5 +1,6 @@
 const db = require("../setup");
 const { storiesCollection, padId } = require("../../services/firestore");
+const storyService = require("../../services/storyService");
 
 jest.mock("../../services/hackernews");
 const Remote = require("../../services/hackernews");
@@ -8,6 +9,7 @@ const { syncOnce, formatBytes, sleep, WORKER_BATCH_LIMIT } = require("../../work
 
 beforeAll(async () => await db.connect());
 afterEach(async () => {
+  await storyService.clearCache();
   await db.clearDatabase();
   jest.restoreAllMocks();
 });
@@ -116,7 +118,7 @@ describe("syncOnce()", () => {
     Remote.addStories.mockReset();
     Remote.updateStories.mockReset();
     Remote.addStories.mockResolvedValue();
-    Remote.updateStories.mockResolvedValue();
+    Remote.updateStories.mockResolvedValue([]);
   });
 
   it("bootstraps when DB is empty", async () => {
@@ -230,6 +232,51 @@ describe("syncOnce()", () => {
     // At least one call should have exactly WORKER_BATCH_LIMIT (the weekly query hits the cap)
     const hasMaxBatch = calls.some(call => call[0].length === WORKER_BATCH_LIMIT);
     expect(hasMaxBatch).toBe(true);
+  });
+});
+
+describe("syncOnce() cache patching", () => {
+  beforeEach(() => {
+    Remote.getNewStories.mockReset();
+    Remote.addStories.mockReset();
+    Remote.updateStories.mockReset();
+    Remote.addStories.mockResolvedValue();
+  });
+
+  it("patches L2 cache after updating stale stories", async () => {
+    const { cacheCollection } = require("../../services/firestore");
+    const now = Date.now();
+
+    // Seed a story within daily range, stale (updated 2h ago)
+    await storiesCollection().doc(padId(100)).set({
+      id: 100,
+      score: 50,
+      time: new Date(now - 2 * 60 * 60 * 1000), // 2h ago
+      title: "Stale story",
+      by: "a",
+      updated: new Date(now - 2 * 60 * 60 * 1000), // 2h ago (stale for 1h daily threshold)
+    });
+
+    // Populate L2 cache for Day
+    await storyService.getStories("Day", 500);
+
+    // Verify initial L2 cache
+    const before = await cacheCollection().doc("Day").get();
+    expect(before.exists).toBe(true);
+    expect(before.data().stories[0].score).toBe(50);
+
+    // Mock updateStories to return new scores
+    Remote.updateStories.mockResolvedValue([
+      { id: 100, score: 999, descendants: 42 },
+    ]);
+    Remote.getNewStories.mockResolvedValue([50]); // no new stories
+
+    await syncOnce();
+
+    // Verify L2 cache was patched with new score
+    const after = await cacheCollection().doc("Day").get();
+    expect(after.data().stories[0].score).toBe(999);
+    expect(after.data().stories[0].descendants).toBe(42);
   });
 });
 

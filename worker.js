@@ -1,5 +1,6 @@
 const { storiesCollection } = require("./services/firestore");
 const Remote = require("./services/hackernews");
+const { patchStoryCache } = require("./services/storyService");
 const { createFirestoreContext } = require("./util/firestoreLogger");
 
 const throng = require("throng");
@@ -76,8 +77,9 @@ const syncOnce = async () => {
     ctx.query("stories", `stale-monthly time>${monthTimeThreshold.toISOString()} updated<48h`, lastMonthSnap.docs.length, Date.now() - t0m);
     ctx.read("stories", lastMonthSnap.docs.length);
     const monthStaleIds = lastMonthSnap.docs.map(d => d.data().id);
+    let monthUpdated = [];
     if (monthStaleIds.length > 0) {
-      await Remote.updateStories(monthStaleIds, ctx);
+      monthUpdated = await Remote.updateStories(monthStaleIds, ctx);
       updatedCount += monthStaleIds.length;
     }
 
@@ -92,8 +94,9 @@ const syncOnce = async () => {
     ctx.query("stories", `stale-weekly time>${weekTimeThreshold.toISOString()} updated<6h`, lastWeekSnap.docs.length, Date.now() - t0w);
     ctx.read("stories", lastWeekSnap.docs.length);
     const weekStaleIds = lastWeekSnap.docs.map(d => d.data().id);
+    let weekUpdated = [];
     if (weekStaleIds.length > 0) {
-      await Remote.updateStories(weekStaleIds, ctx);
+      weekUpdated = await Remote.updateStories(weekStaleIds, ctx);
       updatedCount += weekStaleIds.length;
     }
 
@@ -108,9 +111,16 @@ const syncOnce = async () => {
     ctx.query("stories", `stale-daily time>${dayTimeThreshold.toISOString()} updated<1h`, last24hSnap.docs.length, Date.now() - t0d);
     ctx.read("stories", last24hSnap.docs.length);
     const dayStaleIds = last24hSnap.docs.map(d => d.data().id);
+    let dayUpdated = [];
     if (dayStaleIds.length > 0) {
-      await Remote.updateStories(dayStaleIds, ctx);
+      dayUpdated = await Remote.updateStories(dayStaleIds, ctx);
       updatedCount += dayStaleIds.length;
+    }
+
+    // Patch L2 cache docs in-place with updated scores
+    const allUpdated = [...monthUpdated, ...weekUpdated, ...dayUpdated];
+    if (allUpdated.length > 0) {
+      await patchStoryCache(allUpdated, ctx);
     }
   } catch (e) {
     console.error("error updating stories:", e);

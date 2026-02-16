@@ -258,4 +258,41 @@ const docToStory = (doc) => {
   };
 };
 
-module.exports = { getStories, upsertUser, upsertHidden, getHidden, clearCache, CACHE_TTLS };
+// Patch L2 cache docs in-place with updated scores/descendants from the worker.
+// L1 expires naturally at its TTL and picks up the patched L2.
+const patchStoryCache = async (updatedStories, ctx) => {
+  if (updatedStories.length === 0) return;
+  const updatesById = new Map(updatedStories.map(s => [s.id, s]));
+  const timespans = ["Day", "Week", "Month", "Year", "All"];
+  const batch = getDb().batch();
+  let batchHasWrites = false;
+
+  for (const ts of timespans) {
+    const docRef = cacheCollection().doc(ts);
+    const doc = await docRef.get();
+    ctx?.read("cache", 1);
+    if (!doc.exists) continue;
+    const data = doc.data();
+    let changed = false;
+    for (const story of data.stories) {
+      const update = updatesById.get(story.id);
+      if (update) {
+        story.score = update.score;
+        story.descendants = update.descendants;
+        changed = true;
+      }
+    }
+    if (changed) {
+      data.stories.sort((a, b) => b.score - a.score);
+      batch.set(docRef, data);
+      ctx?.write("cache", 1);
+      batchHasWrites = true;
+    }
+  }
+
+  if (batchHasWrites) {
+    await batch.commit();
+  }
+};
+
+module.exports = { getStories, upsertUser, upsertHidden, getHidden, clearCache, patchStoryCache, CACHE_TTLS };
