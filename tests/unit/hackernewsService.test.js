@@ -188,6 +188,30 @@ describe("services/hackernews", () => {
       const result = await hackernews.checkStoryExists([100]);
       expect(result).toEqual([]);
     });
+
+    it("tracks reads and queries via ctx", async () => {
+      await storiesCollection().doc(padId(100)).set({
+        id: 100,
+        title: "Existing",
+        by: "test",
+        score: 50,
+        time: new Date(),
+        updated: new Date(),
+      });
+
+      const ctx = { read: jest.fn(), query: jest.fn() };
+      await hackernews.checkStoryExists([100, 200], ctx);
+
+      expect(ctx.read).toHaveBeenCalledTimes(2);
+      expect(ctx.read).toHaveBeenCalledWith("stories", 1);
+      expect(ctx.query).toHaveBeenCalledTimes(1);
+      expect(ctx.query).toHaveBeenCalledWith("stories", "checkExists batch size=2", 2, expect.any(Number));
+    });
+
+    it("works without ctx (backward compat)", async () => {
+      const result = await hackernews.checkStoryExists([999]);
+      expect(result).toEqual([999]);
+    });
   });
 
   describe("addStories", () => {
@@ -239,6 +263,48 @@ describe("services/hackernews", () => {
       expect(saved.title).toBe("No URL Story");
       expect(saved.kids).toBeUndefined();
       expect(saved.url).toBeUndefined();
+    });
+
+    it("tracks writes and queries via ctx", async () => {
+      const mockStory = {
+        id: 502,
+        by: "author",
+        descendants: 5,
+        score: 80,
+        time: 1609459200,
+        title: "Tracked Story",
+        type: "story",
+        url: "https://example.com",
+      };
+
+      axios.get.mockResolvedValue({ data: mockStory });
+
+      const ctx = { write: jest.fn(), query: jest.fn() };
+      await hackernews.addStories([502], ctx);
+
+      expect(ctx.write).toHaveBeenCalledTimes(1);
+      expect(ctx.write).toHaveBeenCalledWith("stories", 1);
+      expect(ctx.query).toHaveBeenCalledTimes(1);
+      expect(ctx.query).toHaveBeenCalledWith("stories", "addStories batch size=1", 1, expect.any(Number));
+    });
+
+    it("works without ctx (backward compat)", async () => {
+      const mockStory = {
+        id: 503,
+        by: "author",
+        descendants: 0,
+        score: 10,
+        time: 1609459200,
+        title: "No Ctx Story",
+        type: "story",
+      };
+
+      axios.get.mockResolvedValue({ data: mockStory });
+
+      await hackernews.addStories([503]);
+
+      const doc = await storiesCollection().doc(padId(503)).get();
+      expect(doc.exists).toBe(true);
     });
   });
 
@@ -301,6 +367,53 @@ describe("services/hackernews", () => {
       expect(updated.descendants).toBe(0);
       // Original kids preserved since undefined was stripped
       expect(updated.kids).toEqual([1, 2]);
+    });
+
+    it("tracks writes and queries via ctx", async () => {
+      await storiesCollection().doc(padId(800)).set({
+        id: 800,
+        title: "Story",
+        by: "author",
+        score: 10,
+        descendants: 5,
+        time: new Date(),
+        updated: new Date(Date.now() - 100000),
+      });
+
+      const updatedData = {
+        id: 800,
+        descendants: 25,
+        score: 300,
+      };
+
+      axios.get.mockResolvedValue({ data: updatedData });
+
+      const ctx = { write: jest.fn(), query: jest.fn() };
+      await hackernews.updateStories([800], ctx);
+
+      expect(ctx.write).toHaveBeenCalledTimes(1);
+      expect(ctx.write).toHaveBeenCalledWith("stories", 1);
+      expect(ctx.query).toHaveBeenCalledTimes(1);
+      expect(ctx.query).toHaveBeenCalledWith("stories", "updateStories batch size=1", 1, expect.any(Number));
+    });
+
+    it("works without ctx (backward compat)", async () => {
+      await storiesCollection().doc(padId(801)).set({
+        id: 801,
+        title: "Story",
+        by: "author",
+        score: 10,
+        descendants: 5,
+        time: new Date(),
+        updated: new Date(Date.now() - 100000),
+      });
+
+      axios.get.mockResolvedValue({ data: { id: 801, score: 20, descendants: 10 } });
+
+      await hackernews.updateStories([801]);
+
+      const doc = await storiesCollection().doc(padId(801)).get();
+      expect(doc.data().score).toBe(20);
     });
   });
 });

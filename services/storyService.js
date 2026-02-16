@@ -59,10 +59,14 @@ const loadFromFirestoreCache = async (timespan, ttl, ctx) => {
 };
 
 // L2: Save to Firestore cache doc (fire-and-forget)
-const saveToFirestoreCache = (timespan, stories, timestamp) => {
+const saveToFirestoreCache = (timespan, stories, timestamp, ctx) => {
   try {
     const doc = storiesToCacheDoc(stories, timestamp);
-    cacheCollection().doc(timespan).set(doc).catch(err => {
+    const t0 = Date.now();
+    cacheCollection().doc(timespan).set(doc).then(() => {
+      ctx?.write("cache", 1);
+      ctx?.query("cache", `L2-write doc=${timespan}`, 1, Date.now() - t0);
+    }).catch(err => {
       console.error("L2 cache write failed:", err.message);
     });
   } catch (err) {
@@ -70,7 +74,7 @@ const saveToFirestoreCache = (timespan, stories, timestamp) => {
   }
 };
 
-const clearCache = async () => {
+const clearCache = async (ctx) => {
   cache.clear();
   hiddenCache.clear();
   hiddenPending.clear();
@@ -79,7 +83,10 @@ const clearCache = async () => {
   for (const ts of timespans) {
     batch.delete(cacheCollection().doc(ts));
   }
+  const t0 = Date.now();
   await batch.commit();
+  ctx?.write("cache", timespans.length);
+  ctx?.query("cache", `clearCache batch-delete`, timespans.length, Date.now() - t0);
 };
 
 const getHidden = async (reqUsername, ctx) => {
@@ -185,7 +192,7 @@ const fetchFromCacheOrFirestore = async (timespan, ctx) => {
 
   const now = Date.now();
   cache.set(timespan, { data: stories, timestamp: now });
-  saveToFirestoreCache(timespan, stories, now);
+  saveToFirestoreCache(timespan, stories, now, ctx);
   return stories;
 };
 

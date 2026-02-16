@@ -124,7 +124,7 @@ describe("syncOnce()", () => {
 
     await syncOnce();
 
-    expect(Remote.addStories).toHaveBeenCalledWith([300, 200, 100]);
+    expect(Remote.addStories).toHaveBeenCalledWith([300, 200, 100], expect.any(Object));
   });
 
   it("adds only new stories when local DB has stories", async () => {
@@ -142,7 +142,7 @@ describe("syncOnce()", () => {
 
     await syncOnce();
 
-    expect(Remote.addStories).toHaveBeenCalledWith([300, 200]);
+    expect(Remote.addStories).toHaveBeenCalledWith([300, 200], expect.any(Object));
   });
 
   it("skips addStories when no new stories available", async () => {
@@ -179,7 +179,7 @@ describe("syncOnce()", () => {
 
     await syncOnce();
 
-    expect(Remote.updateStories).toHaveBeenCalledWith([100]);
+    expect(Remote.updateStories).toHaveBeenCalledWith([100], expect.any(Object));
   });
 
   it("does not update recently updated stories", async () => {

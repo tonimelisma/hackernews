@@ -42,8 +42,7 @@ const syncOnce = async () => {
 
     if (latestSnap.empty) {
       console.log("empty db, bootstrapping...");
-      await Remote.addStories(latestRemoteStoryIds);
-      ctx.write("stories", latestRemoteStoryIds.length);
+      await Remote.addStories(latestRemoteStoryIds, ctx);
       newCount = latestRemoteStoryIds.length;
     } else {
       const latestLocalId = latestSnap.docs[0].data().id;
@@ -52,8 +51,7 @@ const syncOnce = async () => {
         const newStoryIds = latestRemoteStoryIds.filter(
           checkStoryId => checkStoryId > latestLocalId
         );
-        await Remote.addStories(newStoryIds);
-        ctx.write("stories", newStoryIds.length);
+        await Remote.addStories(newStoryIds, ctx);
         newCount = newStoryIds.length;
       } else {
         console.log("all stories in local db already");
@@ -79,8 +77,7 @@ const syncOnce = async () => {
     ctx.read("stories", lastMonthSnap.docs.length);
     const monthStaleIds = lastMonthSnap.docs.map(d => d.data().id);
     if (monthStaleIds.length > 0) {
-      await Remote.updateStories(monthStaleIds);
-      ctx.write("stories", monthStaleIds.length);
+      await Remote.updateStories(monthStaleIds, ctx);
       updatedCount += monthStaleIds.length;
     }
 
@@ -96,8 +93,7 @@ const syncOnce = async () => {
     ctx.read("stories", lastWeekSnap.docs.length);
     const weekStaleIds = lastWeekSnap.docs.map(d => d.data().id);
     if (weekStaleIds.length > 0) {
-      await Remote.updateStories(weekStaleIds);
-      ctx.write("stories", weekStaleIds.length);
+      await Remote.updateStories(weekStaleIds, ctx);
       updatedCount += weekStaleIds.length;
     }
 
@@ -113,8 +109,7 @@ const syncOnce = async () => {
     ctx.read("stories", last24hSnap.docs.length);
     const dayStaleIds = last24hSnap.docs.map(d => d.data().id);
     if (dayStaleIds.length > 0) {
-      await Remote.updateStories(dayStaleIds);
-      ctx.write("stories", dayStaleIds.length);
+      await Remote.updateStories(dayStaleIds, ctx);
       updatedCount += dayStaleIds.length;
     }
   } catch (e) {

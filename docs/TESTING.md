@@ -21,13 +21,13 @@ npm test && cd hackernews-frontend && npm test && cd ..
 |------|------|-------|----------------|
 | `tests/unit/middleware.test.js` | Unit | 3 | `unknownEndpoint` (404), `errorHandler` (500 + next) |
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
-| `tests/unit/hackernewsService.test.js` | Unit+DB | 15 | All HN API functions (axios mocked), Firestore operations |
+| `tests/unit/hackernewsService.test.js` | Unit+DB | 24 | All HN API functions (axios mocked), Firestore operations, ctx tracking |
 | `tests/unit/firestore.test.js` | Unit | 11 | getCollectionPrefix (incl. staging), padId, storiesCollection, usersCollection, getDb/setDb |
 | `tests/unit/firestoreLogger.test.js` | Unit | 13 | createFirestoreContext: counters, read/write, L1/L2/MISS cache, per-collection breakdown, query inline logging |
-| `tests/integration/storyService.test.js` | Integration | 27 | All storyService CRUD, L1/L2 cache, hidden cache+dedup, cache expiry, Day-merge, query caps |
-| `tests/integration/api.test.js` | Integration | 26 | Full HTTP request/response via supertest (incl. `/_ah/worker` endpoint) |
-| `tests/integration/worker.test.js` | Integration | 13 | syncOnce() direct tests, compound staleness queries, batch limits, utility functions |
-| **Total** | | **124** | |
+| `tests/integration/storyService.test.js` | Integration | 32 | All storyService CRUD, L1/L2 cache, hidden cache+dedup, cache expiry, Day-merge, query caps |
+| `tests/integration/api.test.js` | Integration | 34 | Full HTTP request/response via supertest (incl. `/_ah/worker` endpoint) |
+| `tests/integration/worker.test.js` | Integration | 12 | syncOnce() direct tests, compound staleness queries, batch limits, utility functions |
+| **Total** | | **130** | |
 
 ### Frontend (Vitest + React Testing Library)
 

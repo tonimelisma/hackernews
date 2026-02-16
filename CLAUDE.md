@@ -172,11 +172,11 @@ All of these must be kept current with every change:
 | Suite | Tests |
 |-------|-------|
 | Backend unit (middleware, config, hackernews, firestore, firestoreLogger) | 52 |
-| Backend integration (storyService, api, worker) | 72 |
+| Backend integration (storyService, api, worker) | 78 |
 | Frontend component (App, StoryList, Story) | 32 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total (mock-based)** | **168** |
+| **Total (mock-based)** | **174** |
 | Firestore smoke (real dev- data, standalone) | 8 |
 
 ## Project Health
@@ -228,7 +228,7 @@ All of these must be kept current with every change:
 - **Rate limiter state persists across tests** — rate-limit test must be last in its describe block.
 - **`bin/www` for startup checks**: SECRET validation lives in `bin/www` (not `app.js`) so tests can `require('../../app')` without triggering exit.
 - **jsdom lacks `window.matchMedia`**: Must stub in `setupTests.js` (global) for any component using `useTheme`. Tests that need specific matchMedia behavior reassign `window.matchMedia` in `beforeEach`.
-- **Logging convention**: `console.error` for errors (catch blocks), `console.log` for operational info (startup, sync progress). `tests/setup.js` suppresses both globally. Per-request Firestore analytics use `[firestore]`-tagged structured log lines via `util/firestoreLogger.js` — tracks per-collection reads/writes, L1/L2/MISS cache metrics, and latency. `[firestore-query]` inline logs show individual query details with doc counts and timing. `ctx` parameter is optional on all service functions (backwards-compatible).
+- **Logging convention**: `console.error` for errors (catch blocks), `console.log` for operational info (startup, sync progress). `tests/setup.js` suppresses both globally. Per-request Firestore analytics use `[firestore]`-tagged structured log lines via `util/firestoreLogger.js` — tracks per-collection reads/writes, L1/L2/MISS cache metrics, and latency. `[firestore-query]` inline logs show individual query details with doc counts and timing. `ctx` parameter is optional on all service functions (backwards-compatible). Worker write tracking is per-actual-operation inside `hackernews.js` (`addStories`/`updateStories`/`checkStoryExists`), not estimated externally. L2 cache writes and `clearCache` deletes are also tracked via `ctx`.
 - **Pre-commit hooks**: husky + lint-staged run `eslint --fix` on staged `.js` files. Backend ESLint config ignores `hackernews-frontend/`.
 - **Bootstrap 5 data attributes**: Use `data-bs-toggle`/`data-bs-dismiss` (not `data-toggle`/`data-dismiss`). Class `dropdown-menu-right` was renamed to `dropdown-menu-end`.
 - **`errorHandler` must not call `next()`**: Calling `next(error)` after `res.status().json()` triggers "headers already sent" errors if another error handler exists downstream.
