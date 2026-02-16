@@ -75,10 +75,10 @@ gcloud firestore indexes composite create --project=melisma-hackernews \
 
 ### `getStories(timespan, limit, skip)` — `storyService.js`
 
-Two query paths, both capped at `MAX_QUERY_DOCS=500`:
+Two query paths, final output capped at `MAX_QUERY_DOCS=500`:
 
 - **"All" timespan**: `orderBy('score', 'desc').limit(500)` — Firestore sorts directly, no client-side sort needed.
-- **Time-filtered** (Day/Week/Month/Year): `where('time', '>', X).orderBy('time', 'desc').limit(500)` — fetches the 500 most recent matching stories, then sorts by score client-side.
+- **Time-filtered** (Day/Week/Month/Year): `where('time', '>', X).orderBy('time', 'desc')` (no limit) — fetches all stories in the time range, sorts by score client-side, keeps top 500. No `limit()` because Firestore requires the first `orderBy` to match the inequality field — limiting by time would miss high-scoring older stories.
 
 Results are cached with per-timespan TTLs: Day=30min, Week=2d, Month=1w, Year=1mo, All=1mo. Cache is persisted to `.cache/stories.json` and restored on app restart. Non-Day timespans always merge in fresh Day stories, so new high-scoring stories appear quickly without full cache refresh. `clearCache()` resets the cache (used in tests).
 

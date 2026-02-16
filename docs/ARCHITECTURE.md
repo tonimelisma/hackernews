@@ -115,7 +115,7 @@ hackernews/
 ### Story Fetch (Frontend → Backend → Firestore)
 1. Frontend calls `GET /api/v1/stories?timespan=Day`
 2. `routes/api.js` parses timespan, limit, skip
-3. `storyService.getStories()` checks 1h TTL cache; on miss, queries Firestore (limit 500), sorts by score
+3. `storyService.getStories()` checks per-timespan TTL cache; on miss, queries Firestore (all stories in time range, or top 500 by score for "All"), sorts by score, caches top 500
 4. Response: JSON array of stories
 
 ### Background Worker (Cron → Express → HN API → Firestore)

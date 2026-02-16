@@ -157,30 +157,43 @@ describe("services/storyService", () => {
       jest.useRealTimers();
     });
 
-    it("caps time-filtered queries at MAX_QUERY_DOCS", async () => {
-      // Clear and seed more stories than we'd normally want
+    it("Year returns high-scoring old stories even with >500 stories in range", async () => {
       storyService.clearCache();
       await db.clearDatabase();
 
       const now = Date.now();
       const promises = [];
-      for (let i = 1; i <= 10; i++) {
+
+      // 500 recent low-scoring stories (last 2 weeks)
+      for (let i = 1; i <= 500; i++) {
         promises.push(
           seedStory({
             id: i,
-            score: i * 10,
-            time: new Date(now - 1000 * 60 * 60), // 1h ago (within Day)
+            score: i,
+            time: new Date(now - 1000 * 60 * 60 * 24 * (1 + (i % 14))),
           })
         );
       }
+
+      // 10 old high-scoring stories (11 months ago)
+      for (let i = 501; i <= 510; i++) {
+        promises.push(
+          seedStory({
+            id: i,
+            score: 9000 + i,
+            time: new Date(now - 1000 * 60 * 60 * 24 * 330),
+          })
+        );
+      }
+
       await Promise.all(promises);
 
-      // With limit=500 (MAX_QUERY_DOCS), all 10 should be returned
-      const result = await storyService.getStories("Day", 500);
-      expect(result).toHaveLength(10);
-      // Sorted by score desc
-      expect(result[0].score).toBe(100);
-      expect(result[9].score).toBe(10);
+      const result = await storyService.getStories("Year", 500);
+      // The 10 old high-scoring stories must appear at the top
+      const topIds = result.slice(0, 10).map(s => s.id);
+      for (let i = 501; i <= 510; i++) {
+        expect(topIds).toContain(i);
+      }
     });
 
     it("exports per-timespan CACHE_TTLS", () => {

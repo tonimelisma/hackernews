@@ -106,16 +106,19 @@ const fetchFromCacheOrFirestore = async (timespan, ctx) => {
     ctx?.read("stories", snapshot.docs.length);
     stories = snapshot.docs.map(docToStory);
   } else {
-    // Time-filtered: cap at MAX_QUERY_DOCS most recent, then sort by score client-side
+    // Time-filtered: fetch ALL stories in range, sort by score client-side, cache top 500.
+    // Firestore requires first orderBy to match inequality field, so we can't sort by score
+    // server-side. No limit — Year may have 20K+ stories but cache TTLs (30d for Year)
+    // mean this query runs rarely.
     const timespanDate = getTimespanDate(timespan);
     const snapshot = await storiesCollection()
       .where("time", ">", timespanDate)
       .orderBy("time", "desc")
-      .limit(MAX_QUERY_DOCS)
       .get();
     ctx?.read("stories", snapshot.docs.length);
     stories = snapshot.docs.map(docToStory);
     stories.sort((a, b) => b.score - a.score);
+    stories = stories.slice(0, MAX_QUERY_DOCS);
   }
 
   cache.set(timespan, { data: stories, timestamp: Date.now() });
