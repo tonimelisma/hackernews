@@ -187,6 +187,40 @@ describe("API routes", () => {
       expect(res.body.error).toBe("internal server error");
       storyService.getStories = original;
     });
+
+    it("excludes hidden stories when authenticated", async () => {
+      await Promise.all([
+        seedStory({ id: 1, score: 300 }),
+        seedStory({ id: 2, score: 200 }),
+        seedStory({ id: 3, score: 100 }),
+      ]);
+
+      // Mark story 2 as hidden for testuser
+      await usersCollection().doc("testuser").set({});
+      await usersCollection().doc("testuser").collection("hidden").doc("2").set({ addedAt: Date.now() });
+
+      const token = createToken("testuser");
+      const res = await request(app)
+        .get("/api/v1/stories")
+        .set("Cookie", `token=${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(2);
+      expect(res.body.map(s => s.id)).not.toContain(2);
+    });
+
+    it("returns all stories without auth cookie", async () => {
+      await Promise.all([
+        seedStory({ id: 1, score: 300 }),
+        seedStory({ id: 2, score: 200 }),
+        seedStory({ id: 3, score: 100 }),
+      ]);
+
+      const res = await request(app).get("/api/v1/stories");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(3);
+    });
   });
 
   describe("GET /api/v1/hidden", () => {

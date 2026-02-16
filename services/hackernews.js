@@ -1,6 +1,9 @@
 const axios = require("axios");
 const { storiesCollection, padId } = require("./firestore");
 
+const stripUndefined = (obj) =>
+  Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
+
 const newStoriesUrl =
   "https://hacker-news.firebaseio.com/v0/newstories.json?print=pretty";
 
@@ -136,7 +139,7 @@ const addStories = async storyIdList => {
       batch.map(async storyData => {
         try {
           if (storyData) {
-            return storiesCollection().doc(padId(storyData.id)).set({
+            return storiesCollection().doc(padId(storyData.id)).set(stripUndefined({
               by: storyData.by,
               descendants: storyData.descendants,
               id: storyData.id,
@@ -146,7 +149,7 @@ const addStories = async storyIdList => {
               title: storyData.title,
               url: storyData.url,
               updated: new Date()
-            });
+            }));
           }
         } catch (e) {
           console.error("addStories set error:", e, storyData);
@@ -165,12 +168,12 @@ const updateStories = async storyIdList => {
       batch.map(async storyData => {
         try {
           if (storyData) {
-            return storiesCollection().doc(padId(storyData.id)).update({
+            return storiesCollection().doc(padId(storyData.id)).update(stripUndefined({
               descendants: storyData.descendants,
               kids: storyData.kids,
               score: storyData.score,
               updated: new Date()
-            });
+            }));
           }
         } catch (e) {
           console.error("updateStories update error:", e, storyData);

@@ -15,7 +15,7 @@ afterAll(async () => await db.closeDatabase());
 
 describe("worker logic (simulated)", () => {
   describe("stale story detection", () => {
-    it("finds monthly stories stale for 48h", async () => {
+    it("finds monthly stories stale for 48h (single inequality + client-side time filter)", async () => {
       const now = Date.now();
       await Promise.all([
         storiesCollection().doc(padId(1)).set({
@@ -30,20 +30,35 @@ describe("worker logic (simulated)", () => {
           id: 2,
           score: 100,
           time: new Date(now - 10 * 24 * 60 * 60 * 1000), // 10d ago (within month)
-          title: "Stale",
+          title: "Stale within month",
+          by: "a",
+          updated: new Date(now - 49 * 60 * 60 * 1000), // 49h ago
+        }),
+        storiesCollection().doc(padId(3)).set({
+          id: 3,
+          score: 100,
+          time: new Date(now - 60 * 24 * 60 * 60 * 1000), // 60d ago (outside month)
+          title: "Stale but too old",
           by: "a",
           updated: new Date(now - 49 * 60 * 60 * 1000), // 49h ago
         }),
       ]);
 
-      // Simulate worker's monthly stale story query
+      // Simulate worker's monthly stale story query (single inequality on updated)
+      const monthTimeThreshold = new Date(now - 28 * 24 * 60 * 60 * 1000);
       const staleSnap = await storiesCollection()
-        .where("time", ">", new Date(now - 28 * 24 * 60 * 60 * 1000))
         .where("updated", "<", new Date(now - 48 * 60 * 60 * 1000))
+        .orderBy("updated", "asc")
+        .limit(WORKER_BATCH_LIMIT)
         .get();
 
-      expect(staleSnap.docs).toHaveLength(1);
-      expect(staleSnap.docs[0].data().id).toBe(2);
+      // Client-side filter by time
+      const staleIds = staleSnap.docs
+        .filter(d => d.data().time.toDate() > monthTimeThreshold)
+        .map(d => d.data().id);
+
+      expect(staleIds).toHaveLength(1);
+      expect(staleIds[0]).toBe(2);
     });
   });
 

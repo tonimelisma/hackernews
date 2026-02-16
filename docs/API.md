@@ -39,7 +39,9 @@ Fetch stories sorted by score descending.
 
 **Error:** `500` on internal DB error.
 
-**Note:** Invalid `timespan` values silently default to `"All"` — no error returned.
+**Notes:**
+- Invalid `timespan` values silently default to `"All"` — no error returned.
+- If a valid auth cookie is present, hidden stories are filtered out server-side before the response. Anonymous requests return all stories.
 
 ---
 

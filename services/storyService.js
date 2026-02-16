@@ -137,7 +137,7 @@ const mergeStories = (base, dayStories) => {
   return merged.slice(0, MAX_QUERY_DOCS);
 };
 
-const getStories = async (timespan, limit, skip = undefined, ctx) => {
+const getStories = async (timespan, limit, skip = undefined, ctx, hiddenIds = []) => {
   const skipN = isNaN(skip) ? 0 : skip;
 
   let stories = await fetchFromCacheOrFirestore(timespan, ctx);
@@ -147,6 +147,11 @@ const getStories = async (timespan, limit, skip = undefined, ctx) => {
   if (timespan !== "Day") {
     const freshDay = await fetchFromCacheOrFirestore("Day", ctx);
     stories = mergeStories(stories, freshDay);
+  }
+
+  if (hiddenIds.length > 0) {
+    const hiddenSet = new Set(hiddenIds);
+    stories = stories.filter(s => !hiddenSet.has(s.id));
   }
 
   return stories.slice(skipN, skipN + limit);

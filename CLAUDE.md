@@ -119,13 +119,13 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 4. **Worker testable via `syncOnce()`**: `worker.js` exports `syncOnce()` (one full sync cycle) and guards `throng` with `require.main === module`. Tests import `syncOnce()` directly with mocked `services/hackernews`.
 
-5. **No input validation on API**: The `/stories` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint has `isValidUsername()` validation.
+5. **No input validation on API**: The `/stories` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint has `isValidUsername()` validation. `/stories` optionally reads auth cookie for server-side hidden filtering.
 
 6. **`getHidden` returns empty array for missing users**: If username doesn't exist in Firestore, `getHidden` returns `[]` (no hidden stories).
 
 7. **Node.js 25+ crashes the app**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. `SlowBuffer` was removed in Node 25. No upstream fix available. **Use Node.js 18 or 20.**
 
-8. **Query optimization for stories**: "All" timespan uses `orderBy('score', 'desc').limit(500)` — Firestore sorts directly. Time-filtered timespans use `where('time', '>').orderBy('time', 'desc').limit(500)` then sort by score client-side. Both cap at `MAX_QUERY_DOCS=500` to stay within Firestore free tier quotas.
+8. **Query optimization for stories**: "All" timespan uses `orderBy('score', 'desc').limit(500)` — Firestore sorts directly. Time-filtered timespans use `where('time', '>').orderBy('time', 'desc').limit(500)` then sort by score client-side. Both cap at `MAX_QUERY_DOCS=500` to stay within Firestore free tier quotas. Worker staleness queries use single inequality on `updated` only, with client-side `time` filtering (avoids composite index requirement).
 
 9. **Disk-persisted TTL cache with Day-merge**: `storyService.js` caches Firestore query results per timespan with tiered TTLs: Day=30min, Week=2d, Month=1w, Year=1mo, All=1mo. Cache is persisted to `.cache/stories.json` (gitignored) and restored on app restart. Non-Day timespans merge in fresh Day stories on every request, so new high-scoring stories appear in Week/Month/Year/All without waiting for full cache expiry. Disk persistence disabled in tests (`NODE_ENV=test`). `clearCache()` exported for tests.
 
@@ -138,6 +138,10 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 13. **react-virtuoso for story lists**: `StoryList.jsx` uses `<Virtuoso useWindowScroll>` to render only visible stories from up to 500 items. Tests mock `react-virtuoso` to render all items synchronously.
 
 14. **Hidden stories localStorage persistence**: Anonymous users' hidden state persists via `localStorage` (`hiddenStories` key). On login, server hidden IDs are merged with localStorage. `hiddenLoaded` state gates `StoryList` rendering to prevent flash of unhidden stories.
+
+18. **Server-side hidden story filtering**: `GET /stories` optionally reads the auth cookie via `optionalAuth()`. If authenticated, fetches hidden IDs and passes them to `getStories()` which filters them out before slicing. The story cache is shared (not per-user). Anonymous users are unaffected.
+
+19. **`stripUndefined()` for Firestore writes**: HN API items may lack `kids`, `url`, or `text` fields (returned as `undefined`). Firestore throws `Cannot use "undefined" as a Firestore value`. `stripUndefined()` in `services/hackernews.js` filters out undefined values before `.set()` and `.update()` calls.
 
 15. **Dark mode via system preference**: Bootstrap 5.3's `data-bs-theme` attribute on `<html>`. A synchronous `<script>` in `index.html` sets the attribute before first paint (no flash). `useTheme` hook listens for live OS changes. Navbar stays `navbar-dark bg-dark` in both modes. Story cards use `bg-body-secondary` (theme-aware). No manual toggle — system detection only.
 
@@ -162,12 +166,12 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, firestore, firestoreLogger) | 39 |
-| Backend integration (storyService, api, worker) | 67 |
+| Backend unit (middleware, config, hackernews, firestore, firestoreLogger) | 41 |
+| Backend integration (storyService, api, worker) | 72 |
 | Frontend component (App, StoryList, Story) | 31 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total (mock-based)** | **149** |
+| **Total (mock-based)** | **156** |
 | Firestore smoke (real dev- data, standalone) | 8 |
 
 ## Project Health

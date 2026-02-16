@@ -63,43 +63,52 @@ const syncOnce = async () => {
 
   // UPDATE SCORES FOR TRENDING STORIES
   try {
+    const monthTimeThreshold = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000);
     const lastMonthSnap = await storiesCollection()
-      .where("time", ">", new Date(Date.now() - 28 * 24 * 60 * 60 * 1000))
       .where("updated", "<", new Date(Date.now() - 48 * 60 * 60 * 1000))
       .orderBy("updated", "asc")
       .limit(WORKER_BATCH_LIMIT)
       .get();
     ctx.read("stories", lastMonthSnap.docs.length);
-    if (!lastMonthSnap.empty) {
-      await Remote.updateStories(lastMonthSnap.docs.map(d => d.data().id));
-      ctx.write("stories", lastMonthSnap.docs.length);
-      updatedCount += lastMonthSnap.docs.length;
+    const monthStaleIds = lastMonthSnap.docs
+      .filter(d => d.data().time.toDate() > monthTimeThreshold)
+      .map(d => d.data().id);
+    if (monthStaleIds.length > 0) {
+      await Remote.updateStories(monthStaleIds);
+      ctx.write("stories", monthStaleIds.length);
+      updatedCount += monthStaleIds.length;
     }
 
+    const weekTimeThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const lastWeekSnap = await storiesCollection()
-      .where("time", ">", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
       .where("updated", "<", new Date(Date.now() - 6 * 60 * 60 * 1000))
       .orderBy("updated", "asc")
       .limit(WORKER_BATCH_LIMIT)
       .get();
     ctx.read("stories", lastWeekSnap.docs.length);
-    if (!lastWeekSnap.empty) {
-      await Remote.updateStories(lastWeekSnap.docs.map(d => d.data().id));
-      ctx.write("stories", lastWeekSnap.docs.length);
-      updatedCount += lastWeekSnap.docs.length;
+    const weekStaleIds = lastWeekSnap.docs
+      .filter(d => d.data().time.toDate() > weekTimeThreshold)
+      .map(d => d.data().id);
+    if (weekStaleIds.length > 0) {
+      await Remote.updateStories(weekStaleIds);
+      ctx.write("stories", weekStaleIds.length);
+      updatedCount += weekStaleIds.length;
     }
 
+    const dayTimeThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const last24hSnap = await storiesCollection()
-      .where("time", ">", new Date(Date.now() - 24 * 60 * 60 * 1000))
       .where("updated", "<", new Date(Date.now() - 60 * 60 * 1000))
       .orderBy("updated", "asc")
       .limit(WORKER_BATCH_LIMIT)
       .get();
     ctx.read("stories", last24hSnap.docs.length);
-    if (!last24hSnap.empty) {
-      await Remote.updateStories(last24hSnap.docs.map(d => d.data().id));
-      ctx.write("stories", last24hSnap.docs.length);
-      updatedCount += last24hSnap.docs.length;
+    const dayStaleIds = last24hSnap.docs
+      .filter(d => d.data().time.toDate() > dayTimeThreshold)
+      .map(d => d.data().id);
+    if (dayStaleIds.length > 0) {
+      await Remote.updateStories(dayStaleIds);
+      ctx.write("stories", dayStaleIds.length);
+      updatedCount += dayStaleIds.length;
     }
   } catch (e) {
     console.error("error updating stories:", e);

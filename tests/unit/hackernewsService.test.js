@@ -216,6 +216,30 @@ describe("services/hackernews", () => {
       // time is multiplied by 1000 (seconds to ms) and stored as Date
       expect(saved.time.toDate().getTime()).toBe(1609459200 * 1000);
     });
+
+    it("handles stories with undefined kids/url fields", async () => {
+      const mockStory = {
+        id: 501,
+        by: "author",
+        descendants: 0,
+        score: 50,
+        time: 1609459200,
+        title: "No URL Story",
+        type: "story",
+        // kids, url, text are undefined
+      };
+
+      axios.get.mockResolvedValue({ data: mockStory });
+
+      await hackernews.addStories([501]);
+
+      const doc = await storiesCollection().doc(padId(501)).get();
+      expect(doc.exists).toBe(true);
+      const saved = doc.data();
+      expect(saved.title).toBe("No URL Story");
+      expect(saved.kids).toBeUndefined();
+      expect(saved.url).toBeUndefined();
+    });
   });
 
   describe("updateStories", () => {
@@ -246,6 +270,37 @@ describe("services/hackernews", () => {
       const updated = doc.data();
       expect(updated.score).toBe(200);
       expect(updated.descendants).toBe(20);
+    });
+
+    it("handles items with undefined kids field", async () => {
+      await storiesCollection().doc(padId(700)).set({
+        id: 700,
+        title: "Story",
+        by: "author",
+        score: 10,
+        descendants: 5,
+        kids: [1, 2],
+        time: new Date(),
+        updated: new Date(Date.now() - 100000),
+      });
+
+      const updatedData = {
+        id: 700,
+        descendants: 0,
+        score: 15,
+        // kids is undefined
+      };
+
+      axios.get.mockResolvedValue({ data: updatedData });
+
+      await hackernews.updateStories([700]);
+
+      const doc = await storiesCollection().doc(padId(700)).get();
+      const updated = doc.data();
+      expect(updated.score).toBe(15);
+      expect(updated.descendants).toBe(0);
+      // Original kids preserved since undefined was stripped
+      expect(updated.kids).toEqual([1, 2]);
     });
   });
 });

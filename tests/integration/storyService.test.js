@@ -190,6 +190,26 @@ describe("services/storyService", () => {
       expect(storyService.CACHE_TTLS.Year).toBe(30 * 24 * 60 * 60 * 1000);
       expect(storyService.CACHE_TTLS.All).toBe(30 * 24 * 60 * 60 * 1000);
     });
+
+    it("filters out hidden stories when hiddenIds provided", async () => {
+      const result = await storyService.getStories("All", 500, undefined, undefined, [1, 3]);
+      expect(result).toHaveLength(3);
+      expect(result.map(s => s.id)).not.toContain(1);
+      expect(result.map(s => s.id)).not.toContain(3);
+    });
+
+    it("returns correct count after filtering hidden stories", async () => {
+      const result = await storyService.getStories("All", 2, undefined, undefined, [1]);
+      expect(result).toHaveLength(2);
+      // Highest remaining scores are 300, 200 (id=2 and id=3)
+      expect(result[0].score).toBe(300);
+      expect(result[1].score).toBe(200);
+    });
+
+    it("returns all stories when hiddenIds is empty", async () => {
+      const result = await storyService.getStories("All", 500, undefined, undefined, []);
+      expect(result).toHaveLength(5);
+    });
   });
 
   describe("getHidden", () => {

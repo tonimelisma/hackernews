@@ -45,6 +45,17 @@ const authenticateToken = (req, res, next) => {
   }
 };
 
+const optionalAuth = (req) => {
+  const token = req.cookies && req.cookies.token;
+  if (!token) return null;
+  try {
+    const decoded = jwt.verify(token, process.env.SECRET);
+    return decoded.username ? { username: decoded.username } : null;
+  } catch {
+    return null;
+  }
+};
+
 router.get("/stories", async (req, res) => {
   const parseTimespan = timespan => {
     if (!timespan) return "All";
@@ -68,15 +79,14 @@ router.get("/stories", async (req, res) => {
 
   const ctx = createFirestoreContext();
   try {
-    const stories =
-      !isNaN(req.query.skip) && req.query.skip > 0
-        ? await storyService.getStories(
-          timespan,
-          limit,
-          parseInt(req.query.skip),
-          ctx
-        )
-        : await storyService.getStories(timespan, limit, undefined, ctx);
+    const user = optionalAuth(req);
+    const hiddenIds = user ? await storyService.getHidden(user.username, ctx) : [];
+
+    const skip = !isNaN(req.query.skip) && req.query.skip > 0
+      ? parseInt(req.query.skip)
+      : undefined;
+
+    const stories = await storyService.getStories(timespan, limit, skip, ctx, hiddenIds);
 
     res.json(stories);
     ctx.log("GET /stories", { timespan, count: stories.length });
