@@ -1,0 +1,31 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - SECRET=${SECRET}
+      - SQLITE_PATH=/data/hackernews.db
+      - PORT=3000
+    volumes:
+      - sqlite-data:/data
+    networks:
+      - proxy
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - proxy
+volumes:
+  sqlite-data:
+  caddy-data:
+  caddy-config:
+networks:
+  proxy:

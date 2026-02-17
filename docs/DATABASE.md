@@ -1,124 +1,163 @@
-# Database — Google Cloud Firestore
+# Database — SQLite
 
 ## Overview
 
-The app uses Google Cloud Firestore (project: `melisma-hackernews`, default database) with environment-prefixed collections to separate dev/ci/prod data in a single database.
+The app uses SQLite via `better-sqlite3` with WAL mode enabled for concurrent read/write support. The database file location is configurable via `SQLITE_PATH` environment variable (default: `./data/hackernews.db`).
 
-| `NODE_ENV` | Prefix | Collections |
-|---|---|---|
-| `production` | `prod-` | `prod-stories`, `prod-users`, `prod-cache` |
-| `staging` | `staging-` | `staging-stories`, `staging-users`, `staging-cache` |
-| `ci` | `ci-` | `ci-stories`, `ci-users`, `ci-cache` |
-| anything else | `dev-` | `dev-stories`, `dev-users`, `dev-cache` |
+Schema is initialized automatically on first use via `initSchema()` in `services/database.js`.
 
-Prefix logic lives in `services/firestore.js:getCollectionPrefix()`.
+## Schema
 
-## Stories (`{prefix}-stories`)
+### Stories
 
-Document ID: zero-padded HN story ID, 10 digits (e.g., `"0042345678"`)
+```sql
+CREATE TABLE IF NOT EXISTS stories (
+  id INTEGER PRIMARY KEY,
+  by TEXT,
+  descendants INTEGER,
+  kids TEXT,
+  score INTEGER,
+  time INTEGER NOT NULL,
+  title TEXT,
+  url TEXT,
+  updated INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_stories_score ON stories(score DESC);
+CREATE INDEX IF NOT EXISTS idx_stories_time ON stories(time DESC);
+CREATE INDEX IF NOT EXISTS idx_stories_time_updated ON stories(time, updated);
+```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `by` | string | Author username |
-| `descendants` | number | Comment count |
-| `id` | number | HN story ID (also encoded in doc ID) |
-| `kids` | array of number | Child comment IDs |
-| `score` | number | HN score (upvotes) |
-| `time` | timestamp | Story timestamp (converted from HN seconds × 1000) |
-| `title` | string | Story title |
-| `url` | string | Link URL |
-| `updated` | timestamp | Last sync timestamp |
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER PRIMARY KEY | HN story ID (natural numeric order) |
+| `by` | TEXT | Author username |
+| `descendants` | INTEGER | Comment count |
+| `kids` | TEXT | JSON array of child comment IDs, or NULL |
+| `score` | INTEGER | HN score (upvotes) |
+| `time` | INTEGER NOT NULL | Story timestamp (epoch milliseconds) |
+| `title` | TEXT | Story title |
+| `url` | TEXT | Link URL (NULL for self-posts like Ask HN) |
+| `updated` | INTEGER NOT NULL | Last sync timestamp (epoch milliseconds) |
 
-**Why zero-padded doc IDs:** Firestore doc IDs are strings sorted lexicographically. Zero-padding to 10 digits makes `orderBy("id", "desc")` match numeric order, needed by the worker to find the latest story.
+### Users
 
-## Users (`{prefix}-users`)
+```sql
+CREATE TABLE IF NOT EXISTS users (
+  username TEXT PRIMARY KEY
+);
+```
 
-Document ID: HN username (e.g., `"dang"`)
+| Column | Type | Description |
+|--------|------|-------------|
+| `username` | TEXT PRIMARY KEY | HN username |
 
-The user document itself is empty (`{}`). Hidden story IDs are stored in a subcollection.
+### Hidden
 
-### Hidden Subcollection (`{prefix}-users/{username}/hidden`)
+```sql
+CREATE TABLE IF NOT EXISTS hidden (
+  username TEXT NOT NULL,
+  story_id INTEGER NOT NULL,
+  added_at INTEGER DEFAULT (unixepoch() * 1000),
+  PRIMARY KEY (username, story_id)
+);
+CREATE INDEX IF NOT EXISTS idx_hidden_username ON hidden(username);
+```
 
-Document ID: story ID as string (e.g., `"42345678"`)
+| Column | Type | Description |
+|--------|------|-------------|
+| `username` | TEXT NOT NULL | HN username |
+| `story_id` | INTEGER NOT NULL | Hidden story ID |
+| `added_at` | INTEGER | Timestamp when hidden (epoch milliseconds) |
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `addedAt` | number | Timestamp when hidden (ms since epoch) |
+## Indexes
 
-**Why subcollection:** Firestore has a 1MB document limit. One user had 117K hidden story IDs (1.2MB as an array), exceeding this limit. Subcollection docs have no such constraint.
-
-## Cache (`{prefix}-cache`)
-
-Document ID: timespan name (`Day`, `Week`, `Month`, `Year`, `All`)
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `stories` | array of objects | Cached story data (up to 2000 stories) |
-| `stories[].by` | string | Author username |
-| `stories[].descendants` | number | Comment count |
-| `stories[].id` | number | HN story ID |
-| `stories[].score` | number | HN score |
-| `stories[].time` | number | Story timestamp as epoch millis (not Firestore Timestamp) |
-| `stories[].title` | string | Story title |
-| `stories[].url` | string | Link URL |
-| `cachedAt` | number | Cache write timestamp (epoch millis) |
-
-**Why epoch millis for `time`:** Avoids Firestore Timestamp round-trip conversion. Stories are converted back to Date objects when read from cache.
-
-**Size:** ~400-800KB per doc (up to 2000 stories x ~400 bytes), within Firestore's 1MB doc limit.
-
-**Purpose:** L2 cache layer. When App Engine scales to zero, the in-memory L1 cache is lost. L2 prevents cold-start Year requests from costing 20K+ Firestore reads (1 read instead). `clearCache()` batch-deletes all 5 cache docs.
+| Index | Columns | Purpose |
+|-------|---------|---------|
+| `idx_stories_score` | `score DESC` | Fast `ORDER BY score DESC` for "All" timespan |
+| `idx_stories_time` | `time DESC` | Fast time-range filtering |
+| `idx_stories_time_updated` | `time, updated` | Worker stale-story detection queries |
+| `idx_hidden_username` | `username` | Fast hidden story lookups per user |
 
 ## Connection Management
 
 | Component | Behavior |
 |-----------|----------|
-| `services/firestore.js` | Lazy singleton — `getDb()` creates the Firestore client on first call |
-| `services/firestore.js:setDb()` | Allows tests to inject a custom Firestore instance |
-| `worker.js` | No explicit connection management — Firestore handles connections automatically |
-
-**No module-load connection side effect.** `storyService.js` imports collection refs from `firestore.js` but the client is only created when first used.
-
-## Composite Indexes
-
-Required for multi-inequality queries in the worker's score update logic:
-
-| Collection | Fields | Used by |
-|---|---|---|
-| `{prefix}-stories` | `time ASC, updated ASC` | Worker: find stories newer than X but not updated since Y |
-
-Create via:
-```bash
-gcloud firestore indexes composite create --project=melisma-hackernews \
-  --collection-group={prefix}-stories --field-config=field-path=time,order=ASCENDING --field-config=field-path=updated,order=ASCENDING
-```
+| `services/database.js` | Lazy singleton — `getDb()` opens SQLite on first call, enables WAL + foreign keys |
+| `services/database.js:setDb()` | Allows tests to inject an in-memory `:memory:` database |
+| `services/database.js:initSchema()` | Creates tables and indexes (idempotent, uses IF NOT EXISTS) |
 
 ## Query Patterns
 
 ### `getStories(timespan, limit, skip)` — `storyService.js`
 
-Two query paths, final output capped at `MAX_QUERY_DOCS=2000`:
+Single SQL query handles everything:
 
-- **"All" timespan**: `orderBy('score', 'desc').limit(2000)` — Firestore sorts directly, no client-side sort needed.
-- **Time-filtered** (Day/Week/Month/Year): `where('time', '>', X).orderBy('time', 'desc')` (no limit) — fetches all stories in the time range, sorts by score client-side, keeps top 2000. No `limit()` because Firestore requires the first `orderBy` to match the inequality field — limiting by time would miss high-scoring older stories.
+```sql
+-- Time-filtered with hidden exclusion
+SELECT id, by, descendants, score, time, title, url
+FROM stories
+WHERE time > ?
+  AND id NOT IN (SELECT story_id FROM hidden WHERE username = ?)
+ORDER BY score DESC
+LIMIT ? OFFSET ?
 
-The 2000 buffer ensures power users with many hidden stories still see a full page after server-side hidden filtering (sliced to `limitResults=500`).
+-- "All" timespan (no time filter)
+SELECT id, by, descendants, score, time, title, url
+FROM stories
+WHERE id NOT IN (SELECT story_id FROM hidden WHERE username = ?)
+ORDER BY score DESC
+LIMIT ? OFFSET ?
+```
 
-Results are cached in a two-tier system: L1 (in-memory Map) and L2 (Firestore `{prefix}-cache/{timespan}` docs) with per-timespan TTLs: Day=30min, Week=2d, Month=1w, Year=1mo, All=1mo. Non-Day timespans always merge in fresh Day stories, so new high-scoring stories appear quickly without full cache refresh. `clearCache()` is async and clears both L1 and L2.
+This single query replaces the previous Firestore approach which required: L1 check → L2 cache check → Firestore query → client-side sort → Day-merge → hidden filter → slice.
+
+Results are cached in an L1 in-memory Map with a 1-minute TTL.
 
 ### Worker — stale story detection
 
-Uses multi-inequality: `where('time', '>').where('updated', '<').orderBy('updated', 'asc').limit(200)`. Runs every 30 minutes with three staleness tiers:
-- **Daily stories**: stale after 1h
-- **Weekly stories**: stale after 6h
-- **Monthly stories**: stale after 48h
+```sql
+SELECT id FROM stories WHERE time > ? AND updated < ? ORDER BY updated ASC LIMIT ?
+```
 
-Each query is capped at `WORKER_BATCH_LIMIT=200` to prevent unbounded reads. The 14-day-old catch-all query has been removed (scores are stable after 2 weeks). Requires the composite index above.
+Runs every 15 minutes with three staleness tiers:
+- **Daily stories** (last 24h): stale after 1h
+- **Weekly stories** (last 7 days): stale after 6h
+- **Monthly stories** (last 28 days): stale after 48h
+
+Each query is capped at `WORKER_BATCH_LIMIT=200`.
 
 ### Worker — find latest story
 
-`orderBy('id', 'desc').limit(1)` — uses the auto-created single-field index on `id`.
+```sql
+SELECT id FROM stories ORDER BY id DESC LIMIT 1
+```
+
+### `getHidden` — `storyService.js`
+
+```sql
+SELECT story_id FROM hidden WHERE username = ?
+```
+
+Results cached in a 5-minute per-user in-memory cache. `upsertHidden` invalidates the cache entry.
 
 ### `upsertHidden` — `storyService.js`
 
-`set()` on subcollection doc `hidden/{storyId}` is naturally idempotent (replaces MongoDB's `$addToSet`).
+```sql
+INSERT OR IGNORE INTO users (username) VALUES (?);
+INSERT OR REPLACE INTO hidden (username, story_id) VALUES (?, ?);
+```
+
+Naturally idempotent — hiding the same story twice is a no-op.
+
+### Story import/update — `hackernews.js`
+
+```sql
+-- Add new stories (in a transaction)
+INSERT OR REPLACE INTO stories (id, by, descendants, kids, score, time, title, url, updated)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+
+-- Update existing story scores (in a transaction)
+UPDATE stories SET score = ?, descendants = ?, updated = ? WHERE id = ?
+```
+
+All bulk operations use SQLite transactions for atomicity and performance.

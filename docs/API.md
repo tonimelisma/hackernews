@@ -6,7 +6,7 @@ Base URL: `/api/v1`
 
 Authentication uses HTTP-only cookies. On successful login, the server sets a `token` cookie containing a signed JWT. All subsequent requests to protected endpoints automatically include this cookie.
 
-**Cookie properties:** `httpOnly`, `secure` (production and staging), `sameSite=strict`, `path=/api`, `maxAge=24h`
+**Cookie properties:** `httpOnly`, `secure` (production), `sameSite=strict`, `path=/api`, `maxAge=24h`
 
 Protected endpoints return `401` if no valid cookie is present.
 
@@ -41,7 +41,7 @@ Fetch stories sorted by score descending.
 
 **Notes:**
 - Invalid `timespan` values silently default to `"All"` — no error returned.
-- If a valid auth cookie is present, hidden stories are filtered out server-side before the response. Anonymous requests return all stories.
+- If a valid auth cookie is present, hidden stories are filtered out server-side via SQL `WHERE id NOT IN (...)`. Anonymous requests return all stories.
 
 ---
 
@@ -87,7 +87,7 @@ Add a story ID to authenticated user's hidden list.
 - `401` — missing/invalid token: `{ "error": "authentication error" }`
 - `500` — internal error: `{ "error": "internal server error" }`
 
-Uses Firestore `set()` on a subcollection doc — naturally idempotent (hiding the same story twice is a no-op).
+Uses `INSERT OR REPLACE` — naturally idempotent (hiding the same story twice is a no-op).
 
 ---
 
@@ -161,30 +161,11 @@ Get the currently authenticated user.
 **Error responses:**
 - `401` — missing/invalid token: `{ "error": "authentication error" }`
 
----
-
-### GET /_ah/worker
-
-**(Internal)** Trigger a background sync of stories from Hacker News. Protected by App Engine's `X-Appengine-Cron` header — App Engine strips this header from external requests, so only App Engine Cron can invoke it.
-
-**Auth:** `X-Appengine-Cron: true` header (set automatically by App Engine Cron).
-
-**Response (success):** `200 OK`
-```json
-{ "status": "sync complete" }
-```
-
-**Error responses:**
-- `403` — missing/invalid cron header: `{ "error": "forbidden" }`
-- `500` — sync failure: `{ "error": "sync failed" }`
-
-**Note:** This endpoint is not under `/api/v1` — it lives at the root as `/_ah/worker` (App Engine convention).
-
 ## Security
 
 - All endpoints served behind `helmet()` middleware (CSP, HSTS, X-Frame-Options, etc.)
 - CORS restricted to `localhost:3000` in development, same-origin in production
 - Passwords are never stored — only proxied to HN for authentication
 - JWT stored in HTTP-only cookie (not accessible to JavaScript — prevents XSS token theft)
-- Cookie attributes: `httpOnly`, `secure` (production and staging), `sameSite=strict`, `path=/api`
+- Cookie attributes: `httpOnly`, `secure` (production), `sameSite=strict`, `path=/api`
 - Protected routes use `authenticateToken` middleware for JWT verification via cookie

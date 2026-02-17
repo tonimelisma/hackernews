@@ -1,7 +1,0 @@
-cron:
-  - description: "Sync stories from Hacker News"
-    url: /_ah/worker
-    schedule: every 15 minutes
-    target: default
-    retry_parameters:
-      job_retry_limit: 1

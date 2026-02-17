@@ -40,9 +40,6 @@ app.use("/assets", express.static(path.join(buildPath, "assets"), {
   maxAge: "1y",
   immutable: true,
 }));
-// index.html must never be cached — App Engine sets all file mtimes to
-// 1980-01-01, so Express ETags (based on size+mtime) don't change between
-// deploys, causing browsers to serve stale HTML referencing old JS hashes.
 app.use(express.static(buildPath, {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith(".html")) {
@@ -53,20 +50,6 @@ app.use(express.static(buildPath, {
 
 // ROUTES
 app.use("/api/v1", apiRouter);
-
-app.get("/_ah/worker", async (req, res) => {
-  if (req.get("X-Appengine-Cron") !== "true") {
-    return res.status(403).json({ error: "forbidden" });
-  }
-  try {
-    const { syncOnce } = require("./worker");
-    await syncOnce();
-    res.status(200).json({ status: "sync complete" });
-  } catch (e) {
-    console.error("worker endpoint error:", e);
-    res.status(500).json({ error: "sync failed" });
-  }
-});
 
 // ERRORS
 app.use(middleware.unknownEndpoint);

@@ -2,7 +2,7 @@
 
 ## Project Summary
 
-HackerNews aggregator: a Node.js/Express backend with a React frontend, deployed on Google App Engine Standard. The backend scrapes Hacker News stories, stores them in Google Cloud Firestore, and serves them via a REST API. An App Engine Cron job triggers `/_ah/worker` every 15 minutes to sync new stories and update scores. The frontend displays top stories with filtering by timespan and user-hidden stories.
+HackerNews aggregator: a Node.js/Express backend with a React frontend, deployed on a GCP e2-micro VPS via Docker + Caddy. The backend scrapes Hacker News stories, stores them in SQLite, and serves them via a REST API. An integrated background worker (setInterval, 15-minute cycle) syncs new stories and updates scores. The frontend displays top stories with filtering by timespan and user-hidden stories.
 
 ## Quick Reference Commands
 
@@ -10,7 +10,7 @@ HackerNews aggregator: a Node.js/Express backend with a React frontend, deployed
 # IMPORTANT: Use Node.js 20 (Node 25+ crashes due to SlowBuffer removal)
 # If using Homebrew: PATH="/opt/homebrew/opt/node@20/bin:$PATH"
 
-# Backend tests (uses in-memory mock — no credentials or network needed)
+# Backend tests (uses in-memory SQLite — no credentials or network needed)
 npm test
 
 # Frontend tests
@@ -28,17 +28,17 @@ cd hackernews-frontend && npm run test:coverage && cd ..
 # Backend lint
 npm run lint
 
-# Firestore smoke tests (requires ADC, hits real dev- Firestore, max 50 reads + 50 writes)
-npm run test:firestore
-
-# Backend dev server (requires Firestore ADC)
+# Backend dev server
 npm run watch
 
 # Frontend dev server
 cd hackernews-frontend && npm start
 
-# Worker
+# Worker (standalone)
 npm run worker
+
+# Import JSON data to SQLite
+npm run import
 ```
 
 ## Working Style
@@ -75,22 +75,22 @@ You own this repo. You are the maintainer. There is no "someone else" — if the
 
 ```
 hackernews/
-├── app.js                  # Express app setup (middleware, routes, static files, /_ah/worker)
-├── worker.js               # Background sync (syncOnce export, throng for local dev)
+├── app.js                  # Express app setup (middleware, routes, static files)
+├── worker.js               # Background sync (syncOnce export, 15m loop)
+├── bin/www                 # HTTP server bootstrap + SECRET validation + worker init
 ├── routes/api.js           # REST API routes (/stories, /hidden, /login, /logout, /me)
 ├── services/
-│   ├── firestore.js        # Firestore client singleton, collection refs, padId()
-│   ├── storyService.js     # Firestore CRUD for stories/users
-│   └── hackernews.js       # HN API client + hntoplinks scraper
+│   ├── database.js         # SQLite singleton (getDb, setDb, initSchema)
+│   ├── storyService.js     # Story/user CRUD (SQL queries)
+│   └── hackernews.js       # HN API client + story import/update
 ├── util/
 │   ├── config.js           # Environment config (limitResults)
-│   ├── firestoreLogger.js  # Per-request Firestore operation & cache analytics logging
+│   ├── dbLogger.js         # Per-request DB operation & cache analytics logging
 │   └── middleware.js        # Express error handlers
 ├── eslint.config.js        # ESLint flat config (backend)
-├── app.yaml                # App Engine production config
-├── staging.yaml            # App Engine staging config
-├── cron.yaml               # App Engine Cron (15-min worker sync)
-├── .gcloudignore           # Files excluded from App Engine deploy
+├── Dockerfile              # Multi-stage Docker build (node:20-alpine)
+├── docker-compose.yml      # App + Caddy services, SQLite volume
+├── Caddyfile               # Reverse proxy config (auto HTTPS)
 ├── hackernews-frontend/    # React frontend (Vite + Vitest)
 │   └── src/
 │       ├── App.jsx         # Main component (stories, auth, filtering)
@@ -102,10 +102,9 @@ hackernews/
 │       └── services/
 │           ├── storyService.js  # API client for stories/hidden
 │           └── loginService.js  # API client for login/logout/me
-├── tests/integration/
-│   └── firestore-smoke.test.js  # Standalone smoke tests against real Firestore (not Jest)
-├── scripts/                # Migration scripts (import, audit, export)
-├── .github/workflows/ci.yml # CI + deploy pipeline (staging auto, prod manual)
+├── scripts/
+│   └── import-json-to-sqlite.js # Import JSON → SQLite
+├── .github/workflows/ci.yml # CI + SSH deploy pipeline
 ├── .husky/pre-commit       # Pre-commit hook (lint-staged)
 └── docs/                   # LLM-geared documentation
 ```
@@ -114,49 +113,35 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 ## Key Architectural Constraints & Gotchas
 
-1. **Firestore lazy singleton**: `services/firestore.js` creates the Firestore client on first use via `getDb()`. No module-load side effects. `setDb()` allows test injection.
+1. **SQLite lazy singleton**: `services/database.js` creates the SQLite connection on first use via `getDb()`. Enables WAL mode and foreign keys. `setDb()` allows test injection of `:memory:` databases. `initSchema()` creates tables and indexes (idempotent).
 
-2. **Environment-prefixed collections**: Collections are prefixed by `NODE_ENV`: `prod-`/`staging-`/`ci-`/`dev-` (default). Logic in `services/firestore.js:getCollectionPrefix()`.
+2. **In-memory SQLite for tests**: Tests use `better-sqlite3` with `:memory:` databases via `setDb()` in `tests/setup.js`. No credentials, no network, no mocking of database modules. `clearDatabase()` truncates all tables between tests. Backend tests run in ~1 second.
 
-3. **In-memory MockFirestore for tests**: Tests use `jest.config.js` `moduleNameMapper` to replace `@google-cloud/firestore` with an in-memory mock (`tests/mocks/firestore-mock.js`). The real SDK never loads — no credentials, no network, no `--experimental-vm-modules` needed. The mock implements the exact Firestore API surface used by this project (collection/doc/query/batch/subcollections). `_clear()` wipes all data between tests.
+3. **Worker testable via `syncOnce()`**: `worker.js` exports `syncOnce()` (one full sync cycle) and guards `main()` with `require.main === module`. Tests import `syncOnce()` directly with mocked `services/hackernews`. Worker is integrated into the Express process via `setInterval` in `bin/www`.
 
-4. **Worker testable via `syncOnce()`**: `worker.js` exports `syncOnce()` (one full sync cycle) and guards `throng` with `require.main === module`. Tests import `syncOnce()` directly with mocked `services/hackernews`.
+4. **Single SQL query for stories**: `getStories()` uses a single SQL query that handles time filtering, hidden story exclusion, score sorting, and pagination — all in one step. No client-side sorting, no multi-tier cache, no merge logic needed.
 
 5. **No input validation on API**: The `/stories` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint has `isValidUsername()` validation. `/stories` optionally reads auth cookie for server-side hidden filtering.
 
-6. **`getHidden` returns empty array for missing users**: If username doesn't exist in Firestore, `getHidden` returns `[]` (no hidden stories).
+6. **`getHidden` returns empty array for missing users**: If username doesn't exist in the database, `getHidden` returns `[]` (no hidden stories).
 
 7. **Node.js 25+ crashes the app**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. `SlowBuffer` was removed in Node 25. No upstream fix available. **Use Node.js 18 or 20.**
 
-8. **Query optimization for stories**: "All" timespan uses `orderBy('score', 'desc').limit(2000)` — Firestore sorts directly. Time-filtered timespans use `where('time', '>').orderBy('time', 'desc')` (no limit) to fetch all stories in the range, then sort by score client-side and keep top `MAX_QUERY_DOCS=2000`. Firestore requires the first `orderBy` to match the inequality field, so we can't sort by score server-side for time-filtered queries. The 2000 buffer ensures power users with thousands of hidden stories still see a full page of results after server-side hidden filtering (sliced to `limitResults=500`). Cache TTLs (30d for Year) ensure the unlimited query runs rarely. Worker staleness queries use compound inequality (`time > threshold AND updated < staleness`) — requires composite index on `(time ASC, updated ASC)`.
+8. **L1 in-memory cache**: `storyService.js` caches SQL query results per timespan with a 1-minute TTL in an in-memory `Map`. `clearCache()` clears both the story cache and the per-user hidden cache. Tests must `await clearCache()` in afterEach.
 
-9. **Two-tier story cache (L1 in-memory + L2 Firestore)**: `storyService.js` caches Firestore query results per timespan with tiered TTLs: Day=30min, Week=2d, Month=1w, Year=1mo, All=1mo. L1 is an in-memory `Map`. L2 stores cached stories in `{prefix}-cache/{timespan}` Firestore docs (stories with `time` as epoch millis, plus `cachedAt` timestamp). On L1 miss, L2 is checked before running the expensive L3 stories query. L2 prevents cold-start Year requests from costing 20K+ Firestore reads. Non-Day timespans merge in fresh Day stories on every request. `clearCache()` is async and clears both L1 and L2 (batch-deletes all cache docs). Tests must `await clearCache()` in afterEach. The worker patches L2 cache docs in-place via `patchStoryCache()` after updating story scores — L1 expires naturally at its TTL and picks up the patched L2.
+9. **Hidden stories in-memory cache + deduplication**: `getHidden()` caches per-user hidden IDs for 5 minutes (`HIDDEN_CACHE_TTL`). `upsertHidden()` invalidates the cache. Concurrent requests for the same user are deduplicated via `hiddenPending` Map (returns same in-flight Promise).
 
-10. **Hidden stories use subcollection**: `{prefix}-users/{username}/hidden/{storyId}` — avoids Firestore's 1MB doc limit (one user had 117K hidden IDs = 1.2MB).
+10. **Server-side hidden story filtering**: `GET /stories` optionally reads the auth cookie via `optionalAuth()`. If authenticated, fetches hidden IDs and passes them to `getStories()` which excludes them via SQL `WHERE id NOT IN (...)`. The story cache is shared (not per-user). Anonymous users are unaffected.
 
-11. **Zero-padded story doc IDs**: Stories use `padId()` (10-digit zero-padded string) as doc ID for lexicographic ordering that matches numeric order.
+11. **react-virtuoso for story lists**: `StoryList.jsx` uses `<Virtuoso useWindowScroll>` to render only visible stories from up to 500 items. Tests mock `react-virtuoso` to render all items synchronously.
 
-12. **Worker via App Engine Cron**: `cron.yaml` fires `GET /_ah/worker` every 15 minutes on the production service. The endpoint checks `X-Appengine-Cron: true` header (App Engine strips this from external requests). Calls `syncOnce()` from `worker.js`. Uses compound inequality queries (`time > X AND updated < Y`) with staleness thresholds: daily=1h, weekly=6h, monthly=48h. Each query capped at `WORKER_BATCH_LIMIT=200`. Requires composite index on `(time ASC, updated ASC)` — see `docs/DATABASE.md`. After updating scores, the worker patches L2 cache docs in-place via `patchStoryCache()` (5 reads + up to 5 writes per cycle = ~960 ops/day).
+12. **Hidden stories localStorage persistence**: Anonymous users' hidden state persists via `localStorage` (`hiddenStories` key). On login, server hidden IDs are merged with localStorage, and any localStorage-only IDs are synced back to the server (fire-and-forget). `hiddenLoaded` state gates `StoryList` rendering to prevent flash of unhidden stories.
 
-13. **react-virtuoso for story lists**: `StoryList.jsx` uses `<Virtuoso useWindowScroll>` to render only visible stories from up to 500 items. Tests mock `react-virtuoso` to render all items synchronously.
+13. **Dark mode via system preference**: Bootstrap 5.3's `data-bs-theme` attribute on `<html>`. A synchronous `<script>` in `index.html` sets the attribute before first paint (no flash). `useTheme` hook listens for live OS changes. No manual toggle — system detection only.
 
-14. **Hidden stories localStorage persistence**: Anonymous users' hidden state persists via `localStorage` (`hiddenStories` key). On login, server hidden IDs are merged with localStorage, and any localStorage-only IDs are synced back to the server (fire-and-forget). `hiddenLoaded` state gates `StoryList` rendering to prevent flash of unhidden stories.
+14. **Static file caching strategy**: `index.html` served with `Cache-Control: no-cache`; hashed `/assets/*` files served with `max-age=1y, immutable`.
 
-18. **Hidden stories in-memory cache + deduplication**: `getHidden()` caches per-user hidden IDs for 5 minutes (`HIDDEN_CACHE_TTL`). `upsertHidden()` invalidates the cache. Concurrent requests for the same user are deduplicated via `hiddenPending` Map (returns same in-flight Promise). Prevents a user with 3,594 hidden stories from triggering 3,594 Firestore reads on every page load, and avoids doubling reads when `GET /stories` and `GET /hidden` race on page load.
-
-19. **Server-side hidden story filtering**: `GET /stories` optionally reads the auth cookie via `optionalAuth()`. If authenticated, fetches hidden IDs and passes them to `getStories()` which filters them out before slicing. The story cache is shared (not per-user). Anonymous users are unaffected.
-
-19. **`stripUndefined()` for Firestore writes**: HN API items may lack `kids`, `url`, or `text` fields (returned as `undefined`). Firestore throws `Cannot use "undefined" as a Firestore value`. `stripUndefined()` in `services/hackernews.js` and `services/storyService.js` filters out undefined values before `.set()` and `.update()` calls. The L2 cache `storiesToCacheDoc()` also uses it — self-posts (Ask HN) have no `url` field.
-
-15. **Dark mode via system preference**: Bootstrap 5.3's `data-bs-theme` attribute on `<html>`. A synchronous `<script>` in `index.html` sets the attribute before first paint (no flash). `useTheme` hook listens for live OS changes. Navbar stays `navbar-dark bg-dark` in both modes. Story cards use `bg-body-secondary` (theme-aware). No manual toggle — system detection only.
-
-14. **`getHidden` skips user doc check**: Reads subcollection directly — empty snapshot = no hidden stories. Saves 1 Firestore read per authenticated request.
-
-15. **App Engine deployment**: Production (`app.yaml`) and staging (`staging.yaml`) services. `env_variables.yaml` (gitignored) holds the JWT `SECRET`. `gcp-build` script in `package.json` builds the frontend during deploy. Staging uses `BOOTSTRAP_ON_START=true` for fire-and-forget initial sync on startup.
-
-17. **Static file caching strategy**: App Engine sets all deployed file mtimes to `1980-01-01`. Express ETags are based on `filesize + mtime`, so if `index.html` stays the same byte size between deploys (Vite hashes are same length), the ETag never changes and browsers get stale 304s. Fix: `index.html` is served with `Cache-Control: no-cache`; hashed `/assets/*` files are served with `max-age=1y, immutable`.
-
-16. **CI/CD pipeline**: GitHub Actions deploys to staging on every push to master (after tests pass), then to production after manual approval via GitHub environment protection rules. Uses Workload Identity Federation for keyless GCP auth. CI service account requires `roles/cloudscheduler.admin` for `cron.yaml` deployment (App Engine cron uses Cloud Scheduler under the hood).
+15. **Docker deployment**: `Dockerfile` builds node:20-alpine image with npm ci + frontend build. `docker-compose.yml` runs app + Caddy (reverse proxy with auto HTTPS). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d`.
 
 ## Documentation
 
@@ -164,35 +149,34 @@ All of these must be kept current with every change:
 
 - [Architecture](docs/ARCHITECTURE.md) — system overview, directory structure, data flow, environment variables
 - [API Reference](docs/API.md) — REST endpoints, request/response formats
-- [Database Schemas](docs/DATABASE.md) — Firestore collections, subcollections, indexes, query patterns
+- [Database Schemas](docs/DATABASE.md) — SQLite tables, indexes, query patterns
 - [Testing Guide](docs/TESTING.md) — test architecture, mocks, running tests, technical details
 
 ## Test Counts
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, firestore, firestoreLogger) | 55 |
-| Backend integration (storyService, api, worker) | 86 |
+| Backend unit (middleware, config, hackernews, database, dbLogger) | 46 |
+| Backend integration (storyService, api, worker) | 71 |
 | Frontend component (App, StoryList, Story) | 33 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total (mock-based)** | **186** |
-| Firestore smoke (real dev- data, standalone) | 8 |
+| **Total** | **162** |
 
 ## Project Health
 
-**Overall: B+** — Working application with solid test coverage, good documentation, and automated cloud deployment.
+**Overall: A-** — Working application with solid test coverage, good documentation, simplified architecture (SQLite), and automated Docker deployment.
 
 | Category | Grade | Summary |
 |----------|-------|---------|
 | Functionality | B | Core features work; hntoplinks scraper is brittle (regex) |
 | Security | A- | Helmet, CORS, rate limiting, JWT in HTTP-only cookie, SECRET validation |
-| Testing | A- | 186 tests, in-memory mock, ~1s backend runs |
-| Code Quality | A- | Modernized boilerplate, a11y fixes, bug fixes, dead code removed |
-| Architecture | B | Firestore migration, lazy singleton, env-prefixed collections |
-| Documentation | B+ | CLAUDE.md + 4 reference docs, proper README |
-| DevOps / CI | A- | App Engine Standard, GitHub Actions CI/CD with staging auto-deploy + prod approval gate, WIF auth, npm audit, ESLint, pre-commit hooks |
-| Performance | B | Two-tier cache (L1+L2), hidden cache, client-side sort for Firestore constraint, react-virtuoso |
+| Testing | A- | 162 tests, in-memory SQLite, ~1s backend runs |
+| Code Quality | A- | Clean codebase, dead code removed, SQLite simplification |
+| Architecture | A- | SQLite eliminates all Firestore hacks (L2 cache, patchStoryCache, Day-merge, padId, stripUndefined) |
+| Documentation | A- | CLAUDE.md + 4 reference docs, all updated |
+| DevOps / CI | B+ | Docker + Caddy on VPS, GitHub Actions CI/CD with SSH deploy, npm audit, ESLint, pre-commit hooks |
+| Performance | A- | Sub-ms SQL queries, L1 cache, hidden cache, react-virtuoso |
 | Dependencies | A- | 0 vulnerabilities in both backend and frontend |
 
 ### Open Issues
@@ -217,39 +201,27 @@ All of these must be kept current with every change:
 - Add CONTRIBUTING.md
 - Add LICENSE file
 
+### Infrastructure
+- VPS provisioning (GCP e2-micro, Docker, Caddy, Cloudflare DNS)
+
 ## Key Learnings
 
-- **Firestore query constraint**: Can't `where()` on one field and `orderBy()` on another (first `orderBy` must match inequality field). For "All" timespan, use `orderBy('score').limit(2000)` directly. For time-filtered, use `where('time').orderBy('time')` (no limit) then sort by score and slice client-side. Using `limit()` on time-filtered queries is wrong — it returns the N most recent by time, not the N highest by score, causing Year to show only recent stories. Composite indexes required for multi-inequality worker queries.
-- **Firestore free tier optimization**: Spark plan allows 50K reads/20K writes per day. Key levers: `.limit()` on all queries (2000 for API, 200 for worker), 1h in-memory TTL cache for story queries, 30-min worker cycle with relaxed staleness thresholds (1h/6h/48h). Removed unbounded 14d-old query.
-- **In-memory MockFirestore**: `moduleNameMapper` in `jest.config.js` redirects `@google-cloud/firestore` to an in-memory mock. Storage: flat `Map<collectionPath, Map<docId, data>>`. MockTimestamp wraps Date objects on `.set()`/`.update()`. Backend tests run in ~1 second with no credentials or network.
+- **SQLite eliminates Firestore architectural hacks**: Moving from Firestore to SQLite removed: L2 cache, patchStoryCache, mergeStories, Day-merge, padId, stripUndefined, MAX_QUERY_DOCS buffer, cacheDocToStories, storiesToCacheDoc, CACHE_TTLS, environment-prefixed collections, subcollection pattern for hidden stories, batched operations (BATCH_SIZE=20). A single SQL query (`WHERE time > ? AND id NOT IN (...) ORDER BY score DESC LIMIT ? OFFSET ?`) replaces ~200 lines of cache/merge/filter logic.
 - **Node.js 25+ incompatibility**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. Must mock `jsonwebtoken` in tests; use Node.js 18/20 in production.
 - **Vitest mock differences**: `vi.mock()` factory must return an object with `default` key for default exports. No `__esModule: true` needed. Axios mock: `vi.mock("axios", () => ({ default: { get: vi.fn(), post: vi.fn() } }))`.
 - **Node.js 22 localStorage conflict**: Node.js 22's built-in `localStorage` (experimental) conflicts with jsdom in Vitest. Must stub localStorage with `vi.stubGlobal("localStorage", mockImpl)` in tests that use it.
 - **Rate limiter state persists across tests** — rate-limit test must be last in its describe block.
-- **`bin/www` for startup checks**: SECRET validation lives in `bin/www` (not `app.js`) so tests can `require('../../app')` without triggering exit.
+- **`bin/www` for startup checks**: SECRET validation lives in `bin/www` (not `app.js`) so tests can `require('../../app')` without triggering exit. Database initialization and worker startup also live in `bin/www`.
 - **jsdom lacks `window.matchMedia`**: Must stub in `setupTests.js` (global) for any component using `useTheme`. Tests that need specific matchMedia behavior reassign `window.matchMedia` in `beforeEach`.
-- **Logging convention**: `console.error` for errors (catch blocks), `console.log` for operational info (startup, sync progress). `tests/setup.js` suppresses both globally. Per-request Firestore analytics use `[firestore]`-tagged structured log lines via `util/firestoreLogger.js` — tracks per-collection reads/writes, L1/L2/MISS cache metrics, and latency. `[firestore-query]` inline logs show individual query details with doc counts and timing. `ctx` parameter is optional on all service functions (backwards-compatible). Worker write tracking is per-actual-operation inside `hackernews.js` (`addStories`/`updateStories`/`checkStoryExists`), not estimated externally. L2 cache writes and `clearCache` deletes are also tracked via `ctx`.
+- **Logging convention**: `console.error` for errors (catch blocks), `console.log` for operational info (startup, sync progress). `tests/setup.js` suppresses both globally. Per-request DB analytics use `[db]`-tagged structured log lines via `util/dbLogger.js` — tracks per-table reads/writes, L1/MISS cache metrics, and latency. `[db-query]` inline logs show individual query details with row counts and timing.
 - **Pre-commit hooks**: husky + lint-staged run `eslint --fix` on staged `.js` files. Backend ESLint config ignores `hackernews-frontend/`.
 - **Bootstrap 5 data attributes**: Use `data-bs-toggle`/`data-bs-dismiss` (not `data-toggle`/`data-dismiss`). Class `dropdown-menu-right` was renamed to `dropdown-menu-end`.
 - **`errorHandler` must not call `next()`**: Calling `next(error)` after `res.status().json()` triggers "headers already sent" errors if another error handler exists downstream.
 - **Vite build output**: `build.outDir` set to `"build"` in `vite.config.js` to match Express static path in `app.js`. `build/` is gitignored.
-- **App Engine `gcp-build`**: `package.json` script runs `cd hackernews-frontend && npm ci && npm run build` during deploy. App Engine runs this automatically after `npm install`.
-- **App Engine Cron + `X-Appengine-Cron`**: App Engine strips the `X-Appengine-Cron` header from external requests. The `/_ah/worker` endpoint checks for this header to ensure only App Engine Cron can trigger syncs.
-- **Workload Identity Federation for CI/CD**: GitHub Actions authenticates to GCP via OIDC tokens (no service account keys). Requires WIF pool + provider + attribute condition restricting to the specific repo.
-- **`env_variables.yaml` for App Engine secrets**: Gitignored file included by `app.yaml`/`staging.yaml`. In CI/CD, written from `secrets.APP_SECRET` during the deploy step. Must NOT be in `.gcloudignore` (needs to be deployed).
-- **HN login detection via redirect path**: After POSTing to HN login with `{ withCredentials: true }`, axios follows the redirect. On success, `response.request.path` is `/news`; on failure, it's `/login`. This is the proven approach that works on App Engine. Alternative approaches (checking response body for "Bad login", using `maxRedirects: 0` + Location header) were tried but broke in production.
-- **App Engine cron requires Cloud Scheduler IAM**: `gcloud app deploy cron.yaml` requires `cloudscheduler.locations.list` permission. The CI service account needs `roles/cloudscheduler.admin`.
+- **HN login detection via redirect path**: After POSTing to HN login with `{ withCredentials: true }`, axios follows the redirect. On success, `response.request.path` is `/news`; on failure, it's `/login`.
 - **Bootstrap `data-bs-auto-close="outside"`**: Prevents dropdown from closing on clicks inside the menu (e.g., login form). Without it, clicking the Login button closes the dropdown before the user sees the result.
-- **App Engine static file caching**: App Engine sets all deployed file mtimes to `1980-01-01`. Express weak ETags are `W/"size-mtime"`. If `index.html` stays the same byte size across deploys (Vite hashes are fixed-length), the ETag doesn't change and browsers get 304 for stale HTML referencing nonexistent JS bundles. Fix: serve `index.html` with `Cache-Control: no-cache`; serve hashed `/assets/*` with `immutable, max-age=1y`.
 - **react-virtuoso for list virtualization**: `<Virtuoso useWindowScroll data={...} itemContent={...} />` renders only visible items. In tests, mock with a simple `({ data, itemContent }) => data.map(...)` to render all items synchronously. Must mock in every test file that renders a component using Virtuoso (both StoryList.test.jsx and App.test.jsx).
 - **Hidden stories localStorage persistence**: Anonymous users' hidden state persists via localStorage (`hiddenStories` key). On login, server hidden IDs are merged with localStorage (deduplicated via `Set`). `hiddenLoaded` state gates StoryList rendering to prevent flash of unhidden stories on page refresh.
-- **Batched Firestore operations**: All parallel Firestore reads/writes use `BATCH_SIZE=20` batching (in `services/hackernews.js`): `getItems`, `checkStoryExists`, `addStories`, `updateStories`. Prevents unbounded concurrent connections.
-- **Node 22+ `--localstorage-file` warning suppression**: Override `process.emit` in `jest.config.js` (runs before any test) to filter out the experimental localStorage warning. Must be in jest.config.js, not in test setup files which load too late.
-- **Firestore L2 cache for cold starts**: App Engine's read-only filesystem makes disk cache dead code. The in-memory L1 cache is lost when App Engine scales to zero. L2 Firestore cache docs (`{prefix}-cache/{timespan}`) survive cold starts — a Year request goes from 20K+ reads to 1 read on L2 hit.
-- **Worker compound inequality queries**: Single `.where("updated", "<", staleness)` returns the 200 most-stale stories from the *entire* collection (years-old stories). Client-side time filtering removes them all, resulting in `updated=0`. Fix: compound queries `.where("time", ">", threshold).where("updated", "<", staleness)` — only returns actionable stories within the relevant time window. Requires composite index on `(time ASC, updated ASC)`.
-- **Hidden stories in-memory cache + dedup**: A user with 3,594 hidden stories triggers 3,594 reads per `GET /stories` request. 5-minute TTL per-user cache reduces this to one read per 5 minutes. `upsertHidden` invalidates the cache entry. `hiddenPending` Map deduplicates concurrent requests for the same user.
-- **L2 cache `saveToFirestoreCache` try/catch**: Firestore `.set()` throws synchronously on validation errors (e.g., `undefined` values) before returning a Promise, so `.catch()` on the Promise doesn't help. The entire body is wrapped in try/catch for defense-in-depth. `storiesToCacheDoc()` uses `stripUndefined()` to prevent the issue at source.
-- **Firestore operation logging with per-collection breakdown**: `[firestore]` summary lines now show `reads=stories:42,cache:1` instead of `reads=43`. `[firestore-query]` inline logs show each query as it happens with doc count and timing. L1/L2/MISS cache tracking distinguishes in-memory hits from Firestore cache hits.
-- **Worker L2 cache patching**: `updateStories()` returns `[{id, score, descendants}]` for successfully updated stories (skips deleted/flagged stories with `undefined` score). `patchStoryCache()` reads each L2 cache doc, patches matching story scores in-place (guarded against `undefined`/`null` scores), re-sorts by score, and batch-writes back. L1 expires naturally at its TTL and picks up the patched L2. Cost: 5 reads + up to 5 writes per worker cycle (~960 ops/day). MockWriteBatch needed `set()` method added for tests.
-- **MAX_QUERY_DOCS=2000 for hidden-heavy users**: The story cache stores top 2000 stories per timespan. Server-side hidden filtering removes hidden stories from this pool before slicing to `limitResults=500`. A power user with 1000+ hidden stories in the top 500 would see only recent unhidden stories with `MAX_QUERY_DOCS=500`. Increasing to 2000 ensures enough unhidden stories survive filtering. L2 cache doc size: ~800KB for 2000 stories (within Firestore 1MB limit).
-- **Hidden stories cross-device sync**: localStorage-only hidden IDs (from failed or interrupted POSTs) are synced to the server on page load. After merging server + localStorage hidden IDs, IDs present in localStorage but not on the server are POSTed back (fire-and-forget, best-effort). This ensures hiding a story on desktop eventually syncs to phone.
+- **Hidden stories cross-device sync**: localStorage-only hidden IDs are synced to the server on page load (fire-and-forget, best-effort).
+- **SQLite WAL mode**: Enabled via `db.pragma("journal_mode = WAL")` for concurrent read/write support. Important for the integrated worker running alongside the Express server.
+- **In-memory SQLite for tests**: `better-sqlite3` with `new Database(":memory:")` via `setDb()`. No moduleNameMapper needed. `clearDatabase()` runs `DELETE FROM` on all tables. Tests complete in ~1 second.

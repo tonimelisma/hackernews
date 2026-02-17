@@ -1,0 +1,3 @@
+hackernews.melisma.net {
+	reverse_proxy app:3000
+}

@@ -6,7 +6,7 @@ const rateLimit = require("express-rate-limit");
 
 const storyService = require("../services/storyService");
 const hackernewsService = require("../services/hackernews");
-const { createFirestoreContext } = require("../util/firestoreLogger");
+const { createDbContext } = require("../util/dbLogger");
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -77,7 +77,7 @@ router.get("/stories", async (req, res) => {
 
   const timespan = parseTimespan(req.query.timespan);
 
-  const ctx = createFirestoreContext();
+  const ctx = createDbContext();
   try {
     const user = optionalAuth(req);
     const hiddenIds = user ? await storyService.getHidden(user.username, ctx) : [];
@@ -97,7 +97,7 @@ router.get("/stories", async (req, res) => {
 });
 
 router.get("/hidden", authenticateToken, async (req, res) => {
-  const ctx = createFirestoreContext();
+  const ctx = createDbContext();
   try {
     const hidden = await storyService.getHidden(req.user.username, ctx);
     res.status(200).json(hidden);
@@ -112,7 +112,7 @@ router.post("/hidden", authenticateToken, async (req, res) => {
   if (!Number.isInteger(req.body.hidden) || req.body.hidden < 0) {
     return res.status(400).json({ error: "invalid story id" });
   }
-  const ctx = createFirestoreContext();
+  const ctx = createDbContext();
   try {
     await storyService.upsertHidden(req.user.username, req.body.hidden, ctx);
     res.status(200).json({ hidden: req.body.hidden });
@@ -131,7 +131,7 @@ router.post("/login", loginLimiter, async (req, res) => {
     res.status(400).json({ error: "missing fields" });
   } else {
     try {
-      const ctx = createFirestoreContext();
+      const ctx = createDbContext();
       const loginCorrect = await hackernewsService.login(goto, acct, pw);
       if (loginCorrect) {
         const token = jwt.sign({ username: acct }, process.env.SECRET, { expiresIn: '24h' });

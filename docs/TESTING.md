@@ -15,19 +15,19 @@ npm test && cd hackernews-frontend && npm test && cd ..
 
 ## Test Architecture
 
-### Backend (Jest + In-Memory MockFirestore + supertest)
+### Backend (Jest + In-Memory SQLite + supertest)
 
 | File | Type | Tests | What it covers |
 |------|------|-------|----------------|
 | `tests/unit/middleware.test.js` | Unit | 3 | `unknownEndpoint` (404), `errorHandler` (500 + next) |
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
-| `tests/unit/hackernewsService.test.js` | Unit+DB | 27 | All HN API functions (axios mocked), Firestore operations, ctx tracking, updateStories return value, undefined score filtering |
-| `tests/unit/firestore.test.js` | Unit | 11 | getCollectionPrefix (incl. staging), padId, storiesCollection, usersCollection, getDb/setDb |
-| `tests/unit/firestoreLogger.test.js` | Unit | 13 | createFirestoreContext: counters, read/write, L1/L2/MISS cache, per-collection breakdown, query inline logging |
-| `tests/integration/storyService.test.js` | Integration | 39 | All storyService CRUD, L1/L2 cache, hidden cache+dedup, cache expiry, Day-merge, query caps, patchStoryCache (incl. undefined score guard) |
-| `tests/integration/api.test.js` | Integration | 34 | Full HTTP request/response via supertest (incl. `/_ah/worker` endpoint) |
-| `tests/integration/worker.test.js` | Integration | 13 | syncOnce() direct tests, compound staleness queries, batch limits, L2 cache patching, utility functions |
-| **Total** | | **141** | |
+| `tests/unit/hackernewsService.test.js` | Unit+DB | 27 | All HN API functions (axios mocked), SQLite operations, ctx tracking, updateStories return value, undefined score filtering |
+| `tests/unit/database.test.js` | Unit | 3 | getDb/setDb, initSchema creates tables/indexes, idempotent schema init |
+| `tests/unit/dbLogger.test.js` | Unit | 12 | createDbContext: counters, read/write, L1/MISS cache, per-table breakdown, query inline logging |
+| `tests/integration/storyService.test.js` | Integration | 26 | All storyService CRUD, L1 cache, hidden cache+dedup, cache expiry, query caps |
+| `tests/integration/api.test.js` | Integration | 31 | Full HTTP request/response via supertest |
+| `tests/integration/worker.test.js` | Integration | 14 | syncOnce() direct tests, compound staleness queries, batch limits, utility functions |
+| **Total** | | **117** | |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -43,53 +43,52 @@ npm test && cd hackernews-frontend && npm test && cd ..
 
 ## Key Technical Details
 
-### In-Memory MockFirestore
+### In-Memory SQLite for Tests
 
-Backend tests use an in-memory Firestore mock instead of the real Firestore SDK. The mock is loaded via Jest's `moduleNameMapper` in `jest.config.js`:
+Backend tests use `better-sqlite3` with `:memory:` databases instead of disk-based SQLite files. The test setup creates a fresh in-memory database before tests and cleans it between tests:
 
 ```js
-moduleNameMapper: {
-  "^@google-cloud/firestore$": "<rootDir>/tests/mocks/firestore-sdk-shim.js",
-}
+// tests/setup.js
+const Database = require("better-sqlite3");
+const { setDb, initSchema } = require("../services/database");
+
+const connect = async () => {
+  jest.spyOn(console, "log").mockImplementation(() => {});
+  jest.spyOn(console, "error").mockImplementation(() => {});
+  const db = new Database(":memory:");
+  setDb(db);
+  initSchema(db);
+};
+
+const clearDatabase = async () => {
+  const { getDb } = require("../services/database");
+  const db = getDb();
+  db.exec("DELETE FROM hidden; DELETE FROM users; DELETE FROM stories;");
+};
 ```
 
-This prevents `@google-cloud/firestore` from ever loading, which means:
-- **No credentials needed** — no `gcloud auth application-default login`
+This means:
+- **No credentials needed** — pure in-memory database
 - **No network needed** — tests run offline
-- **No `--experimental-vm-modules`** — the real SDK's dynamic `import()` in gaxios is never triggered
-- **Fast** — tests complete in ~1 second instead of 30+ seconds
-
-The mock consists of:
-
-| File | Purpose |
-|------|---------|
-| `tests/mocks/firestore-mock.js` | In-memory implementation: MockFirestore, MockCollectionRef, MockDocRef, MockQuery, MockDocSnapshot, MockQuerySnapshot, MockWriteBatch, MockTimestamp |
-| `tests/mocks/firestore-sdk-shim.js` | 2-line shim that exports `{ Firestore: MockFirestore }` |
-
-**Storage model**: Flat `Map<collectionPath, Map<docId, data>>`. Subcollection paths use slash notation (e.g., `dev-users/testuser/hidden`).
-
-**MockTimestamp**: Date objects are automatically wrapped in MockTimestamp during `.set()`/`.update()`, so `doc.data().time.toDate()` works exactly like real Firestore.
-
-**Where operators supported**: `>`, `<`, `>=`, `<=`, `==`. Date/MockTimestamp values are unwrapped to milliseconds for comparison.
+- **Fast** — tests complete in ~1 second
+- **Isolated** — each test starts with a clean database
 
 ### Test Setup
 
 `tests/setup.js` provides:
-- `connect()` — suppresses `console.log` and `console.error` during tests
-- `clearDatabase()` — calls `getDb()._clear()` to wipe all in-memory data
+- `connect()` — suppresses console output, creates in-memory SQLite database
+- `clearDatabase()` — truncates all tables between tests
 - `closeDatabase()` — restores console output
 
 Each test file imports setup and uses:
 ```js
 beforeAll(async () => await db.connect());
 afterEach(async () => {
-  await storyService.clearCache(); // clears L1 + L2 + hidden cache
+  await storyService.clearCache(); // clears L1 + hidden in-memory caches
   await db.clearDatabase();
 });
 afterAll(async () => await db.closeDatabase());
 ```
-
-Tests that use `storyService` must `await clearCache()` in `afterEach` to clear both the in-memory L1 cache and Firestore L2 cache docs, preventing cache leaking between tests.
 
 ### JWT Mock in API Tests
 
@@ -97,7 +96,7 @@ Tests that use `storyService` must `await clearCache()` in `afterEach` to clear 
 
 ### Worker Testing Strategy
 
-`worker.js` exports `syncOnce()` (a single sync cycle) and guards `throng` with `require.main === module`. Tests import `syncOnce()` directly and mock `services/hackernews` to verify bootstrap, incremental sync, and score update logic. Simulated query tests also validate staleness detection and latest-story lookup against MockFirestore.
+`worker.js` exports `syncOnce()` (a single sync cycle) and guards `main()` with `require.main === module`. Tests import `syncOnce()` directly and mock `services/hackernews` to verify bootstrap, incremental sync, and score update logic. Stale-story detection tests seed the SQLite database directly and verify that queries return the correct results.
 
 ## Mock Strategy
 
@@ -105,11 +104,10 @@ Tests that use `storyService` must `await clearCache()` in `afterEach` to clear 
 
 | Module | Mock Type | Reason |
 |--------|-----------|--------|
-| `@google-cloud/firestore` | `moduleNameMapper` → in-memory mock | No credentials, no network, fast tests |
+| `better-sqlite3` | In-memory `:memory:` via `setDb()` | Fast, isolated test database |
 | `axios` | `jest.mock("axios")` | Avoid real HTTP calls to HN API |
 | `jsonwebtoken` | `jest.mock("jsonwebtoken")` | SlowBuffer removed in Node 25 |
 | `services/hackernews` | `jest.mock()` | Isolate API route tests and worker tests from HN service |
-| `worker` | `jest.mock()` | Isolate `/_ah/worker` endpoint tests from actual sync logic |
 | `console.log` | `jest.spyOn` | Suppress noise from production code |
 
 ### Frontend
@@ -141,43 +139,13 @@ Both generate `text`, `text-summary`, and `lcov` reports. The `coverage/` direct
 
 CI uploads coverage artifacts (14-day retention) via `actions/upload-artifact@v4`.
 
-## Firestore Smoke Tests (Real Database)
-
-A standalone Node.js test suite (`tests/integration/firestore-smoke.test.js`) runs against real Firestore dev- data. It is **not** a Jest test — Jest's VM sandbox breaks gRPC/auth in the Firestore SDK.
-
-```bash
-npm run test:firestore
-```
-
-**Requires**: Application Default Credentials (`gcloud auth application-default login`)
-
-**Operation limits**: Hard-capped at 50 reads + 50 writes per run via Firestore SDK prototype instrumentation (`Query.prototype.get`, `DocumentReference.prototype.get/set/update/delete`).
-
-| Test | Reads | Writes |
-|------|-------|--------|
-| getStories sorted by score | 1 | 0 |
-| getStories correct schema | 1 | 0 |
-| getStories respects limit | 1 | 0 |
-| getStories respects skip | 2 | 0 |
-| getHidden returns array for existing user | 1 | 0 |
-| getHidden returns empty for nonexistent user | 1 | 0 |
-| upsertHidden writes and reads back | 1 | 2 |
-| Cleanup test data | 0 | 2 |
-| **Total** | **~10** | **~4** |
-
-Can be run ~100 times/day and stay well within the Firestore Spark free tier (50K reads/day, 20K writes/day).
-
-The test file is excluded from regular Jest runs via `testPathIgnorePatterns` in `jest.config.js`.
-
 ## Regression Tests for Fixed Bugs
 
 | Test File | Test Name | Original Bug |
 |-----------|-----------|--------------|
-| `storyService.test.js` | "returns empty array when user does not exist" | `getHidden` null pointer crash (fixed Phase 15) |
-| `api.test.js` | "returns 400 for unsanitary username" | Overly restrictive username validation (fixed Phase 12, renamed to `isValidUsername()`) |
-| `storyService.test.js` | "L2 cache handles self-post stories with no url field" | L2 cache write crash on `url: undefined` for Ask HN posts |
-| `storyService.test.js` | "deduplicates concurrent getHidden calls for same user" | Race condition: simultaneous requests doubled Firestore reads |
+| `storyService.test.js` | "returns empty array when user does not exist" | `getHidden` null pointer crash |
+| `api.test.js` | "returns 400 for unsanitary username" | Overly restrictive username validation |
+| `storyService.test.js` | "deduplicates concurrent getHidden calls for same user" | Race condition: simultaneous requests doubled reads |
 | `App.test.jsx` | "disables login button while login is in flight" | Double login POST from rapid button clicks |
 | `App.test.jsx` | "syncs localStorage-only hidden IDs to server on login" | Hidden stories not syncing across devices |
 | `hackernewsService.test.js` | "skips stories with undefined score in return value" | Worker `updateStories` returning undefined scores for deleted/flagged stories |
-| `storyService.test.js` | "skips updates with undefined score" | `patchStoryCache` writing undefined scores to Firestore cache docs |

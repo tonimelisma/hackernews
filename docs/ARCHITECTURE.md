@@ -2,41 +2,40 @@
 
 ## System Overview
 
-HackerNews aggregator with three runtime processes and a Firestore database.
+HackerNews aggregator with a single Node.js process and a SQLite database, deployed via Docker.
 
 | Component | Runtime | Entry Point | Purpose |
 |-----------|---------|-------------|---------|
 | Web Server | Node.js/Express | `bin/www` → `app.js` | REST API + static frontend |
-| Background Worker | Node.js | `worker.js` | Sync stories from HN, update scores |
+| Background Worker | Integrated (setInterval) | `worker.js:syncOnce()` | Sync stories from HN, update scores |
 | Frontend | React (Vite) | `hackernews-frontend/src/index.jsx` | SPA served as static files |
-| Database | Google Cloud Firestore | — | Stories, users (project: `melisma-hackernews`, default db) |
+| Database | SQLite (better-sqlite3) | `services/database.js` | Stories, users, hidden |
 
 ## Deployment
 
-Hosted on **Google App Engine Standard** (project: `melisma-hackernews`, region: `europe-west1`).
+Hosted on a **GCP e2-micro** VPS (0.25 vCPU, 1GB RAM, 30GB disk) running Docker.
 
-| Service | Config | URL |
-|---------|--------|-----|
-| Production (default) | `app.yaml` | `melisma-hackernews.appspot.com` |
-| Staging | `staging.yaml` | `staging-dot-melisma-hackernews.appspot.com` |
+| Component | Config | URL |
+|-----------|--------|-----|
+| App | `docker-compose.yml` | Behind Caddy reverse proxy |
+| Caddy | `Caddyfile` | `hackernews.melisma.net` (auto HTTPS) |
+| CI/CD | `.github/workflows/ci.yml` | SSH deploy on push to master |
 
-- **Cron**: `cron.yaml` fires `GET /_ah/worker` every 15 minutes on the default (production) service
-- **Staging bootstrap**: `BOOTSTRAP_ON_START=true` triggers a one-time sync on startup (no cron worker in staging)
-- **CI/CD**: GitHub Actions deploys to staging on push to master, then to production after manual approval. CI service account needs `roles/cloudscheduler.admin` for `cron.yaml` deployment
-- **Bootstrap**: App Engine requires the `default` service to exist before deploying named services (like `staging`). For new projects, run `gcloud app deploy app.yaml cron.yaml --project melisma-hackernews` once manually before CI can deploy staging
+- **Worker**: Integrated into the Express process via `setInterval` (15-minute cycle), started in `bin/www:onListening()`
+- **CI/CD**: GitHub Actions runs tests, then deploys via SSH + `docker compose up --build -d`
 
 ## Process Diagram
 
 ```
-┌──────────────┐     ┌───────────────┐     ┌───────────┐
-│   Frontend   │────▶│  Express API  │────▶│ Firestore │
-│  (React SPA) │     │  /api/v1/*    │     │           │
-└──────────────┘     └───────────────┘     └───────────┘
-                            ▲                     ▲
-                     ┌──────┴────────┐           │
-                     │ App Engine    │           │
-                     │ Cron → /_ah/  │───────────┘
-                     │   worker      │──────▶ HN API + hntoplinks
+┌──────────────┐     ┌───────────────┐     ┌──────────┐
+│   Frontend   │────▶│  Express API  │────▶│  SQLite  │
+│  (React SPA) │     │  /api/v1/*    │     │   (WAL)  │
+└──────────────┘     └───────────────┘     └──────────┘
+                            ▲                    ▲
+                     ┌──────┴────────┐          │
+                     │  setInterval  │          │
+                     │  (15 min)     │──────────┘
+                     │  syncOnce()   │──────▶ HN API
                      └───────────────┘
 ```
 
@@ -45,21 +44,21 @@ Hosted on **Google App Engine Standard** (project: `melisma-hackernews`, region:
 ```
 hackernews/
 ├── app.js                          # Express app (middleware, routes, static)
-├── bin/www                         # HTTP server bootstrap + SECRET validation
-├── worker.js                       # Background sync worker (throng, 30m loop)
+├── bin/www                         # HTTP server bootstrap + SECRET validation + worker init
+├── worker.js                       # Background sync worker (syncOnce, 15m loop)
 ├── package.json                    # Backend dependencies + scripts
 │
 ├── routes/
 │   └── api.js                      # All API endpoints (/stories, /hidden, /login)
 │
 ├── services/
-│   ├── firestore.js                # Firestore client singleton, collection refs, padId()
-│   ├── storyService.js             # Firestore CRUD (stories, users/hidden subcollection)
-│   └── hackernews.js               # HN Firebase API + hntoplinks scraper
+│   ├── database.js                 # SQLite singleton (getDb, setDb, initSchema)
+│   ├── storyService.js             # Story/user CRUD (SQL queries)
+│   └── hackernews.js               # HN API client + story import/update
 │
 ├── util/
 │   ├── config.js                   # dotenv config (limitResults)
-│   ├── firestoreLogger.js          # Per-request Firestore operation & cache analytics logging
+│   ├── dbLogger.js                 # Per-request DB operation & cache analytics logging
 │   └── middleware.js               # unknownEndpoint (404) + errorHandler (500)
 │
 ├── hackernews-frontend/            # React Vite project
@@ -82,28 +81,21 @@ hackernews/
 │           └── loginService.js     # Axios client for /login, /logout, /me
 │
 ├── tests/                          # Backend test suites
-│   ├── setup.js                    # Console suppression + MockFirestore cleanup helpers
-│   ├── mocks/
-│   │   ├── firestore-mock.js       # In-memory Firestore implementation
-│   │   └── firestore-sdk-shim.js   # 2-line shim for moduleNameMapper
+│   ├── setup.js                    # Console suppression + in-memory SQLite setup
 │   ├── unit/                       # Pure unit tests
-│   └── integration/                # Tests with MockFirestore + supertest
-│       └── firestore-smoke.test.js # Standalone smoke tests against real Firestore (not Jest)
+│   └── integration/                # Tests with in-memory SQLite + supertest
 │
-├── scripts/                        # Migration scripts (data export/import/audit)
+├── scripts/                        # Migration/utility scripts
 │   ├── data/                       # Exported JSON data (gitignored)
-│   ├── import-to-firestore.js      # Import JSON → Firestore (--dry-run, --limit, --max-writes)
-│   ├── audit-firestore.js          # Read-only audit of cloud Firestore data
-│   └── export-from-mongodb.js      # Export MongoDB → local JSON
+│   └── import-json-to-sqlite.js    # Import JSON stories/users/hidden → SQLite
 │
 ├── docs/                           # LLM-geared documentation
 │
-├── app.yaml                       # App Engine production config (default service)
-├── staging.yaml                   # App Engine staging config (staging service)
-├── cron.yaml                      # App Engine cron (15-min worker sync)
-├── env_variables.yaml             # App Engine secrets (gitignored)
-├── .gcloudignore                  # Files excluded from App Engine deploy
-├── .github/workflows/ci.yml      # GitHub Actions CI + deploy pipeline
+├── Dockerfile                     # Multi-stage Docker build (node:20-alpine)
+├── docker-compose.yml             # App + Caddy services, SQLite volume
+├── Caddyfile                      # Reverse proxy config (auto HTTPS)
+├── .dockerignore                  # Files excluded from Docker build
+├── .github/workflows/ci.yml      # GitHub Actions CI + SSH deploy pipeline
 ├── .husky/pre-commit              # Pre-commit hook (lint-staged → ESLint)
 ├── eslint.config.js               # ESLint flat config (backend)
 ├── CLAUDE.md                       # Governance document + Definition of Done
@@ -112,32 +104,28 @@ hackernews/
 
 ## Data Flow
 
-### Story Fetch (Frontend → Backend → Firestore)
+### Story Fetch (Frontend → Backend → SQLite)
 1. Frontend calls `GET /api/v1/stories?timespan=Day`
 2. `routes/api.js` parses timespan, limit, skip
-3. `storyService.getStories()` checks two-tier cache:
-   - **L1 (in-memory Map)**: per-timespan TTL check → return immediately on hit
-   - **L2 (Firestore `{prefix}-cache/{timespan}` doc)**: read cache doc, check `cachedAt` vs TTL → promote to L1 on hit
-   - **L3 (expensive query)**: queries Firestore stories collection, sorts by score, caches top 2000 in both L1 and L2
-4. Non-Day timespans merge fresh Day stories so new high-scoring stories appear quickly
-5. If authenticated, hidden story IDs are filtered out (with 5-min per-user hidden cache)
+3. `storyService.getStories()` checks L1 in-memory cache (1-minute TTL):
+   - **L1 hit**: Return cached stories immediately
+   - **L1 miss**: Run SQL query against SQLite, cache result in L1
+4. SQL query handles everything in one step: time filter + hidden exclusion + score sort + pagination
+5. If authenticated, hidden story IDs are excluded via `WHERE id NOT IN (...)` in the SQL query
 6. Response: JSON array of stories
 
-### Background Worker (Cron → Express → HN API → Firestore)
-1. App Engine Cron fires `GET /_ah/worker` every 15 minutes (production only)
-2. Endpoint validates `X-Appengine-Cron: true` header (App Engine strips from external requests)
-3. Calls `syncOnce()` from `worker.js`:
-   - Fetch new story IDs from HN Firebase API
-   - Add missing stories to Firestore (doc ID = zero-padded HN ID)
-   - Update scores for stale stories via compound inequality queries (`time > X AND updated < Y`), tiered by age: 1h/6h/48h, batch limit 200
-   - Patch L2 cache docs in-place with updated scores via `patchStoryCache()` (5 reads + up to 5 writes per cycle). L1 expires naturally at its TTL and picks up the patched L2.
-4. No pruning — Firestore free tier (1GB) handles ~27 years of growth at ~37MB/year
-5. For staging: `BOOTSTRAP_ON_START=true` runs a one-time sync on server startup (no cron)
+### Background Worker (setInterval → HN API → SQLite)
+1. `bin/www:onListening()` runs initial `syncOnce()` and sets `setInterval` for 15-minute recurring sync
+2. `syncOnce()` from `worker.js`:
+   - Fetch new story IDs from HN API
+   - Add missing stories to SQLite via `INSERT OR REPLACE`
+   - Update scores for stale stories, tiered by age: 1h/6h/48h, batch limit 200
+3. All writes happen in SQLite transactions for performance
 
 ### Static File Serving
 Express serves the Vite build output from `hackernews-frontend/build/` with a two-tier caching strategy:
-- **`/assets/*`** (hashed filenames): `Cache-Control: public, max-age=31536000, immutable` — safe to cache forever since filenames change on content change
-- **`index.html`**: `Cache-Control: no-cache` — forces browser to revalidate on every visit. Required because App Engine sets all deployed file mtimes to `1980-01-01`, making Express ETags size-only (stale across deploys if file size doesn't change)
+- **`/assets/*`** (hashed filenames): `Cache-Control: public, max-age=31536000, immutable`
+- **`index.html`**: `Cache-Control: no-cache`
 
 ### Authentication (Frontend → HN → Backend → JWT Cookie)
 1. Frontend POSTs credentials to `/api/v1/login`
@@ -154,17 +142,10 @@ Express serves the Vite build output from `hackernews-frontend/build/` with a tw
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `NODE_ENV` | No | `"production"` → `prod-`, `"staging"` → `staging-`, `"ci"` → `ci-`, anything else → `dev-` |
+| `NODE_ENV` | No | `"production"` for production, `"ci"` for CI tests |
 | `SECRET` | Yes | JWT signing secret. Validated on startup in `bin/www` — server exits if missing |
-| `PORT` | No | HTTP listen port (default: 3000, set by App Engine in cloud) |
-| `BOOTSTRAP_ON_START` | No | `"true"` runs `syncOnce()` on server startup (used in staging) |
-
-### Firestore Authentication
-
-| Environment | Auth Method |
-|---|---|
-| Local dev | Application Default Credentials via `gcloud auth application-default login` |
-| App Engine (staging/prod) | Automatic via App Engine default service account |
+| `PORT` | No | HTTP listen port (default: 3000) |
+| `SQLITE_PATH` | No | Path to SQLite database file (default: `./data/hackernews.db`) |
 
 ### Config Constants (`util/config.js`)
 

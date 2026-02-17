@@ -1,8 +1,5 @@
 const axios = require("axios");
-const { storiesCollection, padId } = require("./firestore");
-
-const stripUndefined = (obj) =>
-  Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
+const { getDb } = require("./database");
 
 const newStoriesUrl =
   "https://hacker-news.firebaseio.com/v0/newstories.json?print=pretty";
@@ -114,20 +111,15 @@ const getItems = async itemIdList => {
 };
 
 const checkStoryExists = async (storyIdList, ctx) => {
+  const db = getDb();
   const missingStories = [];
-  for (let i = 0; i < storyIdList.length; i += BATCH_SIZE) {
-    const batch = storyIdList.slice(i, i + BATCH_SIZE);
-    const t0 = Date.now();
-    const results = await Promise.all(
-      batch.map(async storyId => {
-        const doc = await storiesCollection().doc(padId(storyId)).get();
-        ctx?.read("stories", 1);
-        return { storyId, exists: doc.exists };
-      })
-    );
-    ctx?.query("stories", `checkExists batch size=${batch.length}`, batch.length, Date.now() - t0);
-    for (const { storyId, exists } of results) {
-      if (!exists) missingStories.push(storyId);
+  const placeholders = storyIdList.map(() => "?").join(",");
+  const rows = db.prepare(`SELECT id FROM stories WHERE id IN (${placeholders})`).all(...storyIdList);
+  ctx?.read("stories", rows.length);
+  const existingIds = new Set(rows.map(r => r.id));
+  for (const id of storyIdList) {
+    if (!existingIds.has(id)) {
+      missingStories.push(id);
     }
   }
   return missingStories;
@@ -135,69 +127,74 @@ const checkStoryExists = async (storyIdList, ctx) => {
 
 const addStories = async (storyIdList, ctx) => {
   const latestRemoteStoryData = await getItems(storyIdList);
+  const db = getDb();
 
-  for (let i = 0; i < latestRemoteStoryData.length; i += BATCH_SIZE) {
-    const batch = latestRemoteStoryData.slice(i, i + BATCH_SIZE);
-    const t0 = Date.now();
-    let successCount = 0;
-    await Promise.all(
-      batch.map(async storyData => {
+  const insert = db.prepare(
+    `INSERT OR REPLACE INTO stories (id, by, descendants, kids, score, time, title, url, updated)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+
+  const insertMany = db.transaction((stories) => {
+    for (const storyData of stories) {
+      if (storyData) {
         try {
-          if (storyData) {
-            await storiesCollection().doc(padId(storyData.id)).set(stripUndefined({
-              by: storyData.by,
-              descendants: storyData.descendants,
-              id: storyData.id,
-              kids: storyData.kids,
-              score: storyData.score,
-              time: new Date(storyData.time * 1000),
-              title: storyData.title,
-              url: storyData.url,
-              updated: new Date()
-            }));
-            successCount++;
-            ctx?.write("stories", 1);
-          }
+          insert.run(
+            storyData.id,
+            storyData.by || null,
+            storyData.descendants || null,
+            storyData.kids ? JSON.stringify(storyData.kids) : null,
+            storyData.score || null,
+            storyData.time * 1000,
+            storyData.title || null,
+            storyData.url || null,
+            Date.now()
+          );
+          ctx?.write("stories", 1);
         } catch (e) {
-          console.error("addStories set error:", e, storyData);
+          console.error("addStories insert error:", e, storyData);
         }
-      })
-    );
-    ctx?.query("stories", `addStories batch size=${batch.length}`, successCount, Date.now() - t0);
-  }
+      }
+    }
+  });
+
+  insertMany(latestRemoteStoryData);
+  ctx?.query("stories", `addStories batch size=${latestRemoteStoryData.length}`, latestRemoteStoryData.length, 0);
 };
 
 const updateStories = async (storyIdList, ctx) => {
   const latestRemoteStoryData = await getItems(storyIdList);
+  const db = getDb();
   const updated = [];
 
-  for (let i = 0; i < latestRemoteStoryData.length; i += BATCH_SIZE) {
-    const batch = latestRemoteStoryData.slice(i, i + BATCH_SIZE);
-    const t0 = Date.now();
-    let successCount = 0;
-    await Promise.all(
-      batch.map(async storyData => {
+  const update = db.prepare(
+    `UPDATE stories SET descendants = ?, kids = COALESCE(?, kids), score = ?, updated = ?
+     WHERE id = ?`
+  );
+
+  const updateMany = db.transaction((stories) => {
+    for (const storyData of stories) {
+      if (storyData) {
         try {
-          if (storyData) {
-            await storiesCollection().doc(padId(storyData.id)).update(stripUndefined({
-              descendants: storyData.descendants,
-              kids: storyData.kids,
-              score: storyData.score,
-              updated: new Date()
-            }));
-            successCount++;
-            ctx?.write("stories", 1);
-            if (storyData.score !== undefined && storyData.score !== null) {
-              updated.push({ id: storyData.id, score: storyData.score, descendants: storyData.descendants });
-            }
+          update.run(
+            storyData.descendants !== undefined ? storyData.descendants : null,
+            storyData.kids ? JSON.stringify(storyData.kids) : null,
+            storyData.score !== undefined ? storyData.score : null,
+            Date.now(),
+            storyData.id
+          );
+          ctx?.write("stories", 1);
+          if (storyData.score !== undefined && storyData.score !== null) {
+            updated.push({ id: storyData.id, score: storyData.score, descendants: storyData.descendants });
           }
         } catch (e) {
           console.error("updateStories update error:", e, storyData);
         }
-      })
-    );
-    ctx?.query("stories", `updateStories batch size=${batch.length}`, successCount, Date.now() - t0);
-  }
+      }
+    }
+  });
+
+  updateMany(latestRemoteStoryData);
+  ctx?.query("stories", `updateStories batch size=${latestRemoteStoryData.length}`, latestRemoteStoryData.length, 0);
 
   return updated;
 };

@@ -76,68 +76,24 @@ jobs:
         run: npm audit --audit-level=moderate
         working-directory: hackernews-frontend
 
-  # NOTE: deploy-staging requires the App Engine "default" service to already exist.
-  # For new projects, bootstrap once: gcloud app deploy app.yaml cron.yaml --project melisma-hackernews
-  deploy-staging:
+  deploy:
     needs: [backend-tests, frontend-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
-    environment: staging
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-actions/providers/github
-          service_account: ${{ vars.GCP_SA_EMAIL }}
-
-      - name: Write env_variables.yaml
-        run: |
-          cat > env_variables.yaml << 'EOF'
-          env_variables:
-            SECRET: "${{ secrets.APP_SECRET }}"
-          EOF
-
-      - name: Deploy to App Engine (staging)
-        uses: google-github-actions/deploy-appengine@v2
-        with:
-          deliverables: staging.yaml
-          project_id: melisma-hackernews
-          version: v1
-
-  deploy-production:
-    needs: deploy-staging
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
     environment: production
-    permissions:
-      contents: read
-      id-token: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1
         with:
-          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-actions/providers/github
-          service_account: ${{ vars.GCP_SA_EMAIL }}
-
-      - name: Write env_variables.yaml
-        run: |
-          cat > env_variables.yaml << 'EOF'
-          env_variables:
-            SECRET: "${{ secrets.APP_SECRET }}"
-          EOF
-
-      - name: Deploy to App Engine (production)
-        uses: google-github-actions/deploy-appengine@v2
-        with:
-          deliverables: app.yaml cron.yaml
-          project_id: melisma-hackernews
-          version: production
+          host: ${{ vars.VPS_HOST }}
+          username: ${{ vars.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/hackernews
+            git pull origin master
+            echo "SECRET=${{ secrets.APP_SECRET }}" > .env
+            docker compose up --build -d
+            docker image prune -f

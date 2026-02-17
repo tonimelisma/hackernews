@@ -1,9 +1,6 @@
-const { storiesCollection } = require("./services/firestore");
+const { getDb } = require("./services/database");
 const Remote = require("./services/hackernews");
-const { patchStoryCache } = require("./services/storyService");
-const { createFirestoreContext } = require("./util/firestoreLogger");
-
-const throng = require("throng");
+const { createDbContext } = require("./util/dbLogger");
 
 const WORKER_BATCH_LIMIT = 200;
 
@@ -21,32 +18,27 @@ const formatBytes = (bytes, decimals = 2) => {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
+};
 
 const syncOnce = async () => {
-  const ctx = createFirestoreContext();
+  const ctx = createDbContext();
   let newCount = 0;
   let updatedCount = 0;
+  const db = getDb();
 
   // LOAD LATEST STORIES
   try {
-    // Find latest story by doc ID (zero-padded, so lexicographic = numeric order)
-    const t0 = Date.now();
-    const latestSnap = await storiesCollection()
-      .orderBy("id", "desc")
-      .limit(1)
-      .get();
-    ctx.query("stories", "latest orderBy=id:desc limit=1", latestSnap.docs.length, Date.now() - t0);
-    ctx.read("stories", latestSnap.docs.length);
+    const latestRow = db.prepare("SELECT id FROM stories ORDER BY id DESC LIMIT 1").get();
+    ctx.read("stories", latestRow ? 1 : 0);
 
     const latestRemoteStoryIds = await Remote.getNewStories();
 
-    if (latestSnap.empty) {
+    if (!latestRow) {
       console.log("empty db, bootstrapping...");
       await Remote.addStories(latestRemoteStoryIds, ctx);
       newCount = latestRemoteStoryIds.length;
     } else {
-      const latestLocalId = latestSnap.docs[0].data().id;
+      const latestLocalId = latestRow.id;
       if (latestLocalId < latestRemoteStoryIds[0]) {
         console.log("new stories available: local=%d remote=%d", latestLocalId, latestRemoteStoryIds[0]);
         const newStoryIds = latestRemoteStoryIds.filter(
@@ -63,64 +55,46 @@ const syncOnce = async () => {
   }
 
   // UPDATE SCORES FOR TRENDING STORIES
-  // Compound inequality queries: time > threshold AND updated < staleness
-  // Requires composite index on (time ASC, updated ASC) for each collection
   try {
-    const monthTimeThreshold = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000);
-    const t0m = Date.now();
-    const lastMonthSnap = await storiesCollection()
-      .where("time", ">", monthTimeThreshold)
-      .where("updated", "<", new Date(Date.now() - 48 * 60 * 60 * 1000))
-      .orderBy("updated", "asc")
-      .limit(WORKER_BATCH_LIMIT)
-      .get();
-    ctx.query("stories", `stale-monthly time>${monthTimeThreshold.toISOString()} updated<48h`, lastMonthSnap.docs.length, Date.now() - t0m);
-    ctx.read("stories", lastMonthSnap.docs.length);
-    const monthStaleIds = lastMonthSnap.docs.map(d => d.data().id);
-    let monthUpdated = [];
+    const now = Date.now();
+
+    // Monthly: stories from last 28 days, not updated in 48h
+    const monthTimeThreshold = now - 28 * 24 * 60 * 60 * 1000;
+    const monthStaleThreshold = now - 48 * 60 * 60 * 1000;
+    const monthStaleRows = db.prepare(
+      `SELECT id FROM stories WHERE time > ? AND updated < ? ORDER BY updated ASC LIMIT ?`
+    ).all(monthTimeThreshold, monthStaleThreshold, WORKER_BATCH_LIMIT);
+    ctx.read("stories", monthStaleRows.length);
+    const monthStaleIds = monthStaleRows.map(r => r.id);
     if (monthStaleIds.length > 0) {
-      monthUpdated = await Remote.updateStories(monthStaleIds, ctx);
+      await Remote.updateStories(monthStaleIds, ctx);
       updatedCount += monthStaleIds.length;
     }
 
-    const weekTimeThreshold = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const t0w = Date.now();
-    const lastWeekSnap = await storiesCollection()
-      .where("time", ">", weekTimeThreshold)
-      .where("updated", "<", new Date(Date.now() - 6 * 60 * 60 * 1000))
-      .orderBy("updated", "asc")
-      .limit(WORKER_BATCH_LIMIT)
-      .get();
-    ctx.query("stories", `stale-weekly time>${weekTimeThreshold.toISOString()} updated<6h`, lastWeekSnap.docs.length, Date.now() - t0w);
-    ctx.read("stories", lastWeekSnap.docs.length);
-    const weekStaleIds = lastWeekSnap.docs.map(d => d.data().id);
-    let weekUpdated = [];
+    // Weekly: stories from last 7 days, not updated in 6h
+    const weekTimeThreshold = now - 7 * 24 * 60 * 60 * 1000;
+    const weekStaleThreshold = now - 6 * 60 * 60 * 1000;
+    const weekStaleRows = db.prepare(
+      `SELECT id FROM stories WHERE time > ? AND updated < ? ORDER BY updated ASC LIMIT ?`
+    ).all(weekTimeThreshold, weekStaleThreshold, WORKER_BATCH_LIMIT);
+    ctx.read("stories", weekStaleRows.length);
+    const weekStaleIds = weekStaleRows.map(r => r.id);
     if (weekStaleIds.length > 0) {
-      weekUpdated = await Remote.updateStories(weekStaleIds, ctx);
+      await Remote.updateStories(weekStaleIds, ctx);
       updatedCount += weekStaleIds.length;
     }
 
-    const dayTimeThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const t0d = Date.now();
-    const last24hSnap = await storiesCollection()
-      .where("time", ">", dayTimeThreshold)
-      .where("updated", "<", new Date(Date.now() - 60 * 60 * 1000))
-      .orderBy("updated", "asc")
-      .limit(WORKER_BATCH_LIMIT)
-      .get();
-    ctx.query("stories", `stale-daily time>${dayTimeThreshold.toISOString()} updated<1h`, last24hSnap.docs.length, Date.now() - t0d);
-    ctx.read("stories", last24hSnap.docs.length);
-    const dayStaleIds = last24hSnap.docs.map(d => d.data().id);
-    let dayUpdated = [];
+    // Daily: stories from last 24h, not updated in 1h
+    const dayTimeThreshold = now - 24 * 60 * 60 * 1000;
+    const dayStaleThreshold = now - 60 * 60 * 1000;
+    const dayStaleRows = db.prepare(
+      `SELECT id FROM stories WHERE time > ? AND updated < ? ORDER BY updated ASC LIMIT ?`
+    ).all(dayTimeThreshold, dayStaleThreshold, WORKER_BATCH_LIMIT);
+    ctx.read("stories", dayStaleRows.length);
+    const dayStaleIds = dayStaleRows.map(r => r.id);
     if (dayStaleIds.length > 0) {
-      dayUpdated = await Remote.updateStories(dayStaleIds, ctx);
+      await Remote.updateStories(dayStaleIds, ctx);
       updatedCount += dayStaleIds.length;
-    }
-
-    // Patch L2 cache docs in-place with updated scores
-    const allUpdated = [...monthUpdated, ...weekUpdated, ...dayUpdated];
-    if (allUpdated.length > 0) {
-      await patchStoryCache(allUpdated, ctx);
     }
   } catch (e) {
     console.error("error updating stories:", e);
@@ -140,7 +114,7 @@ const main = async () => {
     while (true) {
       console.log("Starting background sync job...");
       await syncOnce();
-      await sleep(30 * 60 * 1000);
+      await sleep(15 * 60 * 1000);
     }
   } catch (e) {
     console.error("fatal error:", e);
@@ -148,7 +122,7 @@ const main = async () => {
 };
 
 if (require.main === module) {
-  throng(1, main);
+  main();
 }
 
 module.exports = { main, syncOnce, formatBytes, sleep, WORKER_BATCH_LIMIT };

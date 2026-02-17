@@ -1,5 +1,4 @@
 const db = require("../setup");
-const { storiesCollection, usersCollection, padId } = require("../../services/firestore");
 
 // jsonwebtoken's transitive dependency buffer-equal-constant-time uses SlowBuffer
 // which was removed in Node.js 25. We mock jsonwebtoken to avoid this.
@@ -17,7 +16,7 @@ jest.mock("jsonwebtoken", () => ({
   },
 }));
 
-// Connect to Firestore before requiring app (which requires storyService)
+// Connect to database before requiring app (which requires storyService)
 beforeAll(async () => {
   process.env.SECRET = "test-secret-key";
   await db.connect();
@@ -40,21 +39,23 @@ afterEach(async () => {
 
 afterAll(async () => await db.closeDatabase());
 
-const createStory = (overrides = {}) => ({
-  id: 1,
-  by: "author",
-  descendants: 10,
-  score: 100,
-  time: new Date(),
-  title: "Test Story",
-  url: "https://example.com",
-  updated: new Date(),
-  ...overrides,
-});
-
-const seedStory = async (overrides = {}) => {
-  const story = createStory(overrides);
-  await storiesCollection().doc(padId(story.id)).set(story);
+const seedStory = (overrides = {}) => {
+  const { getDb } = require("../../services/database");
+  const story = {
+    id: 1,
+    by: "author",
+    descendants: 10,
+    score: 100,
+    time: Date.now(),
+    title: "Test Story",
+    url: "https://example.com",
+    updated: Date.now(),
+    ...overrides,
+  };
+  getDb().prepare(
+    `INSERT OR REPLACE INTO stories (id, by, descendants, score, time, title, url, updated)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(story.id, story.by, story.descendants, story.score, story.time, story.title, story.url, story.updated);
   return story;
 };
 
@@ -74,10 +75,8 @@ const extractCookieToken = (res) => {
 describe("API routes", () => {
   describe("GET /api/v1/stories", () => {
     it("returns stories as JSON", async () => {
-      await Promise.all([
-        seedStory({ id: 1, score: 200 }),
-        seedStory({ id: 2, score: 100 }),
-      ]);
+      seedStory({ id: 1, score: 200 });
+      seedStory({ id: 2, score: 100 });
 
       const res = await request(app).get("/api/v1/stories");
 
@@ -87,13 +86,11 @@ describe("API routes", () => {
     });
 
     it("filters by timespan", async () => {
-      await Promise.all([
-        seedStory({ id: 1, time: new Date() }), // recent
-        seedStory({
-          id: 2,
-          time: new Date(Date.now() - 48 * 60 * 60 * 1000),
-        }), // 2 days ago
-      ]);
+      seedStory({ id: 1, time: Date.now() }); // recent
+      seedStory({
+        id: 2,
+        time: Date.now() - 48 * 60 * 60 * 1000,
+      }); // 2 days ago
 
       const res = await request(app).get("/api/v1/stories?timespan=Day");
 
@@ -102,13 +99,11 @@ describe("API routes", () => {
     });
 
     it("defaults to All when no timespan specified", async () => {
-      await Promise.all([
-        seedStory({ id: 1, time: new Date() }),
-        seedStory({
-          id: 2,
-          time: new Date(Date.now() - 400 * 24 * 60 * 60 * 1000),
-        }),
-      ]);
+      seedStory({ id: 1, time: Date.now() });
+      seedStory({
+        id: 2,
+        time: Date.now() - 400 * 24 * 60 * 60 * 1000,
+      });
 
       const res = await request(app).get("/api/v1/stories");
 
@@ -117,11 +112,9 @@ describe("API routes", () => {
     });
 
     it("respects limit parameter", async () => {
-      await Promise.all([
-        seedStory({ id: 1 }),
-        seedStory({ id: 2 }),
-        seedStory({ id: 3 }),
-      ]);
+      seedStory({ id: 1 });
+      seedStory({ id: 2 });
+      seedStory({ id: 3 });
 
       const res = await request(app).get("/api/v1/stories?limit=2");
 
@@ -130,11 +123,9 @@ describe("API routes", () => {
     });
 
     it("respects skip parameter", async () => {
-      await Promise.all([
-        seedStory({ id: 1, score: 300 }),
-        seedStory({ id: 2, score: 200 }),
-        seedStory({ id: 3, score: 100 }),
-      ]);
+      seedStory({ id: 1, score: 300 });
+      seedStory({ id: 2, score: 200 });
+      seedStory({ id: 3, score: 100 });
 
       const res = await request(app).get("/api/v1/stories?skip=1&limit=2");
 
@@ -144,10 +135,8 @@ describe("API routes", () => {
     });
 
     it("defaults negative limit to config.limitResults", async () => {
-      await Promise.all([
-        seedStory({ id: 1 }),
-        seedStory({ id: 2 }),
-      ]);
+      seedStory({ id: 1 });
+      seedStory({ id: 2 });
 
       const res = await request(app).get("/api/v1/stories?limit=-1");
 
@@ -156,10 +145,8 @@ describe("API routes", () => {
     });
 
     it("defaults zero limit to config.limitResults", async () => {
-      await Promise.all([
-        seedStory({ id: 1 }),
-        seedStory({ id: 2 }),
-      ]);
+      seedStory({ id: 1 });
+      seedStory({ id: 2 });
 
       const res = await request(app).get("/api/v1/stories?limit=0");
 
@@ -168,7 +155,7 @@ describe("API routes", () => {
     });
 
     it("defaults invalid timespan to All", async () => {
-      await seedStory({ id: 1 });
+      seedStory({ id: 1 });
 
       const res = await request(app).get("/api/v1/stories?timespan=Invalid");
 
@@ -189,15 +176,14 @@ describe("API routes", () => {
     });
 
     it("excludes hidden stories when authenticated", async () => {
-      await Promise.all([
-        seedStory({ id: 1, score: 300 }),
-        seedStory({ id: 2, score: 200 }),
-        seedStory({ id: 3, score: 100 }),
-      ]);
+      seedStory({ id: 1, score: 300 });
+      seedStory({ id: 2, score: 200 });
+      seedStory({ id: 3, score: 100 });
 
-      // Mark story 2 as hidden for testuser
-      await usersCollection().doc("testuser").set({});
-      await usersCollection().doc("testuser").collection("hidden").doc("2").set({ addedAt: Date.now() });
+      const { getDb } = require("../../services/database");
+      const d = getDb();
+      d.prepare("INSERT INTO users (username) VALUES (?)").run("testuser");
+      d.prepare("INSERT INTO hidden (username, story_id) VALUES (?, ?)").run("testuser", 2);
 
       const token = createToken("testuser");
       const res = await request(app)
@@ -210,11 +196,9 @@ describe("API routes", () => {
     });
 
     it("returns all stories without auth cookie", async () => {
-      await Promise.all([
-        seedStory({ id: 1, score: 300 }),
-        seedStory({ id: 2, score: 200 }),
-        seedStory({ id: 3, score: 100 }),
-      ]);
+      seedStory({ id: 1, score: 300 });
+      seedStory({ id: 2, score: 200 });
+      seedStory({ id: 3, score: 100 });
 
       const res = await request(app).get("/api/v1/stories");
 
@@ -225,9 +209,11 @@ describe("API routes", () => {
 
   describe("GET /api/v1/hidden", () => {
     it("returns hidden list for authenticated user", async () => {
-      await usersCollection().doc("testuser").set({});
-      await usersCollection().doc("testuser").collection("hidden").doc("123").set({ addedAt: Date.now() });
-      await usersCollection().doc("testuser").collection("hidden").doc("456").set({ addedAt: Date.now() });
+      const { getDb } = require("../../services/database");
+      const d = getDb();
+      d.prepare("INSERT INTO users (username) VALUES (?)").run("testuser");
+      d.prepare("INSERT INTO hidden (username, story_id) VALUES (?, ?)").run("testuser", 123);
+      d.prepare("INSERT INTO hidden (username, story_id) VALUES (?, ?)").run("testuser", 456);
       const token = createToken("testuser");
 
       const res = await request(app)
@@ -255,7 +241,8 @@ describe("API routes", () => {
 
   describe("POST /api/v1/hidden", () => {
     it("adds hidden ID for authenticated user", async () => {
-      await usersCollection().doc("testuser").set({});
+      const { getDb } = require("../../services/database");
+      getDb().prepare("INSERT INTO users (username) VALUES (?)").run("testuser");
       const token = createToken("testuser");
 
       const res = await request(app)
@@ -375,8 +362,9 @@ describe("API routes", () => {
         .post("/api/v1/login")
         .send({ goto: "news", acct: "newuser", pw: "validpass" });
 
-      const userDoc = await usersCollection().doc("newuser").get();
-      expect(userDoc.exists).toBe(true);
+      const { getDb } = require("../../services/database");
+      const user = getDb().prepare("SELECT * FROM users WHERE username = ?").get("newuser");
+      expect(user).toBeDefined();
     });
 
     it("returns 500 on internal error during login", async () => {
@@ -437,45 +425,6 @@ describe("API routes", () => {
       const res = await request(app).get("/api/v1/me");
 
       expect(res.status).toBe(401);
-    });
-  });
-
-  describe("GET /_ah/worker", () => {
-    let mockSyncOnce;
-
-    beforeEach(() => {
-      mockSyncOnce = jest.fn().mockResolvedValue();
-      jest.mock("../../worker", () => ({
-        syncOnce: (...args) => mockSyncOnce(...args),
-      }));
-    });
-
-    it("returns 403 without X-Appengine-Cron header", async () => {
-      const res = await request(app).get("/_ah/worker");
-
-      expect(res.status).toBe(403);
-      expect(res.body.error).toBe("forbidden");
-    });
-
-    it("returns 200 and runs sync with cron header", async () => {
-      const res = await request(app)
-        .get("/_ah/worker")
-        .set("X-Appengine-Cron", "true");
-
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe("sync complete");
-      expect(mockSyncOnce).toHaveBeenCalled();
-    });
-
-    it("returns 500 when sync fails", async () => {
-      mockSyncOnce.mockRejectedValue(new Error("sync error"));
-
-      const res = await request(app)
-        .get("/_ah/worker")
-        .set("X-Appengine-Cron", "true");
-
-      expect(res.status).toBe(500);
-      expect(res.body.error).toBe("sync failed");
     });
   });
 

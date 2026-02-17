@@ -8,16 +8,15 @@
     "worker": "node worker.js",
     "worker-nodemon": "nodemon worker.js",
     "test": "jest --forceExit --detectOpenHandles --passWithNoTests",
-    "test:firestore": "node tests/integration/firestore-smoke.test.js",
     "test:coverage": "jest --coverage --forceExit --detectOpenHandles",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "prepare": "husky",
-    "gcp-build": "cd hackernews-frontend && npm ci && npm run build"
+    "import": "node scripts/import-json-to-sqlite.js"
   },
   "dependencies": {
-    "@google-cloud/firestore": "^8.3.0",
     "axios": "^1.13.5",
+    "better-sqlite3": "^12.6.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "debug": "~4.4.3",
@@ -26,8 +25,7 @@
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
-    "morgan": "~1.10.1",
-    "throng": "^5.0.0"
+    "morgan": "~1.10.1"
   },
   "lint-staged": {
     "*.js": "eslint --fix"

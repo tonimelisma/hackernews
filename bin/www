@@ -9,6 +9,10 @@ if (!process.env.SECRET) {
   process.exit(1);
 }
 
+// Initialize database before loading app (which requires services that use getDb)
+const { getDb } = require('../services/database');
+getDb();
+
 const app = require('../app');
 const debug = require('debug')('hackernews-backend:server');
 const http = require('http');
@@ -93,15 +97,14 @@ function onListening() {
     : 'port ' + addr.port;
   debug('Listening on ' + bind);
 
-  if (process.env.BOOTSTRAP_ON_START === "true") {
-    const { syncOnce } = require("../worker");
-    const { clearCache } = require("../services/storyService");
-    console.log("Bootstrap: running initial sync...");
-    syncOnce()
-      .then(async () => {
-        await clearCache();
-        console.log("Bootstrap: initial sync complete, cache cleared");
-      })
-      .catch((e) => console.error("Bootstrap: initial sync failed:", e));
-  }
+  // Run initial sync and schedule recurring worker
+  const { syncOnce } = require("../worker");
+  console.log("Starting initial sync...");
+  syncOnce()
+    .then(() => console.log("Initial sync complete"))
+    .catch((e) => console.error("Initial sync failed:", e));
+
+  setInterval(() => {
+    syncOnce().catch((e) => console.error("Worker sync error:", e));
+  }, 15 * 60 * 1000);
 }

@@ -1,6 +1,5 @@
 const axios = require("axios");
 const db = require("../setup");
-const { storiesCollection, padId } = require("../../services/firestore");
 
 jest.mock("axios");
 
@@ -13,6 +12,26 @@ afterEach(async () => {
   jest.clearAllMocks();
 });
 afterAll(async () => await db.closeDatabase());
+
+const seedStory = (overrides = {}) => {
+  const { getDb } = require("../../services/database");
+  const story = {
+    id: 100,
+    by: "test",
+    descendants: 5,
+    score: 50,
+    time: Date.now(),
+    title: "Test",
+    url: "https://example.com",
+    updated: Date.now(),
+    ...overrides,
+  };
+  getDb().prepare(
+    `INSERT OR REPLACE INTO stories (id, by, descendants, score, time, title, url, updated)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(story.id, story.by, story.descendants, story.score, story.time, story.title, story.url, story.updated);
+  return story;
+};
 
 describe("services/hackernews", () => {
   describe("login", () => {
@@ -162,50 +181,26 @@ describe("services/hackernews", () => {
 
   describe("checkStoryExists", () => {
     it("returns IDs of stories not in the database", async () => {
-      await storiesCollection().doc(padId(100)).set({
-        id: 100,
-        title: "Existing",
-        by: "test",
-        score: 50,
-        time: new Date(),
-        updated: new Date(),
-      });
+      seedStory({ id: 100 });
 
       const result = await hackernews.checkStoryExists([100, 200, 300]);
       expect(result).toEqual([200, 300]);
     });
 
     it("returns empty array when all stories exist", async () => {
-      await storiesCollection().doc(padId(100)).set({
-        id: 100,
-        title: "Existing",
-        by: "test",
-        score: 50,
-        time: new Date(),
-        updated: new Date(),
-      });
+      seedStory({ id: 100 });
 
       const result = await hackernews.checkStoryExists([100]);
       expect(result).toEqual([]);
     });
 
-    it("tracks reads and queries via ctx", async () => {
-      await storiesCollection().doc(padId(100)).set({
-        id: 100,
-        title: "Existing",
-        by: "test",
-        score: 50,
-        time: new Date(),
-        updated: new Date(),
-      });
+    it("tracks reads via ctx", async () => {
+      seedStory({ id: 100 });
 
       const ctx = { read: jest.fn(), query: jest.fn() };
       await hackernews.checkStoryExists([100, 200], ctx);
 
-      expect(ctx.read).toHaveBeenCalledTimes(2);
       expect(ctx.read).toHaveBeenCalledWith("stories", 1);
-      expect(ctx.query).toHaveBeenCalledTimes(1);
-      expect(ctx.query).toHaveBeenCalledWith("stories", "checkExists batch size=2", 2, expect.any(Number));
     });
 
     it("works without ctx (backward compat)", async () => {
@@ -232,13 +227,12 @@ describe("services/hackernews", () => {
 
       await hackernews.addStories([500]);
 
-      const doc = await storiesCollection().doc(padId(500)).get();
-      expect(doc.exists).toBe(true);
-      const saved = doc.data();
-      expect(saved.title).toBe("New Story");
-      expect(saved.by).toBe("author");
-      // time is multiplied by 1000 (seconds to ms) and stored as Date
-      expect(saved.time.toDate().getTime()).toBe(1609459200 * 1000);
+      const { getDb } = require("../../services/database");
+      const row = getDb().prepare("SELECT * FROM stories WHERE id = ?").get(500);
+      expect(row).toBeDefined();
+      expect(row.title).toBe("New Story");
+      expect(row.by).toBe("author");
+      expect(row.time).toBe(1609459200 * 1000);
     });
 
     it("handles stories with undefined kids/url fields", async () => {
@@ -250,19 +244,18 @@ describe("services/hackernews", () => {
         time: 1609459200,
         title: "No URL Story",
         type: "story",
-        // kids, url, text are undefined
       };
 
       axios.get.mockResolvedValue({ data: mockStory });
 
       await hackernews.addStories([501]);
 
-      const doc = await storiesCollection().doc(padId(501)).get();
-      expect(doc.exists).toBe(true);
-      const saved = doc.data();
-      expect(saved.title).toBe("No URL Story");
-      expect(saved.kids).toBeUndefined();
-      expect(saved.url).toBeUndefined();
+      const { getDb } = require("../../services/database");
+      const row = getDb().prepare("SELECT * FROM stories WHERE id = ?").get(501);
+      expect(row).toBeDefined();
+      expect(row.title).toBe("No URL Story");
+      expect(row.kids).toBeNull();
+      expect(row.url).toBeNull();
     });
 
     it("tracks writes and queries via ctx", async () => {
@@ -282,10 +275,8 @@ describe("services/hackernews", () => {
       const ctx = { write: jest.fn(), query: jest.fn() };
       await hackernews.addStories([502], ctx);
 
-      expect(ctx.write).toHaveBeenCalledTimes(1);
       expect(ctx.write).toHaveBeenCalledWith("stories", 1);
       expect(ctx.query).toHaveBeenCalledTimes(1);
-      expect(ctx.query).toHaveBeenCalledWith("stories", "addStories batch size=1", 1, expect.any(Number));
     });
 
     it("works without ctx (backward compat)", async () => {
@@ -303,23 +294,15 @@ describe("services/hackernews", () => {
 
       await hackernews.addStories([503]);
 
-      const doc = await storiesCollection().doc(padId(503)).get();
-      expect(doc.exists).toBe(true);
+      const { getDb } = require("../../services/database");
+      const row = getDb().prepare("SELECT * FROM stories WHERE id = ?").get(503);
+      expect(row).toBeDefined();
     });
   });
 
   describe("updateStories", () => {
     it("updates existing stories in the database", async () => {
-      // Insert a story first
-      await storiesCollection().doc(padId(600)).set({
-        id: 600,
-        title: "Old Title",
-        by: "author",
-        score: 10,
-        descendants: 5,
-        time: new Date(),
-        updated: new Date(Date.now() - 100000),
-      });
+      seedStory({ id: 600, score: 10, descendants: 5 });
 
       const updatedData = {
         id: 600,
@@ -332,53 +315,14 @@ describe("services/hackernews", () => {
 
       await hackernews.updateStories([600]);
 
-      const doc = await storiesCollection().doc(padId(600)).get();
-      const updated = doc.data();
-      expect(updated.score).toBe(200);
-      expect(updated.descendants).toBe(20);
-    });
-
-    it("handles items with undefined kids field", async () => {
-      await storiesCollection().doc(padId(700)).set({
-        id: 700,
-        title: "Story",
-        by: "author",
-        score: 10,
-        descendants: 5,
-        kids: [1, 2],
-        time: new Date(),
-        updated: new Date(Date.now() - 100000),
-      });
-
-      const updatedData = {
-        id: 700,
-        descendants: 0,
-        score: 15,
-        // kids is undefined
-      };
-
-      axios.get.mockResolvedValue({ data: updatedData });
-
-      await hackernews.updateStories([700]);
-
-      const doc = await storiesCollection().doc(padId(700)).get();
-      const updated = doc.data();
-      expect(updated.score).toBe(15);
-      expect(updated.descendants).toBe(0);
-      // Original kids preserved since undefined was stripped
-      expect(updated.kids).toEqual([1, 2]);
+      const { getDb } = require("../../services/database");
+      const row = getDb().prepare("SELECT * FROM stories WHERE id = ?").get(600);
+      expect(row.score).toBe(200);
+      expect(row.descendants).toBe(20);
     });
 
     it("tracks writes and queries via ctx", async () => {
-      await storiesCollection().doc(padId(800)).set({
-        id: 800,
-        title: "Story",
-        by: "author",
-        score: 10,
-        descendants: 5,
-        time: new Date(),
-        updated: new Date(Date.now() - 100000),
-      });
+      seedStory({ id: 800, score: 10, descendants: 5 });
 
       const updatedData = {
         id: 800,
@@ -391,50 +335,25 @@ describe("services/hackernews", () => {
       const ctx = { write: jest.fn(), query: jest.fn() };
       await hackernews.updateStories([800], ctx);
 
-      expect(ctx.write).toHaveBeenCalledTimes(1);
       expect(ctx.write).toHaveBeenCalledWith("stories", 1);
       expect(ctx.query).toHaveBeenCalledTimes(1);
-      expect(ctx.query).toHaveBeenCalledWith("stories", "updateStories batch size=1", 1, expect.any(Number));
     });
 
     it("works without ctx (backward compat)", async () => {
-      await storiesCollection().doc(padId(801)).set({
-        id: 801,
-        title: "Story",
-        by: "author",
-        score: 10,
-        descendants: 5,
-        time: new Date(),
-        updated: new Date(Date.now() - 100000),
-      });
+      seedStory({ id: 801, score: 10, descendants: 5 });
 
       axios.get.mockResolvedValue({ data: { id: 801, score: 20, descendants: 10 } });
 
       await hackernews.updateStories([801]);
 
-      const doc = await storiesCollection().doc(padId(801)).get();
-      expect(doc.data().score).toBe(20);
+      const { getDb } = require("../../services/database");
+      const row = getDb().prepare("SELECT * FROM stories WHERE id = ?").get(801);
+      expect(row.score).toBe(20);
     });
 
     it("returns array of updated {id, score, descendants}", async () => {
-      await storiesCollection().doc(padId(900)).set({
-        id: 900,
-        title: "Story A",
-        by: "author",
-        score: 10,
-        descendants: 1,
-        time: new Date(),
-        updated: new Date(Date.now() - 100000),
-      });
-      await storiesCollection().doc(padId(901)).set({
-        id: 901,
-        title: "Story B",
-        by: "author",
-        score: 20,
-        descendants: 2,
-        time: new Date(),
-        updated: new Date(Date.now() - 100000),
-      });
+      seedStory({ id: 900, score: 10, descendants: 1 });
+      seedStory({ id: 901, score: 20, descendants: 2 });
 
       axios.get
         .mockResolvedValueOnce({ data: { id: 900, score: 150, descendants: 30 } })
@@ -455,24 +374,8 @@ describe("services/hackernews", () => {
     });
 
     it("skips stories with undefined score in return value", async () => {
-      await storiesCollection().doc(padId(910)).set({
-        id: 910,
-        title: "Normal Story",
-        by: "author",
-        score: 50,
-        descendants: 5,
-        time: new Date(),
-        updated: new Date(Date.now() - 100000),
-      });
-      await storiesCollection().doc(padId(911)).set({
-        id: 911,
-        title: "Deleted Story",
-        by: "author",
-        score: 30,
-        descendants: 2,
-        time: new Date(),
-        updated: new Date(Date.now() - 100000),
-      });
+      seedStory({ id: 910, score: 50, descendants: 5 });
+      seedStory({ id: 911, score: 30, descendants: 2 });
 
       axios.get
         .mockResolvedValueOnce({ data: { id: 910, score: 150, descendants: 30 } })

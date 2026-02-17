@@ -1,5 +1,4 @@
 const db = require("../setup");
-const { storiesCollection, padId } = require("../../services/firestore");
 const storyService = require("../../services/storyService");
 
 jest.mock("../../services/hackernews");
@@ -15,99 +14,79 @@ afterEach(async () => {
 });
 afterAll(async () => await db.closeDatabase());
 
+const seedStory = (overrides = {}) => {
+  const { getDb } = require("../../services/database");
+  const story = {
+    id: 1,
+    by: "author",
+    descendants: 10,
+    score: 100,
+    time: Date.now(),
+    title: "Test Story",
+    url: "https://example.com",
+    updated: Date.now(),
+    ...overrides,
+  };
+  getDb().prepare(
+    `INSERT OR REPLACE INTO stories (id, by, descendants, score, time, title, url, updated)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(story.id, story.by, story.descendants, story.score, story.time, story.title, story.url, story.updated);
+  return story;
+};
+
 describe("worker logic (simulated)", () => {
   describe("stale story detection", () => {
     it("finds monthly stories stale for 48h (compound inequality query)", async () => {
       const now = Date.now();
-      await Promise.all([
-        storiesCollection().doc(padId(1)).set({
-          id: 1,
-          score: 100,
-          time: new Date(now - 10 * 24 * 60 * 60 * 1000), // 10d ago (within month)
-          title: "Recently updated",
-          by: "a",
-          updated: new Date(), // just updated
-        }),
-        storiesCollection().doc(padId(2)).set({
-          id: 2,
-          score: 100,
-          time: new Date(now - 10 * 24 * 60 * 60 * 1000), // 10d ago (within month)
-          title: "Stale within month",
-          by: "a",
-          updated: new Date(now - 49 * 60 * 60 * 1000), // 49h ago
-        }),
-        storiesCollection().doc(padId(3)).set({
-          id: 3,
-          score: 100,
-          time: new Date(now - 60 * 24 * 60 * 60 * 1000), // 60d ago (outside month)
-          title: "Stale but too old",
-          by: "a",
-          updated: new Date(now - 49 * 60 * 60 * 1000), // 49h ago
-        }),
-      ]);
+      seedStory({
+        id: 1,
+        score: 100,
+        time: now - 10 * 24 * 60 * 60 * 1000, // 10d ago (within month)
+        updated: now, // just updated
+      });
+      seedStory({
+        id: 2,
+        score: 100,
+        time: now - 10 * 24 * 60 * 60 * 1000, // 10d ago (within month)
+        updated: now - 49 * 60 * 60 * 1000, // 49h ago
+      });
+      seedStory({
+        id: 3,
+        score: 100,
+        time: now - 60 * 24 * 60 * 60 * 1000, // 60d ago (outside month)
+        updated: now - 49 * 60 * 60 * 1000, // 49h ago
+      });
 
-      // Compound inequality: time > threshold AND updated < staleness
-      const monthTimeThreshold = new Date(now - 28 * 24 * 60 * 60 * 1000);
-      const staleSnap = await storiesCollection()
-        .where("time", ">", monthTimeThreshold)
-        .where("updated", "<", new Date(now - 48 * 60 * 60 * 1000))
-        .orderBy("updated", "asc")
-        .limit(WORKER_BATCH_LIMIT)
-        .get();
+      const { getDb } = require("../../services/database");
+      const monthTimeThreshold = now - 28 * 24 * 60 * 60 * 1000;
+      const staleThreshold = now - 48 * 60 * 60 * 1000;
+      const rows = getDb().prepare(
+        `SELECT id FROM stories WHERE time > ? AND updated < ? ORDER BY updated ASC LIMIT ?`
+      ).all(monthTimeThreshold, staleThreshold, WORKER_BATCH_LIMIT);
 
-      const staleIds = staleSnap.docs.map(d => d.data().id);
-
+      const staleIds = rows.map(r => r.id);
       expect(staleIds).toHaveLength(1);
       expect(staleIds[0]).toBe(2);
     });
   });
 
   describe("latest story lookup", () => {
-    it("finds the story with highest ID via doc ID ordering", async () => {
-      await Promise.all([
-        storiesCollection().doc(padId(100)).set({
-          id: 100,
-          score: 50,
-          time: new Date(),
-          title: "Older story",
-          by: "a",
-          updated: new Date(),
-        }),
-        storiesCollection().doc(padId(500)).set({
-          id: 500,
-          score: 200,
-          time: new Date(),
-          title: "Newer story",
-          by: "b",
-          updated: new Date(),
-        }),
-        storiesCollection().doc(padId(300)).set({
-          id: 300,
-          score: 100,
-          time: new Date(),
-          title: "Middle story",
-          by: "c",
-          updated: new Date(),
-        }),
-      ]);
+    it("finds the story with highest ID", async () => {
+      seedStory({ id: 100, score: 50 });
+      seedStory({ id: 500, score: 200 });
+      seedStory({ id: 300, score: 100 });
 
-      // Simulate worker's latest story query
-      const latestSnap = await storiesCollection()
-        .orderBy("id", "desc")
-        .limit(1)
-        .get();
+      const { getDb } = require("../../services/database");
+      const row = getDb().prepare("SELECT id FROM stories ORDER BY id DESC LIMIT 1").get();
 
-      expect(latestSnap.docs).toHaveLength(1);
-      expect(latestSnap.docs[0].data().id).toBe(500);
+      expect(row.id).toBe(500);
     });
 
-    it("returns empty when no stories exist", async () => {
-      const latestSnap = await storiesCollection()
-        .orderBy("id", "desc")
-        .limit(1)
-        .get();
+    it("returns undefined when no stories exist", async () => {
+      const { getDb } = require("../../services/database");
+      const row = getDb().prepare("SELECT id FROM stories ORDER BY id DESC LIMIT 1").get();
 
-      expect(latestSnap.empty).toBe(true);
+      expect(row).toBeUndefined();
     });
   });
 });
@@ -130,15 +109,7 @@ describe("syncOnce()", () => {
   });
 
   it("adds only new stories when local DB has stories", async () => {
-    // Seed a story with id=100
-    await storiesCollection().doc(padId(100)).set({
-      id: 100,
-      score: 50,
-      time: new Date(),
-      title: "Existing story",
-      by: "a",
-      updated: new Date(),
-    });
+    seedStory({ id: 100, score: 50 });
 
     Remote.getNewStories.mockResolvedValue([300, 200, 100, 50]);
 
@@ -148,15 +119,7 @@ describe("syncOnce()", () => {
   });
 
   it("skips addStories when no new stories available", async () => {
-    // Seed a story with id=500
-    await storiesCollection().doc(padId(500)).set({
-      id: 500,
-      score: 200,
-      time: new Date(),
-      title: "Latest story",
-      by: "a",
-      updated: new Date(),
-    });
+    seedStory({ id: 500, score: 200 });
 
     Remote.getNewStories.mockResolvedValue([400, 300, 200]);
 
@@ -167,14 +130,11 @@ describe("syncOnce()", () => {
 
   it("updates stale stories", async () => {
     const now = Date.now();
-    // Seed a story within the month window, updated 49h ago (stale for monthly threshold)
-    await storiesCollection().doc(padId(100)).set({
+    seedStory({
       id: 100,
       score: 50,
-      time: new Date(now - 10 * 24 * 60 * 60 * 1000), // 10d ago (within 28d)
-      title: "Stale story",
-      by: "a",
-      updated: new Date(now - 49 * 60 * 60 * 1000), // 49h ago
+      time: now - 10 * 24 * 60 * 60 * 1000, // 10d ago (within 28d)
+      updated: now - 49 * 60 * 60 * 1000, // 49h ago
     });
 
     Remote.getNewStories.mockResolvedValue([50]); // no new stories
@@ -185,14 +145,11 @@ describe("syncOnce()", () => {
   });
 
   it("does not update recently updated stories", async () => {
-    // Seed a story updated just now
-    await storiesCollection().doc(padId(100)).set({
+    seedStory({
       id: 100,
       score: 50,
-      time: new Date(),
-      title: "Fresh story",
-      by: "a",
-      updated: new Date(),
+      time: Date.now(),
+      updated: Date.now(),
     });
 
     Remote.getNewStories.mockResolvedValue([50]); // no new stories
@@ -204,79 +161,26 @@ describe("syncOnce()", () => {
 
   it("limits trending batch to WORKER_BATCH_LIMIT", async () => {
     const now = Date.now();
-    // Seed more stories than WORKER_BATCH_LIMIT, all stale
-    const promises = [];
     for (let i = 1; i <= WORKER_BATCH_LIMIT + 50; i++) {
-      promises.push(
-        storiesCollection().doc(padId(i)).set({
-          id: i,
-          score: 50,
-          time: new Date(now - 2 * 24 * 60 * 60 * 1000), // 2d ago (within week)
-          title: `Story ${i}`,
-          by: "a",
-          updated: new Date(now - 7 * 60 * 60 * 1000), // 7h ago (stale for 6h threshold)
-        })
-      );
+      seedStory({
+        id: i,
+        score: 50,
+        time: now - 2 * 24 * 60 * 60 * 1000, // 2d ago (within week)
+        updated: now - 7 * 60 * 60 * 1000, // 7h ago (stale for 6h threshold)
+      });
     }
-    await Promise.all(promises);
 
     Remote.getNewStories.mockResolvedValue([1]); // no new stories
 
     await syncOnce();
 
-    // Should have been called with at most WORKER_BATCH_LIMIT IDs per query
     const calls = Remote.updateStories.mock.calls;
     for (const call of calls) {
       expect(call[0].length).toBeLessThanOrEqual(WORKER_BATCH_LIMIT);
     }
-    // At least one call should have exactly WORKER_BATCH_LIMIT (the weekly query hits the cap)
+    // At least one call should have exactly WORKER_BATCH_LIMIT
     const hasMaxBatch = calls.some(call => call[0].length === WORKER_BATCH_LIMIT);
     expect(hasMaxBatch).toBe(true);
-  });
-});
-
-describe("syncOnce() cache patching", () => {
-  beforeEach(() => {
-    Remote.getNewStories.mockReset();
-    Remote.addStories.mockReset();
-    Remote.updateStories.mockReset();
-    Remote.addStories.mockResolvedValue();
-  });
-
-  it("patches L2 cache after updating stale stories", async () => {
-    const { cacheCollection } = require("../../services/firestore");
-    const now = Date.now();
-
-    // Seed a story within daily range, stale (updated 2h ago)
-    await storiesCollection().doc(padId(100)).set({
-      id: 100,
-      score: 50,
-      time: new Date(now - 2 * 60 * 60 * 1000), // 2h ago
-      title: "Stale story",
-      by: "a",
-      updated: new Date(now - 2 * 60 * 60 * 1000), // 2h ago (stale for 1h daily threshold)
-    });
-
-    // Populate L2 cache for Day
-    await storyService.getStories("Day", 500);
-
-    // Verify initial L2 cache
-    const before = await cacheCollection().doc("Day").get();
-    expect(before.exists).toBe(true);
-    expect(before.data().stories[0].score).toBe(50);
-
-    // Mock updateStories to return new scores
-    Remote.updateStories.mockResolvedValue([
-      { id: 100, score: 999, descendants: 42 },
-    ]);
-    Remote.getNewStories.mockResolvedValue([50]); // no new stories
-
-    await syncOnce();
-
-    // Verify L2 cache was patched with new score
-    const after = await cacheCollection().doc("Day").get();
-    expect(after.data().stories[0].score).toBe(999);
-    expect(after.data().stories[0].descendants).toBe(42);
   });
 });
 
