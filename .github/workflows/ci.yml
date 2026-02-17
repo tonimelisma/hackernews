@@ -76,24 +76,3 @@ jobs:
         run: npm audit --audit-level=moderate
         working-directory: hackernews-frontend
 
-  deploy:
-    needs: [backend-tests, frontend-tests]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    environment: production
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ vars.VPS_HOST }}
-          username: ${{ vars.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            cd /opt/hackernews
-            git pull origin master
-            echo "SECRET=${{ secrets.APP_SECRET }}" > .env
-            docker compose up --build -d
-            docker image prune -f
