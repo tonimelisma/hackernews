@@ -7,14 +7,10 @@ const getAll = (timespan) => {
     : axios.get(baseUrl + `stories`);
 };
 
-const getHidden = () => {
-  return axios.get(baseUrl + "hidden");
-};
-
 const addHidden = (hidden) => {
   return axios.post(baseUrl + "hidden", { hidden });
 };
 
-const storyServices = { getAll, getHidden, addHidden };
+const storyServices = { getAll, addHidden };
 
 export default storyServices;

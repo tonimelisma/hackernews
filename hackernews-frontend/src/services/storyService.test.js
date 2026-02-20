@@ -32,18 +32,6 @@ describe("storyService", () => {
     );
   });
 
-  it("getHidden fetches hidden stories", async () => {
-    const mockData = { data: [1, 2, 3] };
-    axios.get.mockResolvedValue(mockData);
-
-    const result = await storyService.getHidden();
-
-    expect(axios.get).toHaveBeenCalledWith(
-      expect.stringContaining("hidden")
-    );
-    expect(result).toEqual(mockData);
-  });
-
   it("addHidden posts hidden story ID", async () => {
     axios.post.mockResolvedValue({ data: { hidden: 123 } });
 

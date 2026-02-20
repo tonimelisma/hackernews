@@ -115,4 +115,10 @@ describe("Story", () => {
     expect(favicon.src).toContain("news.ycombinator.com");
     console.log.mockRestore();
   });
+
+  it("does not render hide button when addHidden is null", () => {
+    render(<Story story={mockStory} addHidden={null} />);
+
+    expect(screen.queryByRole("button", { name: "Hide story" })).not.toBeInTheDocument();
+  });
 });

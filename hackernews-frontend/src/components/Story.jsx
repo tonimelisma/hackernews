@@ -67,14 +67,16 @@ const Story = ({ story, addHidden }) => {
           <FontAwesomeIcon icon={faComments} />
           {" "}{story.descendants}
         </a>{" "}
-        <button
-          type="button"
-          className="btn btn-outline-secondary"
-          onClick={() => addHidden(story.id)}
-          aria-label="Hide story"
-        >
-          <FontAwesomeIcon icon={faTimes} />{" "}
-        </button>{" "}
+        {addHidden && (
+          <button
+            type="button"
+            className="btn btn-outline-secondary"
+            onClick={() => addHidden(story.id)}
+            aria-label="Hide story"
+          >
+            <FontAwesomeIcon icon={faTimes} />{" "}
+          </button>
+        )}{" "}
       </div>{" "}
     </div>
   );

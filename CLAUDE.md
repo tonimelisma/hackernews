@@ -145,7 +145,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 11. **react-virtuoso for story lists**: `StoryList.jsx` uses `<Virtuoso useWindowScroll>` to render only visible stories from up to 500 items. Tests mock `react-virtuoso` to render all items synchronously.
 
-12. **Hidden stories localStorage persistence**: Anonymous users' hidden state persists via `localStorage` (`hiddenStories` key). On login, server hidden IDs are merged with localStorage, and any localStorage-only IDs are synced back to the server (fire-and-forget). `hiddenLoaded` state gates `StoryList` rendering to prevent flash of unhidden stories.
+12. **Hidden stories are server-side only**: Hiding stories requires login. The server filters hidden stories via SQL `WHERE id NOT IN (...)` before returning results. The hide button only appears for logged-in users. When a story is hidden, it's optimistically removed from the client-side `stories` array (with rollback on POST failure). No client-side hidden filtering or localStorage persistence. Stories are re-fetched on login/logout to reflect server-side filtering changes.
 
 13. **Timespan localStorage persistence**: Selected timespan filter persists via `localStorage` (`timespan` key) as `{ value, timestamp }`. On page load, restores the saved value if the timestamp is less than 3 hours old; otherwise defaults to "Day". Saved on every timespan change via `useEffect`.
 
@@ -176,10 +176,10 @@ All of these must be kept current with every change:
 |-------|-------|
 | Backend unit (middleware, config, hackernews, database, dbLogger, migrator) | 52 |
 | Backend integration (storyService, api, worker) | 74 |
-| Frontend component (App, StoryList, Story) | 37 |
+| Frontend component (App, StoryList, Story) | 32 |
 | Frontend hook (useTheme) | 4 |
-| Frontend service (storyService, loginService) | 8 |
-| **Total** | **175** |
+| Frontend service (storyService, loginService) | 7 |
+| **Total** | **169** |
 
 ## Project Health
 
@@ -240,8 +240,7 @@ All of these must be kept current with every change:
 - **HN login detection via redirect path**: After POSTing to HN login with `{ withCredentials: true }`, axios follows the redirect. On success, `response.request.path` is `/news`; on failure, it's `/login`.
 - **Bootstrap `data-bs-auto-close="outside"`**: Prevents dropdown from closing on clicks inside the menu (e.g., login form). Without it, clicking the Login button closes the dropdown before the user sees the result.
 - **react-virtuoso for list virtualization**: `<Virtuoso useWindowScroll data={...} itemContent={...} />` renders only visible items. In tests, mock with a simple `({ data, itemContent }) => data.map(...)` to render all items synchronously. Must mock in every test file that renders a component using Virtuoso (both StoryList.test.jsx and App.test.jsx).
-- **Hidden stories localStorage persistence**: Anonymous users' hidden state persists via localStorage (`hiddenStories` key). On login, server hidden IDs are merged with localStorage (deduplicated via `Set`). `hiddenLoaded` state gates StoryList rendering to prevent flash of unhidden stories on page refresh.
-- **Hidden stories cross-device sync**: localStorage-only hidden IDs are synced to the server on page load (fire-and-forget, best-effort).
+- **Hidden stories are server-side only**: Hiding requires login. Server filters via SQL, client optimistically removes from `stories` array. No localStorage hidden persistence. Stories re-fetched on login/logout state change.
 - **SQLite WAL mode**: Enabled via `db.pragma("journal_mode = WAL")` for concurrent read/write support. Important for the integrated worker running alongside the Express server.
 - **In-memory SQLite for tests**: `better-sqlite3` with `new Database(":memory:")` via `setDb()`. No moduleNameMapper needed. `clearDatabase()` runs `DELETE FROM` on all tables. Tests complete in ~1 second.
 - **CSP script hash**: `'unsafe-inline'` replaced with SHA-256 hash of the inline dark mode script in `index.html`. Hash must be recomputed if the script content changes. Use: `python3 -c "import hashlib, base64; ..."` or `openssl dgst -sha256 -binary | openssl base64`.

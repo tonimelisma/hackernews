@@ -27,24 +27,10 @@ const saveTimespan = (value) => {
   catch { /* full or unavailable */ }
 };
 
-const loadLocalHidden = () => {
-  try {
-    const saved = localStorage.getItem("hiddenStories");
-    return saved ? JSON.parse(saved) : [];
-  } catch { return []; }
-};
-
-const saveLocalHidden = (hidden) => {
-  try { localStorage.setItem("hiddenStories", JSON.stringify(hidden)); }
-  catch { /* full or unavailable */ }
-};
-
 const App = () => {
   useTheme();
   const [stories, setStories] = useState([]);
   const [timespan, setTimespan] = useState(() => loadTimespan());
-  const [hidden, setHidden] = useState(() => loadLocalHidden());
-  const [hiddenLoaded, setHiddenLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -67,7 +53,7 @@ const App = () => {
         setError("Failed to load stories.");
         setLoading(false);
       });
-  }, [timespan]);
+  }, [timespan, loggedIn]);
 
   useEffect(() => {
     saveTimespan(timespan);
@@ -83,43 +69,15 @@ const App = () => {
       .catch(() => {
         setLoggedIn(false);
         setLoggedInUser("");
-        setHiddenLoaded(true);
       });
   }, []);
 
-  useEffect(() => {
-    if (loggedIn) {
-      storyService
-        .getHidden()
-        .then((response) => {
-          const local = loadLocalHidden();
-          const merged = [...new Set([...response.data, ...local])];
-          setHidden(merged);
-          saveLocalHidden(merged);
-          setHiddenLoaded(true);
-
-          // Sync localStorage-only hidden IDs to server (best-effort)
-          const serverIds = new Set(response.data);
-          const localOnly = local.filter(id => !serverIds.has(id));
-          localOnly.forEach(id => storyService.addHidden(id).catch(() => {}));
-        })
-        .catch(() => {
-          setHiddenLoaded(true);
-        });
-    }
-  }, [loggedIn]);
-
   const addHidden = (id) => {
-    const previousHidden = hidden;
-    const updatedHidden = hidden.concat(id);
-    setHidden(updatedHidden);
-    saveLocalHidden(updatedHidden);
-    if (loggedIn) {
-      storyService.addHidden(id).catch(() => {
-        setHidden(previousHidden);
-        saveLocalHidden(previousHidden);
-      });
-    }
+    const previousStories = stories;
+    setStories(stories.filter(s => s.id !== id));
+    storyService.addHidden(id).catch(() => {
+      setStories(previousStories);
+    });
   };
 
   const handleLogin = async (event) => {
@@ -284,12 +242,12 @@ const App = () => {
       {navBar()}
       <main>
         {error && <div className="alert alert-danger m-3">{error}</div>}
-        {(loading || !hiddenLoaded) ? (
+        {loading ? (
           <div className="alert alert-primary align-middle m-3" role="alert">
             Loading... <div className="spinner-border" role="status" />
           </div>
         ) : (
-          !error && <StoryList stories={stories} hidden={hidden} addHidden={addHidden} />
+          !error && <StoryList stories={stories} addHidden={loggedIn ? addHidden : null} />
         )}
       </main>
     </div>

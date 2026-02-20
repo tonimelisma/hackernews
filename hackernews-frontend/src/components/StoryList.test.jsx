@@ -25,33 +25,17 @@ const mockStories = [
 ];
 
 describe("StoryList", () => {
-  it("renders all stories when no hidden", () => {
-    render(<StoryList stories={mockStories} hidden={[]} addHidden={() => {}} />);
+  it("renders all stories", () => {
+    render(<StoryList stories={mockStories} addHidden={() => {}} />);
 
     expect(screen.getByTestId("story-1")).toBeInTheDocument();
     expect(screen.getByTestId("story-2")).toBeInTheDocument();
     expect(screen.getByTestId("story-3")).toBeInTheDocument();
   });
 
-  it("filters out hidden stories", () => {
-    render(<StoryList stories={mockStories} hidden={[2]} addHidden={() => {}} />);
-
-    expect(screen.getByTestId("story-1")).toBeInTheDocument();
-    expect(screen.queryByTestId("story-2")).not.toBeInTheDocument();
-    expect(screen.getByTestId("story-3")).toBeInTheDocument();
-  });
-
-  it("renders empty when all stories are hidden", () => {
-    const { container } = render(
-      <StoryList stories={mockStories} hidden={[1, 2, 3]} addHidden={() => {}} />
-    );
-
-    expect(container.innerHTML).toBe("");
-  });
-
   it("renders empty for empty stories array", () => {
     const { container } = render(
-      <StoryList stories={[]} hidden={[]} addHidden={() => {}} />
+      <StoryList stories={[]} addHidden={() => {}} />
     );
 
     expect(container.innerHTML).toBe("");

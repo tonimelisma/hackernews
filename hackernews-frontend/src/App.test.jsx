@@ -15,7 +15,6 @@ vi.mock("react-virtuoso", () => ({
 vi.mock("./services/storyService", () => ({
   default: {
     getAll: vi.fn(),
-    getHidden: vi.fn(),
     addHidden: vi.fn(),
   },
 }));
@@ -34,7 +33,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   storyService.getAll.mockResolvedValue({ data: [] });
-  storyService.getHidden.mockResolvedValue({ data: [] });
   loginService.getMe.mockRejectedValue(new Error("not logged in"));
 });
 
@@ -106,26 +104,12 @@ describe("App", () => {
 
   it("checks login state via getMe on mount", async () => {
     loginService.getMe.mockResolvedValue({ username: "saveduser" });
-    storyService.getHidden.mockResolvedValue({ data: [1, 2, 3] });
 
     render(<App />);
 
     await waitFor(() => {
       expect(loginService.getMe).toHaveBeenCalled();
     });
-    await waitFor(() => {
-      expect(storyService.getHidden).toHaveBeenCalled();
-    });
-  });
-
-  it("does not fetch hidden when not logged in", async () => {
-    render(<App />);
-
-    await waitFor(() => {
-      expect(storyService.getAll).toHaveBeenCalled();
-    });
-
-    expect(storyService.getHidden).not.toHaveBeenCalled();
   });
 
   it("shows error alert when story fetch fails", async () => {
@@ -184,9 +168,8 @@ describe("App", () => {
     expect(updatedWeekButtons.some((btn) => btn.classList.contains("btn-primary"))).toBe(true);
   });
 
-  it("reverts hidden state when addHidden API call fails", async () => {
+  it("reverts stories when addHidden API call fails", async () => {
     loginService.getMe.mockResolvedValue({ username: "testuser" });
-    storyService.getHidden.mockResolvedValue({ data: [] });
     storyService.addHidden.mockRejectedValue(new Error("server error"));
     storyService.getAll.mockResolvedValue({
       data: [
@@ -221,6 +204,56 @@ describe("App", () => {
     // After API failure, story should reappear (rollback)
     await waitFor(() => {
       expect(screen.getByText("Test Story")).toBeInTheDocument();
+    });
+  });
+
+  it("does not show hide button when logged out", async () => {
+    storyService.getAll.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          title: "Test Story",
+          by: "author",
+          score: 100,
+          descendants: 50,
+          time: new Date().toISOString(),
+          url: "https://example.com",
+        },
+      ],
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Story")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByLabelText("Hide story")).not.toBeInTheDocument();
+  });
+
+  it("re-fetches stories after login", async () => {
+    loginService.getMe.mockRejectedValue(new Error("not logged in"));
+    loginService.login.mockResolvedValue({ username: "testuser" });
+    storyService.getAll.mockResolvedValue({ data: [] });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(storyService.getAll).toHaveBeenCalledTimes(1);
+    });
+
+    // Fill in login form and submit
+    const usernameInput = screen.getByLabelText("Username");
+    const passwordInput = screen.getByLabelText("Password");
+    fireEvent.change(usernameInput, { target: { value: "testuser" } });
+    fireEvent.change(passwordInput, { target: { value: "pass" } });
+
+    const loginButton = screen.getByRole("button", { name: /log/i });
+    fireEvent.click(loginButton);
+
+    // After login, stories should be re-fetched (server now filters hidden)
+    await waitFor(() => {
+      expect(storyService.getAll).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -270,105 +303,6 @@ describe("App", () => {
     await waitFor(() => {
       expect(storyService.getAll).toHaveBeenCalled();
     });
-  });
-
-  it("shows spinner until hidden state is loaded for logged-in users", async () => {
-    let resolveHidden;
-    loginService.getMe.mockResolvedValue({ username: "testuser" });
-    storyService.getHidden.mockReturnValue(new Promise((resolve) => { resolveHidden = resolve; }));
-    storyService.getAll.mockResolvedValue({
-      data: [{ id: 1, title: "Story 1", by: "a", score: 100, descendants: 10, time: new Date().toISOString(), url: "https://example.com" }],
-    });
-
-    render(<App />);
-
-    // Spinner should show while waiting for hidden
-    await waitFor(() => {
-      expect(storyService.getHidden).toHaveBeenCalled();
-    });
-    expect(screen.getByText("Loading...")).toBeInTheDocument();
-
-    // Resolve hidden — stories should appear
-    resolveHidden({ data: [] });
-    await waitFor(() => {
-      expect(screen.getByText("Story 1")).toBeInTheDocument();
-    });
-  });
-
-  it("loads hidden from localStorage on mount", async () => {
-    localStorage.setItem("hiddenStories", JSON.stringify([42, 99]));
-    storyService.getAll.mockResolvedValue({
-      data: [
-        { id: 42, title: "Hidden Story", by: "a", score: 100, descendants: 10, time: new Date().toISOString(), url: "https://example.com/1" },
-        { id: 1, title: "Visible Story", by: "b", score: 200, descendants: 20, time: new Date().toISOString(), url: "https://example.com/2" },
-      ],
-    });
-
-    render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Visible Story")).toBeInTheDocument();
-    });
-    expect(screen.queryByText("Hidden Story")).not.toBeInTheDocument();
-  });
-
-  it("persists hidden to localStorage when hiding a story", async () => {
-    storyService.getAll.mockResolvedValue({
-      data: [{ id: 7, title: "Test Story", by: "a", score: 100, descendants: 10, time: new Date().toISOString(), url: "https://example.com" }],
-    });
-
-    render(<App />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Test Story")).toBeInTheDocument();
-    });
-
-    const hideButton = screen.getByLabelText("Hide story");
-    fireEvent.click(hideButton);
-
-    await waitFor(() => {
-      expect(screen.queryByText("Test Story")).not.toBeInTheDocument();
-    });
-    expect(JSON.parse(localStorage.getItem("hiddenStories"))).toContain(7);
-  });
-
-  it("merges server and localStorage hidden on login", async () => {
-    localStorage.setItem("hiddenStories", JSON.stringify([1, 2]));
-    loginService.getMe.mockResolvedValue({ username: "testuser" });
-    storyService.getHidden.mockResolvedValue({ data: [2, 3] });
-    storyService.getAll.mockResolvedValue({ data: [] });
-
-    render(<App />);
-
-    await waitFor(() => {
-      expect(storyService.getHidden).toHaveBeenCalled();
-    });
-
-    // Merged hidden should contain 1, 2, 3
-    await waitFor(() => {
-      const saved = JSON.parse(localStorage.getItem("hiddenStories"));
-      expect(saved).toEqual(expect.arrayContaining([1, 2, 3]));
-      expect(saved).toHaveLength(3);
-    });
-  });
-
-  it("syncs localStorage-only hidden IDs to server on login", async () => {
-    localStorage.setItem("hiddenStories", JSON.stringify([1, 2]));
-    loginService.getMe.mockResolvedValue({ username: "testuser" });
-    storyService.getHidden.mockResolvedValue({ data: [2, 3] });
-    storyService.addHidden.mockResolvedValue({});
-    storyService.getAll.mockResolvedValue({ data: [] });
-
-    render(<App />);
-
-    // ID 1 is in localStorage but not on server — should be POSTed
-    await waitFor(() => {
-      expect(storyService.addHidden).toHaveBeenCalledWith(1);
-    });
-    // ID 2 is on both server and localStorage — should NOT be POSTed
-    expect(storyService.addHidden).not.toHaveBeenCalledWith(2);
-    // ID 3 is on server only — should NOT be POSTed
-    expect(storyService.addHidden).not.toHaveBeenCalledWith(3);
   });
 
   it("restores saved timespan from localStorage on load", async () => {
