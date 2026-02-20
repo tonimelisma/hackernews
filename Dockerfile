@@ -10,7 +10,7 @@ RUN cd hackernews-frontend && npm run build
 RUN mkdir -p /data && node scripts/import-json-to-sqlite.js /data/hackernews.db
 
 FROM node:20-alpine
-RUN apk add --no-cache wget
+RUN apk add --no-cache wget sqlite
 WORKDIR /app
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/hackernews-frontend/build ./hackernews-frontend/build
