@@ -69,7 +69,7 @@ hackernews/
 │   ├── build/                      # Production build output (gitignored)
 │   └── src/
 │       ├── index.jsx               # createRoot entry point (React 19)
-│       ├── App.jsx                 # Main component: stories, auth, timespan filtering, localStorage hidden
+│       ├── App.jsx                 # Main component: stories, auth, timespan filtering, localStorage hidden + timespan
 │       ├── App.css                 # Styles
 │       ├── hooks/
 │       │   └── useTheme.js        # System dark/light mode detection (prefers-color-scheme)

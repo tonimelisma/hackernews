@@ -138,13 +138,15 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 12. **Hidden stories localStorage persistence**: Anonymous users' hidden state persists via `localStorage` (`hiddenStories` key). On login, server hidden IDs are merged with localStorage, and any localStorage-only IDs are synced back to the server (fire-and-forget). `hiddenLoaded` state gates `StoryList` rendering to prevent flash of unhidden stories.
 
-13. **Dark mode via system preference**: Bootstrap 5.3's `data-bs-theme` attribute on `<html>`. A synchronous `<script>` in `index.html` sets the attribute before first paint (no flash). `useTheme` hook listens for live OS changes. No manual toggle — system detection only.
+13. **Timespan localStorage persistence**: Selected timespan filter persists via `localStorage` (`timespan` key) as `{ value, timestamp }`. On page load, restores the saved value if the timestamp is less than 3 hours old; otherwise defaults to "Day". Saved on every timespan change via `useEffect`.
 
-14. **Static file caching strategy**: `index.html` served with `Cache-Control: no-cache`; hashed `/assets/*` files served with `max-age=1y, immutable`.
+14. **Dark mode via system preference**: Bootstrap 5.3's `data-bs-theme` attribute on `<html>`. A synchronous `<script>` in `index.html` sets the attribute before first paint (no flash). `useTheme` hook listens for live OS changes. No manual toggle — system detection only.
 
-15. **Docker deployment**: Multi-stage `Dockerfile` builds node:20-alpine image with npm ci + frontend build + SQLite data import (data baked into image). `docker-compose.yml` runs app + Caddy (reverse proxy with auto HTTPS) with health checks. `docker-compose.dev.yml` for local testing (app only, port 3000, no Caddy). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d`. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
+15. **Static file caching strategy**: `index.html` served with `Cache-Control: no-cache`; hashed `/assets/*` files served with `max-age=1y, immutable`.
 
-16. **Daily SQLite backup**: `scripts/backup-sqlite.sh` runs SQLite `.backup` inside the container, compresses with gzip, and uploads to `gs://hackernews-melisma-backup/`. Cron job at 3:00 AM UTC daily. 30-day retention. ~3.3 MB compressed per backup, well within GCP Always Free 5 GB.
+16. **Docker deployment**: Multi-stage `Dockerfile` builds node:20-alpine image with npm ci + frontend build + SQLite data import (data baked into image). `docker-compose.yml` runs app + Caddy (reverse proxy with auto HTTPS) with health checks. `docker-compose.dev.yml` for local testing (app only, port 3000, no Caddy). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d`. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
+
+17. **Daily SQLite backup**: `scripts/backup-sqlite.sh` runs SQLite `.backup` inside the container, compresses with gzip, and uploads to `gs://hackernews-melisma-backup/`. Cron job at 3:00 AM UTC daily. 30-day retention. ~3.3 MB compressed per backup, well within GCP Always Free 5 GB.
 
 ## Documentation
 
@@ -161,10 +163,10 @@ All of these must be kept current with every change:
 |-------|-------|
 | Backend unit (middleware, config, hackernews, database, dbLogger) | 48 |
 | Backend integration (storyService, api, worker) | 72 |
-| Frontend component (App, StoryList, Story) | 33 |
+| Frontend component (App, StoryList, Story) | 37 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total** | **165** |
+| **Total** | **169** |
 
 ## Project Health
 

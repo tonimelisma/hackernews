@@ -10,6 +10,23 @@ import loginService from "./services/loginService";
 import StoryList from "./components/StoryList";
 import useTheme from "./hooks/useTheme";
 
+const TIMESPAN_TTL = 3 * 60 * 60 * 1000; // 3 hours
+
+const loadTimespan = () => {
+  try {
+    const saved = localStorage.getItem("timespan");
+    if (!saved) return "Day";
+    const { value, timestamp } = JSON.parse(saved);
+    if (Date.now() - timestamp > TIMESPAN_TTL) return "Day";
+    return value;
+  } catch { return "Day"; }
+};
+
+const saveTimespan = (value) => {
+  try { localStorage.setItem("timespan", JSON.stringify({ value, timestamp: Date.now() })); }
+  catch { /* full or unavailable */ }
+};
+
 const loadLocalHidden = () => {
   try {
     const saved = localStorage.getItem("hiddenStories");
@@ -25,7 +42,7 @@ const saveLocalHidden = (hidden) => {
 const App = () => {
   useTheme();
   const [stories, setStories] = useState([]);
-  const [timespan, setTimespan] = useState("Day");
+  const [timespan, setTimespan] = useState(() => loadTimespan());
   const [hidden, setHidden] = useState(() => loadLocalHidden());
   const [hiddenLoaded, setHiddenLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -50,6 +67,10 @@ const App = () => {
         setError("Failed to load stories.");
         setLoading(false);
       });
+  }, [timespan]);
+
+  useEffect(() => {
+    saveTimespan(timespan);
   }, [timespan]);
 
   useEffect(() => {

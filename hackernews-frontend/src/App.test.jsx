@@ -370,4 +370,55 @@ describe("App", () => {
     // ID 3 is on server only — should NOT be POSTed
     expect(storyService.addHidden).not.toHaveBeenCalledWith(3);
   });
+
+  it("restores saved timespan from localStorage on load", async () => {
+    localStorage.setItem("timespan", JSON.stringify({ value: "Week", timestamp: Date.now() }));
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(storyService.getAll).toHaveBeenCalledWith("Week");
+    });
+    // Week button should be highlighted
+    const weekButtons = screen.getAllByText("Week");
+    expect(weekButtons.some((btn) => btn.classList.contains("btn-primary"))).toBe(true);
+  });
+
+  it("defaults to Day when localStorage timespan is empty", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(storyService.getAll).toHaveBeenCalledWith("Day");
+    });
+  });
+
+  it("defaults to Day when saved timespan is older than 3 hours", async () => {
+    const fourHoursAgo = Date.now() - 4 * 60 * 60 * 1000;
+    localStorage.setItem("timespan", JSON.stringify({ value: "Year", timestamp: fourHoursAgo }));
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(storyService.getAll).toHaveBeenCalledWith("Day");
+    });
+  });
+
+  it("saves timespan to localStorage when changed", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(storyService.getAll).toHaveBeenCalledWith("Day");
+    });
+
+    const weekButtons = screen.getAllByText("Week");
+    fireEvent.click(weekButtons[0]);
+
+    await waitFor(() => {
+      expect(storyService.getAll).toHaveBeenCalledWith("Week");
+    });
+
+    const saved = JSON.parse(localStorage.getItem("timespan"));
+    expect(saved.value).toBe("Week");
+    expect(saved.timestamp).toBeGreaterThan(0);
+  });
 });

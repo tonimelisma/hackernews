@@ -33,13 +33,13 @@ npm test && cd hackernews-frontend && npm test && cd ..
 
 | File | Type | Tests | What it covers |
 |------|------|-------|----------------|
-| `src/App.test.jsx` | Component | 18 | App rendering, timespan, loading, auth, hiddenLoaded, localStorage, login button disable, hidden sync to server |
+| `src/App.test.jsx` | Component | 22 | App rendering, timespan, loading, auth, hiddenLoaded, localStorage, login button disable, hidden sync to server, timespan persistence |
 | `src/components/StoryList.test.jsx` | Component | 4 | List rendering, hidden filtering (react-virtuoso mocked) |
 | `src/components/Story.test.jsx` | Component | 11 | Story card: title, author, score, time, favicon, hide, URL safety |
 | `src/hooks/useTheme.test.js` | Hook | 4 | Theme detection, live changes, cleanup |
 | `src/services/storyService.test.js` | Unit | 4 | Axios calls for stories/hidden |
 | `src/services/loginService.test.js` | Unit | 4 | Axios calls for login, logout, getMe |
-| **Total** | | **45** | |
+| **Total** | | **49** | |
 
 ## Key Technical Details
 
