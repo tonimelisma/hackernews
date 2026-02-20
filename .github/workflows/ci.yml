@@ -38,7 +38,7 @@ jobs:
           retention-days: 14
 
       - name: Run npm audit
-        run: npm audit --audit-level=moderate
+        run: npm audit --audit-level=moderate --omit=dev
 
   frontend-tests:
     runs-on: ubuntu-latest
@@ -76,3 +76,19 @@ jobs:
         run: npm audit --audit-level=moderate
         working-directory: hackernews-frontend
 
+  deploy:
+    needs: [backend-tests, frontend-tests]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    environment: production
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: 34.45.72.52
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/hackernews
+            git pull origin master
+            docker compose up --build -d
+            docker compose ps

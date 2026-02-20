@@ -3,7 +3,6 @@ node_modules
 tests
 docs
 coverage
-scripts
 *.md
 .env
 *.db
@@ -15,4 +14,5 @@ scripts
 jest.config.js
 eslint.config.js
 docker-compose.yml
+docker-compose.dev.yml
 Caddyfile

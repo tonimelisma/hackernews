@@ -3,6 +3,10 @@ const { getDb } = require("./database");
 
 const newStoriesUrl =
   "https://hacker-news.firebaseio.com/v0/newstories.json?print=pretty";
+const topStoriesUrl =
+  "https://hacker-news.firebaseio.com/v0/topstories.json?print=pretty";
+const bestStoriesUrl =
+  "https://hacker-news.firebaseio.com/v0/beststories.json?print=pretty";
 
 const itemUrl = item =>
   `https://hacker-news.firebaseio.com/v0/item/${item}.json?print=pretty`;
@@ -79,6 +83,25 @@ const getNewStories = async () => {
     return newStories.data;
   } catch (e) {
     console.error("getNewStories error:", e);
+    return [];
+  }
+};
+
+const getAllStoryIds = async () => {
+  try {
+    const [newRes, topRes, bestRes] = await Promise.all([
+      axios.get(newStoriesUrl),
+      axios.get(topStoriesUrl),
+      axios.get(bestStoriesUrl),
+    ]);
+    const combined = [
+      ...(newRes.data || []),
+      ...(topRes.data || []),
+      ...(bestRes.data || []),
+    ];
+    return [...new Set(combined)];
+  } catch (e) {
+    console.error("getAllStoryIds error:", e);
     return [];
   }
 };
@@ -201,6 +224,7 @@ const updateStories = async (storyIdList, ctx) => {
 
 module.exports = {
   getNewStories,
+  getAllStoryIds,
   getTopStories,
   getItem,
   getItems,

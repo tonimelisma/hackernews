@@ -94,6 +94,31 @@ describe("services/hackernews", () => {
     });
   });
 
+  describe("getAllStoryIds", () => {
+    it("fetches and deduplicates IDs from new, top, and best endpoints", async () => {
+      axios.get
+        .mockResolvedValueOnce({ data: [100, 200, 300] })  // newstories
+        .mockResolvedValueOnce({ data: [200, 400, 500] })  // topstories
+        .mockResolvedValueOnce({ data: [300, 500, 600] }); // beststories
+
+      const result = await hackernews.getAllStoryIds();
+
+      expect(result).toEqual(expect.arrayContaining([100, 200, 300, 400, 500, 600]));
+      expect(result).toHaveLength(6);
+    });
+
+    it("returns empty array on error", async () => {
+      axios.get.mockRejectedValue(new Error("network error"));
+
+      const consoleSpy = jest
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+      const result = await hackernews.getAllStoryIds();
+      expect(result).toEqual([]);
+      consoleSpy.mockRestore();
+    });
+  });
+
   describe("getTopStories", () => {
     it("scrapes story IDs from hntoplinks for daily", async () => {
       const htmlWithStories =

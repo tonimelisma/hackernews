@@ -2,7 +2,7 @@ const { getDb } = require("./services/database");
 const Remote = require("./services/hackernews");
 const { createDbContext } = require("./util/dbLogger");
 
-const WORKER_BATCH_LIMIT = 200;
+const WORKER_BATCH_LIMIT = 500;
 
 const sleep = time => {
   return new Promise(resolve => setTimeout(resolve, time));
@@ -26,26 +26,17 @@ const syncOnce = async () => {
   let updatedCount = 0;
   const db = getDb();
 
-  // LOAD LATEST STORIES
+  // LOAD LATEST STORIES (new + top + best)
   try {
-    const latestRow = db.prepare("SELECT id FROM stories ORDER BY id DESC LIMIT 1").get();
-    ctx.read("stories", latestRow ? 1 : 0);
+    const allRemoteIds = await Remote.getAllStoryIds();
+    console.log("fetched %d unique story IDs from HN API", allRemoteIds.length);
 
-    const latestRemoteStoryIds = await Remote.getNewStories();
-
-    if (!latestRow) {
-      console.log("empty db, bootstrapping...");
-      await Remote.addStories(latestRemoteStoryIds, ctx);
-      newCount = latestRemoteStoryIds.length;
-    } else {
-      const latestLocalId = latestRow.id;
-      if (latestLocalId < latestRemoteStoryIds[0]) {
-        console.log("new stories available: local=%d remote=%d", latestLocalId, latestRemoteStoryIds[0]);
-        const newStoryIds = latestRemoteStoryIds.filter(
-          checkStoryId => checkStoryId > latestLocalId
-        );
-        await Remote.addStories(newStoryIds, ctx);
-        newCount = newStoryIds.length;
+    if (allRemoteIds.length > 0) {
+      const missingIds = await Remote.checkStoryExists(allRemoteIds, ctx);
+      if (missingIds.length > 0) {
+        console.log("adding %d new stories", missingIds.length);
+        await Remote.addStories(missingIds, ctx);
+        newCount = missingIds.length;
       } else {
         console.log("all stories in local db already");
       }

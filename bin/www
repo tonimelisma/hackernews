@@ -104,7 +104,38 @@ function onListening() {
     .then(() => console.log("Initial sync complete"))
     .catch((e) => console.error("Initial sync failed:", e));
 
-  setInterval(() => {
+  workerInterval = setInterval(() => {
     syncOnce().catch((e) => console.error("Worker sync error:", e));
   }, 15 * 60 * 1000);
 }
+
+/**
+ * Graceful shutdown
+ */
+
+let workerInterval;
+
+function shutdown(signal) {
+  console.log(`${signal} received, shutting down gracefully...`);
+  if (workerInterval) {
+    clearInterval(workerInterval);
+  }
+  server.close(() => {
+    console.log("HTTP server closed");
+    try {
+      getDb().close();
+      console.log("Database closed");
+    } catch (e) {
+      // DB may already be closed
+    }
+    process.exit(0);
+  });
+  // Force exit after 10s if graceful shutdown hangs
+  setTimeout(() => {
+    console.error("Forced shutdown after timeout");
+    process.exit(1);
+  }, 10000);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

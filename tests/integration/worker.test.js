@@ -93,35 +93,39 @@ describe("worker logic (simulated)", () => {
 
 describe("syncOnce()", () => {
   beforeEach(() => {
-    Remote.getNewStories.mockReset();
+    Remote.getAllStoryIds.mockReset();
+    Remote.checkStoryExists.mockReset();
     Remote.addStories.mockReset();
     Remote.updateStories.mockReset();
     Remote.addStories.mockResolvedValue();
     Remote.updateStories.mockResolvedValue([]);
   });
 
-  it("bootstraps when DB is empty", async () => {
-    Remote.getNewStories.mockResolvedValue([300, 200, 100]);
+  it("adds missing stories from getAllStoryIds", async () => {
+    Remote.getAllStoryIds.mockResolvedValue([300, 200, 100]);
+    Remote.checkStoryExists.mockResolvedValue([300, 200, 100]);
 
     await syncOnce();
 
     expect(Remote.addStories).toHaveBeenCalledWith([300, 200, 100], expect.any(Object));
   });
 
-  it("adds only new stories when local DB has stories", async () => {
+  it("adds only missing stories when some exist locally", async () => {
     seedStory({ id: 100, score: 50 });
 
-    Remote.getNewStories.mockResolvedValue([300, 200, 100, 50]);
+    Remote.getAllStoryIds.mockResolvedValue([300, 200, 100]);
+    Remote.checkStoryExists.mockResolvedValue([300, 200]);
 
     await syncOnce();
 
     expect(Remote.addStories).toHaveBeenCalledWith([300, 200], expect.any(Object));
   });
 
-  it("skips addStories when no new stories available", async () => {
+  it("skips addStories when no missing stories", async () => {
     seedStory({ id: 500, score: 200 });
 
-    Remote.getNewStories.mockResolvedValue([400, 300, 200]);
+    Remote.getAllStoryIds.mockResolvedValue([500, 400, 300]);
+    Remote.checkStoryExists.mockResolvedValue([]);
 
     await syncOnce();
 
@@ -137,7 +141,8 @@ describe("syncOnce()", () => {
       updated: now - 49 * 60 * 60 * 1000, // 49h ago
     });
 
-    Remote.getNewStories.mockResolvedValue([50]); // no new stories
+    Remote.getAllStoryIds.mockResolvedValue([50]);
+    Remote.checkStoryExists.mockResolvedValue([]);
 
     await syncOnce();
 
@@ -152,7 +157,8 @@ describe("syncOnce()", () => {
       updated: Date.now(),
     });
 
-    Remote.getNewStories.mockResolvedValue([50]); // no new stories
+    Remote.getAllStoryIds.mockResolvedValue([50]);
+    Remote.checkStoryExists.mockResolvedValue([]);
 
     await syncOnce();
 
@@ -170,7 +176,8 @@ describe("syncOnce()", () => {
       });
     }
 
-    Remote.getNewStories.mockResolvedValue([1]); // no new stories
+    Remote.getAllStoryIds.mockResolvedValue([1]);
+    Remote.checkStoryExists.mockResolvedValue([]);
 
     await syncOnce();
 
@@ -181,6 +188,15 @@ describe("syncOnce()", () => {
     // At least one call should have exactly WORKER_BATCH_LIMIT
     const hasMaxBatch = calls.some(call => call[0].length === WORKER_BATCH_LIMIT);
     expect(hasMaxBatch).toBe(true);
+  });
+
+  it("handles getAllStoryIds returning empty array", async () => {
+    Remote.getAllStoryIds.mockResolvedValue([]);
+
+    await syncOnce();
+
+    expect(Remote.checkStoryExists).not.toHaveBeenCalled();
+    expect(Remote.addStories).not.toHaveBeenCalled();
   });
 });
 
@@ -201,6 +217,6 @@ describe("utility functions", () => {
   });
 
   it("exports WORKER_BATCH_LIMIT", () => {
-    expect(WORKER_BATCH_LIMIT).toBe(200);
+    expect(WORKER_BATCH_LIMIT).toBe(500);
   });
 });
