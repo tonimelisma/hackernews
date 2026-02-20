@@ -6,9 +6,10 @@ set -euo pipefail
 BACKUP_DIR=/tmp/hackernews-backup
 mkdir -p "$BACKUP_DIR"
 
-# Copy from Docker volume using SQLite .backup command
+# Run .backup inside the container to a temp file, then copy it out
 docker compose -f /opt/hackernews/docker-compose.yml exec -T app \
-  sqlite3 /data/hackernews.db ".backup '$BACKUP_DIR/hackernews.db'"
+  sqlite3 /data/hackernews.db ".backup '/tmp/hackernews-backup.db'"
+docker compose -f /opt/hackernews/docker-compose.yml cp app:/tmp/hackernews-backup.db "$BACKUP_DIR/hackernews.db"
 
 # Compress and upload to GCS with date stamp
 gzip -f "$BACKUP_DIR/hackernews.db"
