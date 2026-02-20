@@ -89,5 +89,29 @@ jobs:
           script: |
             cd /opt/hackernews
             git pull origin master
+
+            # Tag current image for rollback
+            docker tag hackernews-app:latest hackernews-app:previous 2>/dev/null || true
+
+            # Build and deploy
             docker compose up --build -d
+
+            # Wait for health check (up to 90s)
+            echo "Waiting for health check..."
+            for i in $(seq 1 18); do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' hackernews-app-1 2>/dev/null || echo "missing")
+              if [ "$STATUS" = "healthy" ]; then
+                echo "Health check passed"
+                docker compose ps
+                exit 0
+              fi
+              echo "  attempt $i: $STATUS"
+              sleep 5
+            done
+
+            # Health check failed — rollback
+            echo "HEALTH CHECK FAILED — rolling back"
+            docker tag hackernews-app:previous hackernews-app:latest 2>/dev/null || true
+            docker compose up -d
             docker compose ps
+            exit 1
