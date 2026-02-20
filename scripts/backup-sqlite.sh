@@ -13,11 +13,11 @@ docker compose -f /opt/hackernews/docker-compose.yml cp app:/tmp/hackernews-back
 
 # Compress and upload to GCS with date stamp
 gzip -f "$BACKUP_DIR/hackernews.db"
-gsutil cp "$BACKUP_DIR/hackernews.db.gz" \
+gcloud storage cp "$BACKUP_DIR/hackernews.db.gz" \
   "gs://hackernews-melisma-backup/hackernews-$(date +%Y%m%d).db.gz"
 
 # Keep only last 30 days
-gsutil ls gs://hackernews-melisma-backup/ | sort | head -n -30 | xargs -r gsutil rm
+gcloud storage ls gs://hackernews-melisma-backup/ | sort | head -n -30 | xargs -r gcloud storage rm
 
 # Cleanup
 rm -f "$BACKUP_DIR/hackernews.db.gz"
