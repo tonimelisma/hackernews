@@ -160,6 +160,12 @@ describe("services/storyService", () => {
       expect(result).toHaveLength(5);
     });
 
+    it("does not mutate hiddenIds array", async () => {
+      const hiddenIds = [2, 1];
+      await storyService.getStories("All", 10, 0, null, hiddenIds);
+      expect(hiddenIds).toEqual([2, 1]);
+    });
+
     it("handles self-post stories with no url field", async () => {
       await storyService.clearCache();
       await db.clearDatabase();

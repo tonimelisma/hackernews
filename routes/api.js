@@ -16,7 +16,7 @@ const loginLimiter = rateLimit({
 });
 
 const isValidUsername = (input) => {
-  return /^[a-zA-Z0-9_-]+$/.test(input);
+  return input.length <= 32 && /^[a-zA-Z0-9_-]+$/.test(input);
 };
 
 const COOKIE_OPTIONS = {

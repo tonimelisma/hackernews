@@ -378,6 +378,15 @@ describe("API routes", () => {
       expect(res.body.error).toBe("internal server error");
     });
 
+    it("returns 400 for username exceeding max length", async () => {
+      const res = await request(app)
+        .post("/api/v1/login")
+        .send({ goto: "news", acct: "a".repeat(33), pw: "pass" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("missing fields");
+    });
+
     // Must be last: exhausts the rate limiter's 10-request quota for the process
     it("returns 429 when rate limited", async () => {
       hackernews.login.mockResolvedValue(false);

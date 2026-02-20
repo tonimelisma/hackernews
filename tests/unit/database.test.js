@@ -16,7 +16,7 @@ describe("services/database", () => {
   });
 
   describe("initSchema", () => {
-    it("creates stories, users, and hidden tables", () => {
+    it("creates stories, users, hidden, and schema_migrations tables", () => {
       const { setDb, initSchema } = require("../../services/database");
       const memDb = new Database(":memory:");
       setDb(memDb);
@@ -29,6 +29,7 @@ describe("services/database", () => {
       expect(tables).toContain("stories");
       expect(tables).toContain("users");
       expect(tables).toContain("hidden");
+      expect(tables).toContain("schema_migrations");
       memDb.close();
     });
 

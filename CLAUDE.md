@@ -39,6 +39,11 @@ npm run worker
 
 # Import JSON data to SQLite
 npm run import
+
+# Database migrations
+npm run migrate            # Run pending migrations
+npm run migrate:rollback   # Roll back last migration
+npm run migrate:status     # Show migration status
 ```
 
 ## Working Style
@@ -80,9 +85,12 @@ hackernews/
 ├── bin/www                 # HTTP server bootstrap + SECRET validation + worker init
 ├── routes/api.js           # REST API routes (/stories, /hidden, /login, /logout, /me)
 ├── services/
-│   ├── database.js         # SQLite singleton (getDb, setDb, initSchema)
+│   ├── database.js         # SQLite singleton (getDb, setDb, initSchema → runs migrations)
+│   ├── migrator.js         # Database migration runner (runMigrations, rollback, status)
 │   ├── storyService.js     # Story/user CRUD (SQL queries)
 │   └── hackernews.js       # HN API client + story import/update
+├── migrations/
+│   └── 001-initial-schema.js # Initial tables: stories, users, hidden + indexes
 ├── util/
 │   ├── config.js           # Environment config (limitResults)
 │   ├── dbLogger.js         # Per-request DB operation & cache analytics logging
@@ -104,6 +112,7 @@ hackernews/
 │           └── loginService.js  # API client for login/logout/me
 ├── scripts/
 │   ├── import-json-to-sqlite.js # Import JSON → SQLite
+│   ├── migrate.js              # CLI: node scripts/migrate.js [up|rollback|status]
 │   └── backup-sqlite.sh        # Daily SQLite backup to GCS
 ├── .github/workflows/ci.yml # CI + SSH deploy pipeline
 ├── .husky/pre-commit       # Pre-commit hook (lint-staged)
@@ -114,7 +123,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 ## Key Architectural Constraints & Gotchas
 
-1. **SQLite lazy singleton**: `services/database.js` creates the SQLite connection on first use via `getDb()`. Enables WAL mode and foreign keys. `setDb()` allows test injection of `:memory:` databases. `initSchema()` creates tables and indexes (idempotent).
+1. **SQLite lazy singleton + migrations**: `services/database.js` creates the SQLite connection on first use via `getDb()`. Enables WAL mode and foreign keys. On first use, runs pending migrations via `services/migrator.js`. `setDb()` allows test injection of `:memory:` databases. `initSchema()` is a wrapper around `runMigrations()` for backward compatibility. Schema changes go in numbered migration files (`migrations/NNN-name.js`).
 
 2. **In-memory SQLite for tests**: Tests use `better-sqlite3` with `:memory:` databases via `setDb()` in `tests/setup.js`. No credentials, no network, no mocking of database modules. `clearDatabase()` truncates all tables between tests. Backend tests run in ~1 second.
 
@@ -122,7 +131,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 4. **Single SQL query for stories**: `getStories()` uses a single SQL query that handles time filtering, hidden story exclusion, score sorting, and pagination — all in one step. No client-side sorting, no multi-tier cache, no merge logic needed.
 
-5. **No input validation on API**: The `/stories` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint has `isValidUsername()` validation. `/stories` optionally reads auth cookie for server-side hidden filtering.
+5. **Input validation**: The `/stories` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint has `isValidUsername()` validation (alphanumeric + `_-`, max 32 chars). `/stories` optionally reads auth cookie for server-side hidden filtering.
 
 6. **`getHidden` returns empty array for missing users**: If username doesn't exist in the database, `getHidden` returns `[]` (no hidden stories).
 
@@ -148,6 +157,10 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 17. **Daily SQLite backup**: `scripts/backup-sqlite.sh` runs SQLite `.backup` inside the container, compresses with gzip, and uploads to `gs://hackernews-melisma-backup/`. Cron job at 3:00 AM UTC daily. 30-day retention. ~3.3 MB compressed per backup, well within GCP Always Free 5 GB.
 
+18. **CSP uses script hash (not unsafe-inline)**: The inline dark mode script in `index.html` is allowed via `'sha256-8y8P8Mwo9xa1B5mBjxyt9mk3G0AxFcNMDqIEmr6vUkQ='` in the CSP `script-src` directive. If the inline script content changes (even whitespace), the hash must be recomputed and updated in `app.js`.
+
+19. **Database migration system**: `services/migrator.js` reads numbered `.js` files from `migrations/`, runs pending `up()` functions in transactions, and tracks applied migrations in `schema_migrations` table. `rollbackMigration()` runs `down()` and removes the record. CLI: `node scripts/migrate.js [up|rollback|status]`. New schema changes must be added as new migration files (e.g., `migrations/002-add-column.js`).
+
 ## Documentation
 
 All of these must be kept current with every change:
@@ -161,12 +174,12 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, database, dbLogger) | 48 |
-| Backend integration (storyService, api, worker) | 72 |
+| Backend unit (middleware, config, hackernews, database, dbLogger, migrator) | 52 |
+| Backend integration (storyService, api, worker) | 74 |
 | Frontend component (App, StoryList, Story) | 37 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total** | **169** |
+| **Total** | **175** |
 
 ## Project Health
 
@@ -174,9 +187,9 @@ All of these must be kept current with every change:
 
 | Category | Grade | Summary |
 |----------|-------|---------|
-| Functionality | B | Core features work; hntoplinks scraper is brittle (regex) |
-| Security | A- | Helmet, CORS, rate limiting, JWT in HTTP-only cookie, SECRET validation |
-| Testing | A- | 165 tests, in-memory SQLite, ~1s backend runs |
+| Functionality | A- | Core features work; dead scraper code removed |
+| Security | A | Helmet (CSP with script hash), CORS, rate limiting, JWT in HTTP-only cookie, SECRET validation, username length validation |
+| Testing | A- | 175 tests, in-memory SQLite, ~1s backend runs |
 | Code Quality | A- | Clean codebase, dead code removed, SQLite simplification |
 | Architecture | A- | SQLite eliminates all Firestore hacks (L2 cache, patchStoryCache, Day-merge, padId, stripUndefined) |
 | Documentation | A- | CLAUDE.md + 4 reference docs, all updated |
@@ -190,7 +203,8 @@ All of these must be kept current with every change:
 
 ### Vulnerability Status
 
-- Backend: **0 vulnerabilities** — `npm audit` enforced in CI at `moderate` level
+- Backend production: **0 vulnerabilities** — `npm audit --omit=dev` enforced in CI at `moderate` level
+- Backend dev: 18 high (minimatch in Jest 30's transitive deps) — cannot fix without downgrading Jest; dev-only, no production impact
 - Frontend: **0 vulnerabilities** — `npm audit` enforced in CI at `moderate` level (Vite replaced CRA)
 
 ## Backlog
@@ -230,3 +244,6 @@ All of these must be kept current with every change:
 - **Hidden stories cross-device sync**: localStorage-only hidden IDs are synced to the server on page load (fire-and-forget, best-effort).
 - **SQLite WAL mode**: Enabled via `db.pragma("journal_mode = WAL")` for concurrent read/write support. Important for the integrated worker running alongside the Express server.
 - **In-memory SQLite for tests**: `better-sqlite3` with `new Database(":memory:")` via `setDb()`. No moduleNameMapper needed. `clearDatabase()` runs `DELETE FROM` on all tables. Tests complete in ~1 second.
+- **CSP script hash**: `'unsafe-inline'` replaced with SHA-256 hash of the inline dark mode script in `index.html`. Hash must be recomputed if the script content changes. Use: `python3 -c "import hashlib, base64; ..."` or `openssl dgst -sha256 -binary | openssl base64`.
+- **Database migration system**: `services/migrator.js` handles versioned schema migrations. Each migration file exports `up(db)` and `down(db)`. Migrations run in transactions. `initSchema()` in `database.js` is now a wrapper around `runMigrations()`. Migration tests use their own in-memory databases (not shared test setup).
+- **Cache key array mutation**: `storyService.getStories()` sorts `hiddenIds` for cache key computation — must copy with `[...hiddenIds]` first to avoid mutating the caller's array.

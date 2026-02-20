@@ -18,7 +18,7 @@ app.use(helmet({
     directives: {
       ...helmet.contentSecurityPolicy.getDefaultDirectives(),
       "img-src": ["'self'", "data:", "https://www.google.com", "https://*.gstatic.com"],
-      "script-src": ["'self'", "'unsafe-inline'"],
+      "script-src": ["'self'", "'sha256-8y8P8Mwo9xa1B5mBjxyt9mk3G0AxFcNMDqIEmr6vUkQ='"],
     },
   },
 }));

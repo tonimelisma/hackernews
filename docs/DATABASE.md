@@ -4,7 +4,7 @@
 
 The app uses SQLite via `better-sqlite3` with WAL mode enabled for concurrent read/write support. The database file location is configurable via `SQLITE_PATH` environment variable (default: `./data/hackernews.db`).
 
-Schema is initialized automatically on first use via `initSchema()` in `services/database.js`.
+Schema is managed via numbered migration files in `migrations/`. On first database use, `services/database.js` calls `runMigrations()` from `services/migrator.js`, which runs any pending migrations and tracks them in the `schema_migrations` table. CLI: `node scripts/migrate.js [up|rollback|status]`.
 
 ## Schema
 
@@ -69,6 +69,22 @@ CREATE INDEX IF NOT EXISTS idx_hidden_username ON hidden(username);
 | `story_id` | INTEGER NOT NULL | Hidden story ID |
 | `added_at` | INTEGER | Timestamp when hidden (epoch milliseconds) |
 
+### Schema Migrations
+
+```sql
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+);
+```
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `version` | INTEGER PRIMARY KEY | Migration number (e.g., 1 for 001-initial-schema) |
+| `name` | TEXT NOT NULL | Migration filename without extension |
+| `applied_at` | TEXT NOT NULL | ISO 8601 timestamp when migration was applied |
+
 ## Indexes
 
 | Index | Columns | Purpose |
@@ -82,9 +98,11 @@ CREATE INDEX IF NOT EXISTS idx_hidden_username ON hidden(username);
 
 | Component | Behavior |
 |-----------|----------|
-| `services/database.js` | Lazy singleton — `getDb()` opens SQLite on first call, enables WAL + foreign keys |
+| `services/database.js` | Lazy singleton — `getDb()` opens SQLite on first call, enables WAL + foreign keys, runs pending migrations |
 | `services/database.js:setDb()` | Allows tests to inject an in-memory `:memory:` database |
-| `services/database.js:initSchema()` | Creates tables and indexes (idempotent, uses IF NOT EXISTS) |
+| `services/database.js:initSchema()` | Wrapper around `runMigrations()` for backward compatibility with test setup |
+| `services/migrator.js` | Reads `migrations/*.js`, runs pending `up()` in transactions, tracks in `schema_migrations` |
+| `scripts/migrate.js` | CLI: `node scripts/migrate.js [up\|rollback\|status]` |
 
 ## Query Patterns
 

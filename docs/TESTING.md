@@ -21,13 +21,14 @@ npm test && cd hackernews-frontend && npm test && cd ..
 |------|------|-------|----------------|
 | `tests/unit/middleware.test.js` | Unit | 3 | `unknownEndpoint` (404), `errorHandler` (500 + next) |
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
-| `tests/unit/hackernewsService.test.js` | Unit+DB | 29 | All HN API functions (axios mocked), SQLite operations, ctx tracking, updateStories return value, undefined score filtering, getAllStoryIds dedup |
-| `tests/unit/database.test.js` | Unit | 3 | getDb/setDb, initSchema creates tables/indexes, idempotent schema init |
+| `tests/unit/hackernewsService.test.js` | Unit+DB | 23 | HN API functions (axios mocked), SQLite operations, ctx tracking, updateStories return value, undefined score filtering, getAllStoryIds dedup |
+| `tests/unit/database.test.js` | Unit | 3 | getDb/setDb, initSchema creates tables/indexes/schema_migrations, idempotent schema init |
 | `tests/unit/dbLogger.test.js` | Unit | 12 | createDbContext: counters, read/write, L1/MISS cache, per-table breakdown, query inline logging |
-| `tests/integration/storyService.test.js` | Integration | 26 | All storyService CRUD, L1 cache, hidden cache+dedup, cache expiry, query caps |
-| `tests/integration/api.test.js` | Integration | 31 | Full HTTP request/response via supertest |
+| `tests/unit/migrator.test.js` | Unit | 10 | ensureMigrationsTable, runMigrations (order, skip, auto-create, tables, timestamps), rollback, status |
+| `tests/integration/storyService.test.js` | Integration | 27 | All storyService CRUD, L1 cache, hidden cache+dedup, cache expiry, query caps, hiddenIds mutation guard |
+| `tests/integration/api.test.js` | Integration | 32 | Full HTTP request/response via supertest, username length validation |
 | `tests/integration/worker.test.js` | Integration | 15 | syncOnce() direct tests, compound staleness queries, batch limits, utility functions, empty getAllStoryIds |
-| **Total** | | **120** | |
+| **Total** | | **126** | |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -143,7 +144,9 @@ CI uploads coverage artifacts (14-day retention) via `actions/upload-artifact@v4
 
 | Test File | Test Name | Original Bug |
 |-----------|-----------|--------------|
+| `storyService.test.js` | "does not mutate hiddenIds array" | `getStories` mutated caller's hiddenIds via `.sort()` |
 | `storyService.test.js` | "returns empty array when user does not exist" | `getHidden` null pointer crash |
+| `api.test.js` | "returns 400 for username exceeding max length" | No length limit on username |
 | `api.test.js` | "returns 400 for unsanitary username" | Overly restrictive username validation |
 | `storyService.test.js` | "deduplicates concurrent getHidden calls for same user" | Race condition: simultaneous requests doubled reads |
 | `App.test.jsx` | "disables login button while login is in flight" | Double login POST from rapid button clicks |

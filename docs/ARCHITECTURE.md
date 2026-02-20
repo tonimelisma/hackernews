@@ -52,9 +52,13 @@ hackernews/
 │   └── api.js                      # All API endpoints (/stories, /hidden, /login)
 │
 ├── services/
-│   ├── database.js                 # SQLite singleton (getDb, setDb, initSchema)
+│   ├── database.js                 # SQLite singleton (getDb, setDb, initSchema → runs migrations)
+│   ├── migrator.js                 # Database migration runner (runMigrations, rollback, status)
 │   ├── storyService.js             # Story/user CRUD (SQL queries)
 │   └── hackernews.js               # HN API client + story import/update
+│
+├── migrations/
+│   └── 001-initial-schema.js       # Initial tables: stories, users, hidden + indexes
 │
 ├── util/
 │   ├── config.js                   # dotenv config (limitResults)
@@ -85,9 +89,10 @@ hackernews/
 │   ├── unit/                       # Pure unit tests
 │   └── integration/                # Tests with in-memory SQLite + supertest
 │
-├── scripts/                        # Migration/utility scripts
+├── scripts/                        # Utility scripts
 │   ├── data/                       # Exported JSON data (gitignored)
 │   ├── import-json-to-sqlite.js    # Import JSON stories/users/hidden → SQLite
+│   ├── migrate.js                  # CLI: node scripts/migrate.js [up|rollback|status]
 │   └── backup-sqlite.sh            # Daily SQLite backup to GCS
 │
 ├── docs/                           # LLM-geared documentation

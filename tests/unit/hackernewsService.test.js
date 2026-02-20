@@ -70,30 +70,6 @@ describe("services/hackernews", () => {
     });
   });
 
-  describe("getNewStories", () => {
-    it("returns story IDs from HN API", async () => {
-      const mockIds = [123, 456, 789];
-      axios.get.mockResolvedValue({ data: mockIds });
-
-      const result = await hackernews.getNewStories();
-      expect(result).toEqual(mockIds);
-      expect(axios.get).toHaveBeenCalledWith(
-        "https://hacker-news.firebaseio.com/v0/newstories.json?print=pretty"
-      );
-    });
-
-    it("returns empty array on error", async () => {
-      axios.get.mockRejectedValue(new Error("network error"));
-
-      const consoleSpy = jest
-        .spyOn(console, "error")
-        .mockImplementation(() => {});
-      const result = await hackernews.getNewStories();
-      expect(result).toEqual([]);
-      consoleSpy.mockRestore();
-    });
-  });
-
   describe("getAllStoryIds", () => {
     it("fetches and deduplicates IDs from new, top, and best endpoints", async () => {
       axios.get
@@ -116,56 +92,6 @@ describe("services/hackernews", () => {
       const result = await hackernews.getAllStoryIds();
       expect(result).toEqual([]);
       consoleSpy.mockRestore();
-    });
-  });
-
-  describe("getTopStories", () => {
-    it("scrapes story IDs from hntoplinks for daily", async () => {
-      const htmlWithStories =
-        '<div class="score_12345"></div><div class="score_67890"></div>';
-      axios.get.mockResolvedValueOnce({ data: htmlWithStories + "No more items" });
-
-      const result = await hackernews.getTopStories("daily");
-
-      expect(result).toEqual(["12345", "67890"]);
-      expect(axios.get).toHaveBeenCalledWith(
-        "https://www.hntoplinks.com/today/1"
-      );
-    });
-
-    it("paginates until 'No more items' is found", async () => {
-      const page1 = '<div class="score_111"></div>';
-      const page2 = '<div class="score_222"></div>No more items';
-
-      axios.get
-        .mockResolvedValueOnce({ data: page1 })
-        .mockResolvedValueOnce({ data: page2 });
-
-      const result = await hackernews.getTopStories("daily");
-
-      expect(result).toEqual(["111", "222"]);
-      expect(axios.get).toHaveBeenCalledTimes(2);
-    });
-
-    it("returns empty array on error", async () => {
-      axios.get.mockRejectedValue(new Error("network error"));
-
-      const consoleSpy = jest
-        .spyOn(console, "error")
-        .mockImplementation(() => {});
-      const result = await hackernews.getTopStories("daily");
-      expect(result).toEqual([]);
-      consoleSpy.mockRestore();
-    });
-
-    it("uses weekly URL for weekly timespan", async () => {
-      axios.get.mockResolvedValueOnce({ data: "No more items" });
-
-      await hackernews.getTopStories("weekly");
-
-      expect(axios.get).toHaveBeenCalledWith(
-        "https://www.hntoplinks.com/week/1"
-      );
     });
   });
 

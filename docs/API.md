@@ -106,7 +106,7 @@ Authenticate via HackerNews credentials. Proxies the login request to `news.ycom
 }
 ```
 
-**Validation:** Username must match `[a-zA-Z0-9_-]+` (`isValidUsername()`). Returns `400` if invalid.
+**Validation:** Username must match `[a-zA-Z0-9_-]+` and be at most 32 characters (`isValidUsername()`). Returns `400` if invalid.
 
 **Response (success):** `200 OK`
 

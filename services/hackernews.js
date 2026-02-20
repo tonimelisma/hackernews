@@ -13,12 +13,6 @@ const itemUrl = item =>
 
 const loginUrl = "https://news.ycombinator.com/login";
 
-const dailyTopStoriesUrl = "https://www.hntoplinks.com/today/";
-const weeklyTopStoriesUrl = "https://www.hntoplinks.com/week/";
-const monthlyTopStoriesUrl = "https://www.hntoplinks.com/month/";
-const yearlyTopStoriesUrl = "https://www.hntoplinks.com/year/";
-const alltimeTopStoriesUrl = "https://www.hntoplinks.com/all/";
-
 const login = async (goto, acct, pw) => {
   const response = await axios.post(
     loginUrl,
@@ -34,57 +28,6 @@ const login = async (goto, acct, pw) => {
     }
   }
   return false;
-};
-
-const getTopStories = async time => {
-  try {
-    let url = "";
-    switch (time) {
-      case "weekly":
-        url = weeklyTopStoriesUrl;
-        break;
-      case "monthly":
-        url = monthlyTopStoriesUrl;
-        break;
-      case "yearly":
-        url = yearlyTopStoriesUrl;
-        break;
-      case "alltime":
-        url = alltimeTopStoriesUrl;
-        break;
-      case "daily":
-      default:
-        url = dailyTopStoriesUrl;
-        break;
-    }
-    let moreItems = true;
-    let i = 0;
-    const ids = [];
-    while (moreItems && i < 15) {
-      i++;
-      const page = await axios.get(url + i);
-
-      if (page.data.includes("No more items")) moreItems = false;
-
-      const articles = page.data.match(/score_[0-9]+/g);
-      if (articles) ids.push(...articles.map(x => x.replace(/^\D+/g, "")));
-    }
-
-    return [...new Set(ids)];
-  } catch (e) {
-    console.error("getTopStories error:", e);
-    return [];
-  }
-};
-
-const getNewStories = async () => {
-  try {
-    const newStories = await axios.get(newStoriesUrl);
-    return newStories.data;
-  } catch (e) {
-    console.error("getNewStories error:", e);
-    return [];
-  }
 };
 
 const getAllStoryIds = async () => {
@@ -223,9 +166,7 @@ const updateStories = async (storyIdList, ctx) => {
 };
 
 module.exports = {
-  getNewStories,
   getAllStoryIds,
-  getTopStories,
   getItem,
   getItems,
   addStories,

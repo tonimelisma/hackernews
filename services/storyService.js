@@ -38,7 +38,7 @@ const getStories = async (timespan, limit, skip = undefined, ctx, hiddenIds = []
   const db = getDb();
 
   // L1 cache key includes timespan + hidden IDs signature
-  const hiddenKey = hiddenIds.length > 0 ? hiddenIds.sort().join(",") : "";
+  const hiddenKey = hiddenIds.length > 0 ? [...hiddenIds].sort().join(",") : "";
   const cacheKey = `${timespan}:${limit}:${skipN}:${hiddenKey}`;
   const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
