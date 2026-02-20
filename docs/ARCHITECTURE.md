@@ -87,12 +87,14 @@ hackernews/
 │
 ├── scripts/                        # Migration/utility scripts
 │   ├── data/                       # Exported JSON data (gitignored)
-│   └── import-json-to-sqlite.js    # Import JSON stories/users/hidden → SQLite
+│   ├── import-json-to-sqlite.js    # Import JSON stories/users/hidden → SQLite
+│   └── backup-sqlite.sh            # Daily SQLite backup to GCS
 │
 ├── docs/                           # LLM-geared documentation
 │
-├── Dockerfile                     # Multi-stage Docker build (node:20-alpine)
-├── docker-compose.yml             # App + Caddy services, SQLite volume
+├── Dockerfile                     # Multi-stage Docker build (node:20-alpine, bakes data into image)
+├── docker-compose.yml             # Production: App + Caddy services, SQLite volume, health check
+├── docker-compose.dev.yml         # Local dev: App only on port 3000, no Caddy
 ├── Caddyfile                      # Reverse proxy config (auto HTTPS)
 ├── .dockerignore                  # Files excluded from Docker build
 ├── .github/workflows/ci.yml      # GitHub Actions CI + SSH deploy pipeline
@@ -117,10 +119,12 @@ hackernews/
 ### Background Worker (setInterval → HN API → SQLite)
 1. `bin/www:onListening()` runs initial `syncOnce()` and sets `setInterval` for 15-minute recurring sync
 2. `syncOnce()` from `worker.js`:
-   - Fetch new story IDs from HN API
-   - Add missing stories to SQLite via `INSERT OR REPLACE`
-   - Update scores for stale stories, tiered by age: 1h/6h/48h, batch limit 200
+   - Fetch ~1200 unique story IDs from HN API (`newstories` + `topstories` + `beststories`)
+   - Check which IDs are missing from SQLite via `checkStoryExists()`
+   - Add missing stories via `INSERT OR REPLACE`
+   - Update scores for stale stories, tiered by age: 1h/6h/48h, batch limit 500
 3. All writes happen in SQLite transactions for performance
+4. Graceful shutdown: SIGTERM/SIGINT clear worker interval, close server and DB
 
 ### Static File Serving
 Express serves the Vite build output from `hackernews-frontend/build/` with a two-tier caching strategy:

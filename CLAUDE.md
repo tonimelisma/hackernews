@@ -103,7 +103,8 @@ hackernews/
 │           ├── storyService.js  # API client for stories/hidden
 │           └── loginService.js  # API client for login/logout/me
 ├── scripts/
-│   └── import-json-to-sqlite.js # Import JSON → SQLite
+│   ├── import-json-to-sqlite.js # Import JSON → SQLite
+│   └── backup-sqlite.sh        # Daily SQLite backup to GCS
 ├── .github/workflows/ci.yml # CI + SSH deploy pipeline
 ├── .husky/pre-commit       # Pre-commit hook (lint-staged)
 └── docs/                   # LLM-geared documentation
@@ -117,7 +118,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 2. **In-memory SQLite for tests**: Tests use `better-sqlite3` with `:memory:` databases via `setDb()` in `tests/setup.js`. No credentials, no network, no mocking of database modules. `clearDatabase()` truncates all tables between tests. Backend tests run in ~1 second.
 
-3. **Worker testable via `syncOnce()`**: `worker.js` exports `syncOnce()` (one full sync cycle) and guards `main()` with `require.main === module`. Tests import `syncOnce()` directly with mocked `services/hackernews`. Worker is integrated into the Express process via `setInterval` in `bin/www`.
+3. **Worker testable via `syncOnce()`**: `worker.js` exports `syncOnce()` (one full sync cycle) and guards `main()` with `require.main === module`. Tests import `syncOnce()` directly with mocked `services/hackernews`. Worker is integrated into the Express process via `setInterval` in `bin/www`. Worker fetches ~1200 unique story IDs per cycle (`newstories` + `topstories` + `beststories`), batch limit 500.
 
 4. **Single SQL query for stories**: `getStories()` uses a single SQL query that handles time filtering, hidden story exclusion, score sorting, and pagination — all in one step. No client-side sorting, no multi-tier cache, no merge logic needed.
 
@@ -141,7 +142,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 14. **Static file caching strategy**: `index.html` served with `Cache-Control: no-cache`; hashed `/assets/*` files served with `max-age=1y, immutable`.
 
-15. **Docker deployment**: `Dockerfile` builds node:20-alpine image with npm ci + frontend build. `docker-compose.yml` runs app + Caddy (reverse proxy with auto HTTPS). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d`.
+15. **Docker deployment**: Multi-stage `Dockerfile` builds node:20-alpine image with npm ci + frontend build + SQLite data import (data baked into image). `docker-compose.yml` runs app + Caddy (reverse proxy with auto HTTPS) with health checks. `docker-compose.dev.yml` for local testing (app only, port 3000, no Caddy). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d`. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
+
+16. **Daily SQLite backup**: `scripts/backup-sqlite.sh` runs SQLite `.backup` inside the container, compresses with gzip, and uploads to `gs://hackernews-melisma-backup/`. Cron job at 3:00 AM UTC daily. 30-day retention. ~3.3 MB compressed per backup, well within GCP Always Free 5 GB.
 
 ## Documentation
 
@@ -156,26 +159,26 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, database, dbLogger) | 46 |
-| Backend integration (storyService, api, worker) | 71 |
+| Backend unit (middleware, config, hackernews, database, dbLogger) | 48 |
+| Backend integration (storyService, api, worker) | 72 |
 | Frontend component (App, StoryList, Story) | 33 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 8 |
-| **Total** | **162** |
+| **Total** | **165** |
 
 ## Project Health
 
-**Overall: A-** — Working application with solid test coverage, good documentation, simplified architecture (SQLite), and automated Docker deployment.
+**Overall: A** — Working application deployed at https://hackernews.melisma.net with solid test coverage, good documentation, simplified architecture (SQLite), automated Docker deployment, daily backups to GCS.
 
 | Category | Grade | Summary |
 |----------|-------|---------|
 | Functionality | B | Core features work; hntoplinks scraper is brittle (regex) |
 | Security | A- | Helmet, CORS, rate limiting, JWT in HTTP-only cookie, SECRET validation |
-| Testing | A- | 162 tests, in-memory SQLite, ~1s backend runs |
+| Testing | A- | 165 tests, in-memory SQLite, ~1s backend runs |
 | Code Quality | A- | Clean codebase, dead code removed, SQLite simplification |
 | Architecture | A- | SQLite eliminates all Firestore hacks (L2 cache, patchStoryCache, Day-merge, padId, stripUndefined) |
 | Documentation | A- | CLAUDE.md + 4 reference docs, all updated |
-| DevOps / CI | B+ | Docker + Caddy on VPS, GitHub Actions CI/CD with SSH deploy, npm audit, ESLint, pre-commit hooks |
+| DevOps / CI | A- | Docker + Caddy on VPS (live), GitHub Actions CI/CD with SSH deploy, npm audit, ESLint, pre-commit hooks, daily GCS backups |
 | Performance | A- | Sub-ms SQL queries, L1 cache, hidden cache, react-virtuoso |
 | Dependencies | A- | 0 vulnerabilities in both backend and frontend |
 
@@ -202,7 +205,7 @@ All of these must be kept current with every change:
 - Add LICENSE file
 
 ### Infrastructure
-- VPS provisioning (GCP e2-micro, Docker, Caddy, Cloudflare DNS)
+- Set up GitHub secrets (`VPS_USER`, `VPS_SSH_KEY`) and `production` environment for CI deploy job
 
 ## Key Learnings
 

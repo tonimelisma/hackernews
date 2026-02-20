@@ -21,13 +21,13 @@ npm test && cd hackernews-frontend && npm test && cd ..
 |------|------|-------|----------------|
 | `tests/unit/middleware.test.js` | Unit | 3 | `unknownEndpoint` (404), `errorHandler` (500 + next) |
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
-| `tests/unit/hackernewsService.test.js` | Unit+DB | 27 | All HN API functions (axios mocked), SQLite operations, ctx tracking, updateStories return value, undefined score filtering |
+| `tests/unit/hackernewsService.test.js` | Unit+DB | 29 | All HN API functions (axios mocked), SQLite operations, ctx tracking, updateStories return value, undefined score filtering, getAllStoryIds dedup |
 | `tests/unit/database.test.js` | Unit | 3 | getDb/setDb, initSchema creates tables/indexes, idempotent schema init |
 | `tests/unit/dbLogger.test.js` | Unit | 12 | createDbContext: counters, read/write, L1/MISS cache, per-table breakdown, query inline logging |
 | `tests/integration/storyService.test.js` | Integration | 26 | All storyService CRUD, L1 cache, hidden cache+dedup, cache expiry, query caps |
 | `tests/integration/api.test.js` | Integration | 31 | Full HTTP request/response via supertest |
-| `tests/integration/worker.test.js` | Integration | 14 | syncOnce() direct tests, compound staleness queries, batch limits, utility functions |
-| **Total** | | **117** | |
+| `tests/integration/worker.test.js` | Integration | 15 | syncOnce() direct tests, compound staleness queries, batch limits, utility functions, empty getAllStoryIds |
+| **Total** | | **120** | |
 
 ### Frontend (Vitest + React Testing Library)
 
