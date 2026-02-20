@@ -11,18 +11,219 @@ HackerNews aggregator with a single Node.js process and a SQLite database, deplo
 | Frontend | React (Vite) | `hackernews-frontend/src/index.jsx` | SPA served as static files |
 | Database | SQLite (better-sqlite3) | `services/database.js` | Stories, users, hidden |
 
-## Deployment
+## Deployment & Operations
 
-Hosted on a **GCP e2-micro** VPS (0.25 vCPU, 1GB RAM, 30GB disk) running Docker.
+### Infrastructure
 
-| Component | Config | URL |
-|-----------|--------|-----|
-| App | `docker-compose.yml` | Behind Caddy reverse proxy |
-| Caddy | `Caddyfile` | `hackernews.melisma.net` (auto HTTPS) |
-| CI/CD | `.github/workflows/ci.yml` | SSH deploy on push to master |
+| What | Details |
+|------|---------|
+| **VPS** | GCP e2-micro (0.25 vCPU, 1GB RAM, 30GB disk), Ubuntu 24.04 |
+| **Instance** | `vps-1`, zone `us-central1-a`, project `melisma-services` |
+| **External IP** | `34.45.72.52` (static) |
+| **Domain** | `hackernews.melisma.net` (Cloudflare DNS, A record, DNS-only/gray cloud) |
+| **Docker** | Docker 29.2 + Compose 5.0 |
+| **App path on VPS** | `/opt/hackernews` |
+| **Secrets on VPS** | `/opt/hackernews/.env` (contains `SECRET=...`) |
+| **Backup bucket** | `gs://hackernews-melisma-backup/` (us-central1, Always Free tier) |
+| **Backup cron** | `0 3 * * *` — daily at 3:00 AM UTC |
 
-- **Worker**: Integrated into the Express process via `setInterval` (15-minute cycle), started in `bin/www:onListening()`
-- **CI/CD**: GitHub Actions runs tests, then deploys via SSH + `docker compose up --build -d`
+### SSH into VPS
+
+```bash
+# Interactive shell
+gcloud compute ssh vps-1 --zone=us-central1-a
+
+# Run a single command
+gcloud compute ssh vps-1 --zone=us-central1-a --command="<cmd>"
+
+# Copy files to VPS
+gcloud compute scp <local-path> vps-1:<remote-path> --zone=us-central1-a
+```
+
+### Docker Commands (run on VPS)
+
+```bash
+cd /opt/hackernews
+
+# Container status
+docker compose ps
+
+# App logs (live tail)
+docker compose logs -f app
+
+# App logs (last 100 lines)
+docker compose logs --tail 100 app
+
+# Caddy logs
+docker compose logs --tail 50 caddy
+
+# Restart app (no rebuild)
+docker compose restart app
+
+# Rebuild and redeploy
+docker compose up --build -d
+
+# Stop everything
+docker compose down
+
+# Shell into running app container
+docker exec -it hackernews-app-1 sh
+
+# Run a command inside the app container
+docker exec hackernews-app-1 <cmd>
+```
+
+### Remote Debugging
+
+```bash
+# Test API from inside container (bypasses Caddy)
+gcloud compute ssh vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 wget -qO- 'http://localhost:3000/api/v1/stories?timespan=Day&limit=1'"
+
+# Test API via public HTTPS
+curl -s "https://hackernews.melisma.net/api/v1/stories?timespan=Day&limit=1"
+
+# Check container health status
+gcloud compute ssh vps-1 --zone=us-central1-a --command="docker inspect --format='{{.State.Health.Status}}' hackernews-app-1"
+
+# Check worker sync logs (last sync cycle)
+gcloud compute ssh vps-1 --zone=us-central1-a --command="cd /opt/hackernews && docker compose logs app 2>&1 | grep -E '(sync|WORKER|fetched|adding)' | tail -20"
+
+# Check memory usage
+gcloud compute ssh vps-1 --zone=us-central1-a --command="docker stats --no-stream"
+
+# Check disk usage
+gcloud compute ssh vps-1 --zone=us-central1-a --command="df -h / && du -sh /opt/hackernews"
+
+# Query SQLite directly inside container
+gcloud compute ssh vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 sqlite3 /data/hackernews.db 'SELECT COUNT(*) FROM stories;'"
+
+# Check SQLite DB size
+gcloud compute ssh vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 ls -lh /data/hackernews.db"
+```
+
+### CI/CD Pipeline
+
+Push to `master` triggers: **backend tests → frontend tests → SSH deploy → health check → auto-rollback on failure**.
+
+```
+ci.yml flow:
+  backend-tests (lint + jest + npm audit --omit=dev)
+  frontend-tests (vitest + build + npm audit)
+       ↓ both pass
+  deploy (only on push to master, not PRs)
+       ↓
+  SSH into VPS → git pull → docker compose up --build -d
+       ↓
+  Poll health check for 90s
+       ↓
+  ✓ healthy → done
+  ✗ unhealthy → rollback to previous Docker image, exit 1
+```
+
+**GitHub secrets** (repo-level, not environment):
+- `VPS_USER` — SSH username (`tonimelisma`)
+- `VPS_SSH_KEY` — ed25519 private key (public key in `~/.ssh/authorized_keys` on VPS)
+
+### Manual Deploy (bypassing CI)
+
+```bash
+gcloud compute ssh vps-1 --zone=us-central1-a --command="cd /opt/hackernews && git pull origin master && docker compose up --build -d"
+```
+
+### Local Docker Testing
+
+```bash
+# Build and run locally (no Caddy, just app on port 3000)
+SECRET=anysecret docker compose -f docker-compose.dev.yml up --build
+
+# Test it
+curl "http://localhost:3000/api/v1/stories?timespan=Day&limit=3"
+open http://localhost:3000
+
+# Tear down
+docker compose -f docker-compose.dev.yml down
+```
+
+### Dockerfile Details
+
+Multi-stage build:
+1. **Builder stage** (node:20-alpine + python3/make/g++ for native modules):
+   - `npm pkg delete scripts.prepare` to skip husky in Docker
+   - `npm ci --omit=dev` for backend deps
+   - `npm ci` for frontend deps
+   - Frontend build (`vite build` → `hackernews-frontend/build/`)
+   - Import JSON data into SQLite (`/data/hackernews.db`)
+2. **Runtime stage** (node:20-alpine + wget + sqlite3):
+   - Copies `node_modules`, frontend build, baked SQLite DB
+   - Copies only the app source files needed at runtime
+   - ~160 MB final image
+
+### Backups
+
+```bash
+# Manual backup
+gcloud compute ssh vps-1 --zone=us-central1-a --command="bash /opt/hackernews/scripts/backup-sqlite.sh"
+
+# List backups
+gcloud storage ls -l gs://hackernews-melisma-backup/
+
+# Download a backup
+gcloud storage cp gs://hackernews-melisma-backup/hackernews-20260220.db.gz .
+
+# Restore a backup
+gunzip hackernews-20260220.db.gz
+gcloud compute scp hackernews-20260220.db vps-1:/tmp/restore.db --zone=us-central1-a
+gcloud compute ssh vps-1 --zone=us-central1-a --command="docker compose -f /opt/hackernews/docker-compose.yml cp /tmp/restore.db app:/data/hackernews.db && cd /opt/hackernews && docker compose restart app"
+
+# Check cron is installed
+gcloud compute ssh vps-1 --zone=us-central1-a --command="crontab -l"
+
+# Check backup logs
+gcloud compute ssh vps-1 --zone=us-central1-a --command="tail -20 /var/log/hackernews-backup.log"
+```
+
+Backup process: `sqlite3 .backup` inside container → `docker cp` out → `gzip` → `gcloud storage cp` to GCS. 30-day retention, ~3.3 MB per backup.
+
+### GCP Firewall Rules
+
+```bash
+# List rules
+gcloud compute firewall-rules list
+
+# Required rules (already created):
+# allow-http  — tcp:80  from 0.0.0.0/0
+# allow-https — tcp:443 from 0.0.0.0/0
+# allow-ssh   — tcp:22  from 0.0.0.0/0
+```
+
+### DNS (Cloudflare)
+
+- Record: `hackernews` A `34.45.72.52`
+- Proxy: **DNS-only** (gray cloud) — Caddy handles TLS via Let's Encrypt
+- If you switch to orange cloud (Cloudflare proxy), Caddy's ACME challenge will fail
+
+### Caddy TLS Certificates
+
+Caddy auto-provisions Let's Encrypt certs. Cert data stored in `caddy-data` Docker volume.
+
+```bash
+# Check Caddy logs for cert issues
+gcloud compute ssh vps-1 --zone=us-central1-a --command="cd /opt/hackernews && docker compose logs caddy | tail -20"
+
+# Force cert renewal (rarely needed)
+gcloud compute ssh vps-1 --zone=us-central1-a --command="cd /opt/hackernews && docker compose restart caddy"
+```
+
+### VPS Service Account Scopes
+
+The VM service account has `storage-rw`, `logging-write`, `monitoring-write`. If you need to change scopes, the VM must be stopped first:
+
+```bash
+gcloud compute instances stop vps-1 --zone=us-central1-a
+gcloud compute instances set-service-account vps-1 --zone=us-central1-a --scopes=storage-rw,logging-write,monitoring-write
+gcloud compute instances start vps-1 --zone=us-central1-a
+# Docker containers auto-restart (restart: unless-stopped)
+```
 
 ## Process Diagram
 
