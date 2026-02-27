@@ -6,7 +6,9 @@ Base URL: `/api/v1`
 
 Authentication uses HTTP-only cookies. On successful login, the server sets a `token` cookie containing a signed JWT. All subsequent requests to protected endpoints automatically include this cookie.
 
-**Cookie properties:** `httpOnly`, `secure` (production), `sameSite=strict`, `path=/api`, `maxAge=24h`
+**Cookie properties:** `httpOnly`, `secure` (production), `sameSite=strict`, `path=/api`, `maxAge=365d`
+
+**Token refresh:** `GET /me` issues a fresh JWT and cookie on each call, resetting the 1-year expiry. Since the frontend calls `getMe()` on every page load, active users are effectively never logged out.
 
 Protected endpoints return `401` if no valid cookie is present.
 
@@ -115,7 +117,7 @@ Sets an HTTP-only `token` cookie and returns:
 { "username": "username" }
 ```
 
-JWT expires after **24 hours**. Signed with `process.env.SECRET` (validated on server startup).
+JWT expires after **365 days**. Signed with `process.env.SECRET` (validated on server startup). The token is refreshed on every `GET /me` call (see above).
 
 **Response (failure):** `401`
 ```json
@@ -157,6 +159,8 @@ Get the currently authenticated user.
 ```json
 { "username": "username" }
 ```
+
+Also sets a fresh `token` cookie with a new 365-day JWT, effectively refreshing the session on every page load.
 
 **Error responses:**
 - `401` — missing/invalid token: `{ "error": "authentication error" }`

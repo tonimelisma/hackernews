@@ -342,7 +342,7 @@ describe("API routes", () => {
       expect(res.body.error).toBe("missing fields");
     });
 
-    it("signs JWT with 24h expiration", async () => {
+    it("signs JWT with 365d expiration", async () => {
       hackernews.login.mockResolvedValue(true);
 
       const res = await request(app)
@@ -352,7 +352,7 @@ describe("API routes", () => {
       expect(res.status).toBe(200);
       const cookieToken = extractCookieToken(res);
       const tokenData = mockTokens[cookieToken];
-      expect(tokenData.options).toEqual({ expiresIn: '24h' });
+      expect(tokenData.options).toEqual({ expiresIn: '365d' });
     });
 
     it("creates user in DB on successful login", async () => {
@@ -428,6 +428,19 @@ describe("API routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ username: "testuser" });
+    });
+
+    it("refreshes token cookie on GET /me", async () => {
+      const token = createToken("refreshuser");
+
+      const res = await request(app)
+        .get("/api/v1/me")
+        .set("Cookie", `token=${token}`);
+
+      expect(res.status).toBe(200);
+      const setCookie = res.headers["set-cookie"];
+      expect(setCookie).toBeDefined();
+      expect(setCookie[0]).toMatch(/^token=/);
     });
 
     it("returns 401 without token", async () => {

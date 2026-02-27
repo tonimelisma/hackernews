@@ -175,11 +175,11 @@ All of these must be kept current with every change:
 | Suite | Tests |
 |-------|-------|
 | Backend unit (middleware, config, hackernews, database, dbLogger, migrator) | 52 |
-| Backend integration (storyService, api, worker) | 74 |
+| Backend integration (storyService, api, worker) | 75 |
 | Frontend component (App, StoryList, Story) | 32 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 7 |
-| **Total** | **169** |
+| **Total** | **170** |
 
 ## Project Health
 
@@ -189,7 +189,7 @@ All of these must be kept current with every change:
 |----------|-------|---------|
 | Functionality | A- | Core features work; dead scraper code removed |
 | Security | A | Helmet (CSP with script hash), CORS, rate limiting, JWT in HTTP-only cookie, SECRET validation, username length validation |
-| Testing | A- | 175 tests, in-memory SQLite, ~1s backend runs |
+| Testing | A- | 170 tests, in-memory SQLite, ~1s backend runs |
 | Code Quality | A- | Clean codebase, dead code removed, SQLite simplification |
 | Architecture | A- | SQLite eliminates all Firestore hacks (L2 cache, patchStoryCache, Day-merge, padId, stripUndefined) |
 | Documentation | A- | CLAUDE.md + 4 reference docs, all updated |
@@ -237,6 +237,7 @@ All of these must be kept current with every change:
 - **Bootstrap 5 data attributes**: Use `data-bs-toggle`/`data-bs-dismiss` (not `data-toggle`/`data-dismiss`). Class `dropdown-menu-right` was renamed to `dropdown-menu-end`.
 - **`errorHandler` must not call `next()`**: Calling `next(error)` after `res.status().json()` triggers "headers already sent" errors if another error handler exists downstream.
 - **Vite build output**: `build.outDir` set to `"build"` in `vite.config.js` to match Express static path in `app.js`. `build/` is gitignored.
+- **JWT/cookie expiry and refresh**: JWT and cookie both expire after 365 days. `GET /me` issues a fresh JWT+cookie on each call (rolling refresh). Since the frontend calls `getMe()` on every page load, active users are effectively never logged out. Tokens survive deployments as long as the `SECRET` env var in the VPS `.env` file stays the same.
 - **HN login detection via redirect path**: After POSTing to HN login with `{ withCredentials: true }`, axios follows the redirect. On success, `response.request.path` is `/news`; on failure, it's `/login`.
 - **Bootstrap `data-bs-auto-close="outside"`**: Prevents dropdown from closing on clicks inside the menu (e.g., login form). Without it, clicking the Login button closes the dropdown before the user sees the result.
 - **react-virtuoso for list virtualization**: `<Virtuoso useWindowScroll data={...} itemContent={...} />` renders only visible items. In tests, mock with a simple `({ data, itemContent }) => data.map(...)` to render all items synchronously. Must mock in every test file that renders a component using Virtuoso (both StoryList.test.jsx and App.test.jsx).

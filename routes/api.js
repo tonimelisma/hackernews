@@ -19,11 +19,14 @@ const isValidUsername = (input) => {
   return input.length <= 32 && /^[a-zA-Z0-9_-]+$/.test(input);
 };
 
+const TOKEN_EXPIRY = "365d";
+const COOKIE_MAX_AGE = 365 * 24 * 60 * 60 * 1000;
+
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging",
   sameSite: "strict",
-  maxAge: 24 * 60 * 60 * 1000,
+  maxAge: COOKIE_MAX_AGE,
   path: "/api",
 };
 
@@ -134,7 +137,7 @@ router.post("/login", loginLimiter, async (req, res) => {
       const ctx = createDbContext();
       const loginCorrect = await hackernewsService.login(goto, acct, pw);
       if (loginCorrect) {
-        const token = jwt.sign({ username: acct }, process.env.SECRET, { expiresIn: '24h' });
+        const token = jwt.sign({ username: acct }, process.env.SECRET, { expiresIn: TOKEN_EXPIRY });
         await storyService.upsertUser(acct, ctx);
         res.cookie("token", token, COOKIE_OPTIONS);
         res.status(200).json({ username: acct });
@@ -155,6 +158,8 @@ router.post("/logout", (req, res) => {
 });
 
 router.get("/me", authenticateToken, (req, res) => {
+  const token = jwt.sign({ username: req.user.username }, process.env.SECRET, { expiresIn: TOKEN_EXPIRY });
+  res.cookie("token", token, COOKIE_OPTIONS);
   res.status(200).json({ username: req.user.username });
 });
 
