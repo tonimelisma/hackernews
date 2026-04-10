@@ -87,15 +87,16 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -e
             cd /opt/hackernews
-            git pull origin master
+            git pull --ff-only origin master
             docker network inspect reverse_proxy >/dev/null
 
             # Tag current image for rollback
             docker tag hackernews-app:latest hackernews-app:previous 2>/dev/null || true
 
             # Build and deploy the app behind the shared reverse proxy
-            docker compose up --build -d
+            docker compose up --build -d --remove-orphans
 
             # Wait for health check (up to 90s)
             echo "Waiting for health check..."
@@ -113,6 +114,6 @@ jobs:
             # Health check failed — rollback
             echo "HEALTH CHECK FAILED — rolling back"
             docker tag hackernews-app:previous hackernews-app:latest 2>/dev/null || true
-            docker compose up -d
+            docker compose up -d --remove-orphans
             docker compose ps
             exit 1
