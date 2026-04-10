@@ -21,14 +21,14 @@ npm test && cd hackernews-frontend && npm test && cd ..
 |------|------|-------|----------------|
 | `tests/unit/middleware.test.js` | Unit | 3 | `unknownEndpoint` (404), `errorHandler` (500 + next) |
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
-| `tests/unit/hackernewsService.test.js` | Unit+DB | 23 | HN API functions (axios mocked), SQLite operations, ctx tracking, updateStories return value, undefined score filtering, getAllStoryIds dedup |
-| `tests/unit/database.test.js` | Unit | 3 | getDb/setDb, initSchema creates tables/indexes/schema_migrations, idempotent schema init |
-| `tests/unit/dbLogger.test.js` | Unit | 12 | createDbContext: counters, read/write, L1/MISS cache, per-table breakdown, query inline logging |
+| `tests/unit/hackernewsService.test.js` | Unit+DB | 22 | HN API functions (axios mocked), SQLite operations, ctx tracking, updateStories return value, undefined score filtering, getAllStoryIds dedup |
+| `tests/unit/database.test.js` | Unit | 4 | getDb/setDb, initSchema creates tables/indexes/schema_migrations, idempotent schema init |
+| `tests/unit/dbLogger.test.js` | Unit | 13 | createDbContext: counters, read/write, L1/MISS cache, per-table breakdown, query inline logging |
 | `tests/unit/migrator.test.js` | Unit | 10 | ensureMigrationsTable, runMigrations (order, skip, auto-create, tables, timestamps), rollback, status |
-| `tests/integration/storyService.test.js` | Integration | 27 | All storyService CRUD, L1 cache, hidden cache+dedup, cache expiry, query caps, hiddenIds mutation guard |
-| `tests/integration/api.test.js` | Integration | 32 | Full HTTP request/response via supertest, username length validation |
-| `tests/integration/worker.test.js` | Integration | 15 | syncOnce() direct tests, compound staleness queries, batch limits, utility functions, empty getAllStoryIds |
-| **Total** | | **126** | |
+| `tests/integration/storyService.test.js` | Integration | 28 | All storyService CRUD, L1 cache, hidden cache+dedup, cache expiry, query caps, hiddenIds mutation guard |
+| `tests/integration/api.test.js` | Integration | 33 | Full HTTP request/response via supertest, username length validation |
+| `tests/integration/worker.test.js` | Integration | 13 | syncOnce() direct tests, compound staleness queries, batch limits, utility functions, empty getAllStoryIds |
+| **Total** | | **127** | |
 
 ### Frontend (Vitest + React Testing Library)
 

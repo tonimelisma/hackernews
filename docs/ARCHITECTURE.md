@@ -2,7 +2,7 @@
 
 ## System Overview
 
-HackerNews aggregator with a single Node.js process and a SQLite database, deployed via Docker.
+HackerNews aggregator with a single Node.js process and a SQLite database, deployed via Docker behind the host-level shared Caddy reverse proxy.
 
 | Component | Runtime | Entry Point | Purpose |
 |-----------|---------|-------------|---------|
@@ -19,10 +19,13 @@ HackerNews aggregator with a single Node.js process and a SQLite database, deplo
 |------|---------|
 | **VPS** | GCP e2-micro (0.25 vCPU, 1GB RAM, 30GB disk), Ubuntu 24.04 |
 | **Instance** | `vps-1`, zone `us-central1-a`, project `melisma-services` |
+| **Internal hostname** | `vps-1.us-central1-a.c.melisma-services.internal` |
 | **External IP** | `34.45.72.52` (static) |
 | **Domain** | `hackernews.melisma.net` (Cloudflare DNS, A record, DNS-only/gray cloud) |
-| **Docker** | Docker 29.2 + Compose 5.0 |
+| **Docker** | Docker 29.4 + Compose 5.1 |
 | **App path on VPS** | `/opt/hackernews` |
+| **Shared reverse proxy path** | `/opt/reverse-proxy` (`caddy` container, shared by all public services on the host) |
+| **Shared Docker network** | `reverse_proxy` (external Docker bridge network) |
 | **Secrets on VPS** | `/opt/hackernews/.env` (contains `SECRET=...`) |
 | **Backup bucket** | `gs://hackernews-melisma-backup/` (us-central1, Always Free tier) |
 | **Backup cron** | `0 3 * * *` — daily at 3:00 AM UTC |
@@ -45,7 +48,7 @@ gcloud compute scp <local-path> vps-1:<remote-path> --zone=us-central1-a
 ```bash
 cd /opt/hackernews
 
-# Container status
+# HackerNews app status
 docker compose ps
 
 # App logs (live tail)
@@ -54,16 +57,13 @@ docker compose logs -f app
 # App logs (last 100 lines)
 docker compose logs --tail 100 app
 
-# Caddy logs
-docker compose logs --tail 50 caddy
-
 # Restart app (no rebuild)
 docker compose restart app
 
-# Rebuild and redeploy
+# Rebuild and redeploy app
 docker compose up --build -d
 
-# Stop everything
+# Stop HackerNews app
 docker compose down
 
 # Shell into running app container
@@ -72,6 +72,23 @@ docker exec -it hackernews-app-1 sh
 # Run a command inside the app container
 docker exec hackernews-app-1 <cmd>
 ```
+
+### Shared Reverse Proxy Commands (run on VPS)
+
+```bash
+cd /opt/reverse-proxy
+
+# Reverse proxy status
+docker compose ps
+
+# Caddy logs
+docker compose logs --tail 50 caddy
+
+# Reload Caddy config after editing Caddyfile
+docker compose restart caddy
+```
+
+The Caddy container is named `caddy`, not `hackernews-caddy-1`. It owns host ports 80/443 and routes public hostnames to containers on the external `reverse_proxy` Docker network.
 
 ### Remote Debugging
 
@@ -202,16 +219,30 @@ gcloud compute firewall-rules list
 - Proxy: **DNS-only** (gray cloud) — Caddy handles TLS via Let's Encrypt
 - If you switch to orange cloud (Cloudflare proxy), Caddy's ACME challenge will fail
 
-### Caddy TLS Certificates
+### Shared Caddy Reverse Proxy
 
-Caddy auto-provisions Let's Encrypt certs. Cert data stored in `caddy-data` Docker volume.
+Caddy runs from `/opt/reverse-proxy` as the `caddy` container and is shared by all public services on the VPS. Its `Caddyfile` currently includes:
+
+```caddy
+hackernews.melisma.net {
+	reverse_proxy hackernews-app:3000
+}
+
+koskiset-api.melisma.net {
+	reverse_proxy koskiset-feedback:8080
+}
+```
+
+The reverse proxy uses the external Docker network `reverse_proxy`. HackerNews joins that network with the alias `hackernews-app`; unrelated services should join the same network with service-specific aliases.
+
+Caddy auto-provisions Let's Encrypt certs. Cert data is stored in the Docker volume originally named `hackernews_caddy-data`, reused by the shared proxy to avoid certificate churn.
 
 ```bash
 # Check Caddy logs for cert issues
-gcloud compute ssh vps-1 --zone=us-central1-a --command="cd /opt/hackernews && docker compose logs caddy | tail -20"
+gcloud compute ssh vps-1 --zone=us-central1-a --command="cd /opt/reverse-proxy && docker compose logs caddy | tail -20"
 
 # Force cert renewal (rarely needed)
-gcloud compute ssh vps-1 --zone=us-central1-a --command="cd /opt/hackernews && docker compose restart caddy"
+gcloud compute ssh vps-1 --zone=us-central1-a --command="cd /opt/reverse-proxy && docker compose restart caddy"
 ```
 
 ### VPS Service Account Scopes
@@ -274,7 +305,7 @@ hackernews/
 │   ├── build/                      # Production build output (gitignored)
 │   └── src/
 │       ├── index.jsx               # createRoot entry point (React 19)
-│       ├── App.jsx                 # Main component: stories, auth, timespan filtering, localStorage hidden + timespan
+│       ├── App.jsx                 # Main component: stories, auth, timespan filtering, optimistic hide, timespan persistence
 │       ├── App.css                 # Styles
 │       ├── hooks/
 │       │   └── useTheme.js        # System dark/light mode detection (prefers-color-scheme)
@@ -299,9 +330,8 @@ hackernews/
 ├── docs/                           # LLM-geared documentation
 │
 ├── Dockerfile                     # Multi-stage Docker build (node:20-alpine, bakes data into image)
-├── docker-compose.yml             # Production: App + Caddy services, SQLite volume, health check
+├── docker-compose.yml             # Production: App service, SQLite volume, external reverse_proxy network
 ├── docker-compose.dev.yml         # Local dev: App only on port 3000, no Caddy
-├── Caddyfile                      # Reverse proxy config (auto HTTPS)
 ├── .dockerignore                  # Files excluded from Docker build
 ├── .github/workflows/ci.yml      # GitHub Actions CI + SSH deploy pipeline
 ├── .husky/pre-commit              # Pre-commit hook (lint-staged → ESLint)

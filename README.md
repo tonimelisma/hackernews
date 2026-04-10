@@ -9,7 +9,7 @@ Live at: https://hackernews.melisma.net
 - Top stories filtered by time period (day, week, month, year, all-time)
 - Score-based ranking with pagination
 - User authentication via HN credentials (proxied login)
-- Per-user story hiding (persisted in localStorage for anonymous users, synced to server on login)
+- Per-user story hiding for logged-in users
 - Background worker with tiered update strategy (15-minute cycle)
 - Dark mode via system preference detection
 - Responsive Bootstrap 5 UI with virtualized story list
@@ -20,7 +20,7 @@ Live at: https://hackernews.melisma.net
 - **Frontend:** React 19 (Vite)
 - **Database:** SQLite (better-sqlite3, WAL mode)
 - **Worker:** Integrated setInterval (15-minute cycle)
-- **Deployment:** Docker + Caddy (auto HTTPS) on GCP e2-micro
+- **Deployment:** Docker app behind shared Caddy reverse proxy on GCP e2-micro
 - **CI:** GitHub Actions (lint, test, deploy via SSH)
 
 ## Prerequisites
@@ -67,7 +67,7 @@ npm run test:coverage
 cd hackernews-frontend && npm run test:coverage
 ```
 
-175 total tests (126 backend + 49 frontend). Backend tests run in ~1 second using in-memory SQLite.
+170 total tests (127 backend + 43 frontend). Backend tests run in ~1 second using in-memory SQLite.
 
 ## Documentation
 

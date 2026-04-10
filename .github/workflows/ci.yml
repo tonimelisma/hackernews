@@ -89,11 +89,12 @@ jobs:
           script: |
             cd /opt/hackernews
             git pull origin master
+            docker network inspect reverse_proxy >/dev/null
 
             # Tag current image for rollback
             docker tag hackernews-app:latest hackernews-app:previous 2>/dev/null || true
 
-            # Build and deploy
+            # Build and deploy the app behind the shared reverse proxy
             docker compose up --build -d
 
             # Wait for health check (up to 90s)

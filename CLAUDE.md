@@ -2,7 +2,7 @@
 
 ## Project Summary
 
-HackerNews aggregator: a Node.js/Express backend with a React frontend, deployed on a GCP e2-micro VPS via Docker + Caddy. The backend scrapes Hacker News stories, stores them in SQLite, and serves them via a REST API. An integrated background worker (setInterval, 15-minute cycle) syncs new stories and updates scores. The frontend displays top stories with filtering by timespan and user-hidden stories.
+HackerNews aggregator: a Node.js/Express backend with a React frontend, deployed on a GCP e2-micro VPS via Docker behind the host-level shared Caddy reverse proxy. The backend scrapes Hacker News stories, stores them in SQLite, and serves them via a REST API. An integrated background worker (setInterval, 15-minute cycle) syncs new stories and updates scores. The frontend displays top stories with filtering by timespan and user-hidden stories.
 
 ## Quick Reference Commands
 
@@ -97,8 +97,7 @@ hackernews/
 │   └── middleware.js        # Express error handlers
 ├── eslint.config.js        # ESLint flat config (backend)
 ├── Dockerfile              # Multi-stage Docker build (node:20-alpine)
-├── docker-compose.yml      # App + Caddy services, SQLite volume
-├── Caddyfile               # Reverse proxy config (auto HTTPS)
+├── docker-compose.yml      # App service, SQLite volume, external reverse_proxy network
 ├── hackernews-frontend/    # React frontend (Vite + Vitest)
 │   └── src/
 │       ├── App.jsx         # Main component (stories, auth, filtering)
@@ -153,7 +152,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 15. **Static file caching strategy**: `index.html` served with `Cache-Control: no-cache`; hashed `/assets/*` files served with `max-age=1y, immutable`.
 
-16. **Docker deployment**: Multi-stage `Dockerfile` builds node:20-alpine image with npm ci + frontend build + SQLite data import (data baked into image). `docker-compose.yml` runs app + Caddy (reverse proxy with auto HTTPS) with health checks. `docker-compose.dev.yml` for local testing (app only, port 3000, no Caddy). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d`. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
+16. **Docker deployment**: Multi-stage `Dockerfile` builds node:20-alpine image with npm ci + frontend build + SQLite data import (data baked into image). `docker-compose.yml` runs only the HackerNews app with health checks and joins the external `reverse_proxy` Docker network as `hackernews-app`. The host-level Caddy reverse proxy lives outside this repo at `/opt/reverse-proxy` and routes `hackernews.melisma.net` to `hackernews-app:3000`. `docker-compose.dev.yml` is for local testing (app only, port 3000, no Caddy). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d`. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
 
 17. **Daily SQLite backup**: `scripts/backup-sqlite.sh` runs SQLite `.backup` inside the container, compresses with gzip, and uploads to `gs://hackernews-melisma-backup/`. Cron job at 3:00 AM UTC daily. 30-day retention. ~3.3 MB compressed per backup, well within GCP Always Free 5 GB.
 
@@ -174,8 +173,8 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, database, dbLogger, migrator) | 52 |
-| Backend integration (storyService, api, worker) | 75 |
+| Backend unit (middleware, config, hackernews, database, dbLogger, migrator) | 53 |
+| Backend integration (storyService, api, worker) | 74 |
 | Frontend component (App, StoryList, Story) | 32 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 7 |
@@ -193,7 +192,7 @@ All of these must be kept current with every change:
 | Code Quality | A- | Clean codebase, dead code removed, SQLite simplification |
 | Architecture | A- | SQLite eliminates all Firestore hacks (L2 cache, patchStoryCache, Day-merge, padId, stripUndefined) |
 | Documentation | A- | CLAUDE.md + 4 reference docs, all updated |
-| DevOps / CI | A- | Docker + Caddy on VPS (live), GitHub Actions CI/CD with SSH deploy, npm audit, ESLint, pre-commit hooks, daily GCS backups |
+| DevOps / CI | A- | Docker app behind shared Caddy reverse proxy on VPS (live), GitHub Actions CI/CD with SSH deploy, npm audit, ESLint, pre-commit hooks, daily GCS backups |
 | Performance | A- | Sub-ms SQL queries, L1 cache, hidden cache, react-virtuoso |
 | Dependencies | A- | 0 vulnerabilities in both backend and frontend |
 
