@@ -8,13 +8,13 @@
     "@fortawesome/free-brands-svg-icons": "^7.2.0",
     "@fortawesome/free-regular-svg-icons": "^7.2.0",
     "@fortawesome/free-solid-svg-icons": "^7.2.0",
-    "@fortawesome/react-fontawesome": "^3.2.0",
-    "axios": "^1.13.5",
+    "@fortawesome/react-fontawesome": "^3.3.0",
+    "axios": "^1.15.0",
     "bootstrap": "~5.3.8",
-    "dayjs": "^1.11.19",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "react-virtuoso": "^4.18.1"
+    "dayjs": "^1.11.20",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "react-virtuoso": "^4.18.4"
   },
   "scripts": {
     "start": "vite",
@@ -28,10 +28,10 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "@vitejs/plugin-react": "^5.1.4",
-    "@vitest/coverage-v8": "^4.0.18",
-    "jsdom": "^28.1.0",
-    "vite": "^7.3.1",
-    "vitest": "^4.0.18"
+    "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/coverage-v8": "^4.1.4",
+    "jsdom": "^29.0.2",
+    "vite": "^8.0.8",
+    "vitest": "^4.1.4"
   }
 }

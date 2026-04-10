@@ -22,7 +22,9 @@ app.use(helmet({
     },
   },
 }));
-app.use(logger(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+if (!["test", "ci"].includes(process.env.NODE_ENV)) {
+  app.use(logger(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+}
 
 const corsOrigin = process.env.NODE_ENV === "development"
   ? "http://localhost:3000"

@@ -204,7 +204,7 @@ All of these must be kept current with every change:
 ### Vulnerability Status
 
 - Backend production: **0 vulnerabilities** — `npm audit --omit=dev` enforced in CI at `moderate` level
-- Backend dev: 18 high (minimatch in Jest 30's transitive deps) — cannot fix without downgrading Jest; dev-only, no production impact
+- Backend dev: **0 vulnerabilities** — `npm audit` clean after dependency refresh
 - Frontend: **0 vulnerabilities** — `npm audit` enforced in CI at `moderate` level (Vite replaced CRA)
 
 ## Backlog
