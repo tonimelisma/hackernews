@@ -343,7 +343,7 @@ hackernews/
 ## Data Flow
 
 ### Story Fetch (Frontend → Backend → SQLite)
-1. Frontend calls `GET /api/v1/stories?timespan=Day`
+1. Frontend waits for `GET /api/v1/me` to settle, then calls `GET /api/v1/stories?timespan=Day`
 2. `routes/api.js` parses timespan, limit, skip
 3. `storyService.getStories()` checks L1 in-memory cache (1-minute TTL):
    - **L1 hit**: Return cached stories immediately
@@ -370,11 +370,13 @@ Express serves the Vite build output from `hackernews-frontend/build/` with a tw
 ### Authentication (Frontend → HN → Backend → JWT Cookie)
 1. Frontend POSTs credentials to `/api/v1/login`
 2. Backend proxies login to `news.ycombinator.com/login` (axios follows redirects)
-3. If HN response body does NOT contain "Bad login" → success → issue JWT (365d expiry) as HTTP-only cookie + upsert user
+3. If HN redirects to `/news` → success → issue JWT (365d expiry) as HTTP-only cookie + upsert user; if HN redirects to `/login` → invalid credentials
 4. Cookie (`token`) sent automatically with all `/api` requests (httpOnly, secure in prod, sameSite=strict)
-5. On page load, frontend calls `GET /me` to check login state — this also refreshes the JWT+cookie (rolling expiry)
+5. On page load, frontend calls `GET /me` before fetching stories to check login state — this also refreshes the JWT+cookie (rolling expiry)
 6. Protected routes (`/hidden`, `/me`) verify JWT via `authenticateToken` middleware and extract username
 7. Logout: `POST /logout` clears the cookie
+
+Each `/login` response includes `X-Login-Request-Id` for browser-to-server log correlation. Login diagnostics are emitted as `[hn-login]` lines with request ID, outcome, status, and final HN path. They intentionally omit passwords, tokens, and usernames.
 
 ## Environment Variables
 

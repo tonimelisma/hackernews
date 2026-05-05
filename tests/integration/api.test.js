@@ -310,6 +310,7 @@ describe("API routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.username).toBe("validuser");
       expect(res.body.token).toBeUndefined();
+      expect(res.headers["x-login-request-id"]).toBeTruthy();
       const cookieToken = extractCookieToken(res);
       expect(cookieToken).toBeTruthy();
     });

@@ -3,6 +3,7 @@ const router = express.Router();
 const config = require("../util/config");
 const jwt = require("jsonwebtoken");
 const rateLimit = require("express-rate-limit");
+const { randomUUID } = require("crypto");
 
 const storyService = require("../services/storyService");
 const hackernewsService = require("../services/hackernews");
@@ -13,6 +14,12 @@ const loginLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  handler: (req, res, next, options) => {
+    const requestId = randomUUID();
+    res.set("X-Login-Request-Id", requestId);
+    console.log(`[login] requestId=${requestId} outcome=rate-limited`);
+    res.status(options.statusCode).send(options.message);
+  },
 });
 
 const isValidUsername = (input) => {
@@ -127,26 +134,30 @@ router.post("/hidden", authenticateToken, async (req, res) => {
 });
 
 router.post("/login", loginLimiter, async (req, res) => {
+  const requestId = randomUUID();
+  res.set("X-Login-Request-Id", requestId);
   const goto = req.body.goto;
   const pw = req.body.pw;
   const acct = req.body.acct;
   if (!goto || !pw || !acct || !isValidUsername(acct)) {
+    console.log(`[login] requestId=${requestId} outcome=bad-request`);
     res.status(400).json({ error: "missing fields" });
   } else {
     try {
       const ctx = createDbContext();
-      const loginCorrect = await hackernewsService.login(goto, acct, pw);
+      const loginCorrect = await hackernewsService.login(goto, acct, pw, { requestId });
       if (loginCorrect) {
         const token = jwt.sign({ username: acct }, process.env.SECRET, { expiresIn: TOKEN_EXPIRY });
         await storyService.upsertUser(acct, ctx);
         res.cookie("token", token, COOKIE_OPTIONS);
         res.status(200).json({ username: acct });
-        ctx.log("POST /login", { user: acct });
+        ctx.log("POST /login", { user: acct, requestId });
       } else {
+        console.log(`[login] requestId=${requestId} outcome=invalid-credentials`);
         res.status(401).json({ error: "invalid credentials" });
       }
     } catch (e) {
-      console.error("login error:", e);
+      console.error(`login error requestId=${requestId}:`, e);
       res.status(500).json({ error: "internal server error" });
     }
   }

@@ -13,20 +13,72 @@ const itemUrl = item =>
 
 const loginUrl = "https://news.ycombinator.com/login";
 
-const login = async (goto, acct, pw) => {
-  const response = await axios.post(
-    loginUrl,
-    new URLSearchParams({ goto, acct, pw }),
-    { withCredentials: true }
-  );
+const getFinalPath = (response) => {
+  const responseUrl = response?.request?.res?.responseUrl;
+  if (responseUrl) {
+    try {
+      return new URL(responseUrl).pathname;
+    } catch {
+      // Fall through to request.path.
+    }
+  }
+  return response?.request?.path?.split("?")[0];
+};
+
+const formatLoginFields = (fields) => Object.entries(fields)
+  .map(([key, value]) => `${key}=${value ?? "-"}`)
+  .join(" ");
+
+const logLoginDiagnostic = (fields) => {
+  console.log(`[hn-login] ${formatLoginFields(fields)}`);
+};
+
+const login = async (goto, acct, pw, diagnostics = {}) => {
+  let response;
+  try {
+    response = await axios.post(
+      loginUrl,
+      new URLSearchParams({ goto, acct, pw }),
+      { withCredentials: true }
+    );
+  } catch (error) {
+    logLoginDiagnostic({
+      requestId: diagnostics.requestId,
+      outcome: "error",
+      status: error.response?.status,
+      finalPath: getFinalPath(error.response),
+      code: error.code || error.name,
+    });
+    throw error;
+  }
+
+  const finalPath = getFinalPath(response);
   if (response.status === 200) {
-    if (response.request.path === "/login") {
-      console.error("login failed (redirected to /login):", response.status);
+    if (finalPath === "/login") {
+      logLoginDiagnostic({
+        requestId: diagnostics.requestId,
+        outcome: "invalid-credentials",
+        status: response.status,
+        finalPath,
+      });
       return false;
-    } else if (response.request.path === "/news") {
+    } else if (finalPath === "/news") {
+      logLoginDiagnostic({
+        requestId: diagnostics.requestId,
+        outcome: "success",
+        status: response.status,
+        finalPath,
+      });
       return true;
     }
   }
+
+  logLoginDiagnostic({
+    requestId: diagnostics.requestId,
+    outcome: "unexpected-response",
+    status: response.status,
+    finalPath,
+  });
   return false;
 };
 

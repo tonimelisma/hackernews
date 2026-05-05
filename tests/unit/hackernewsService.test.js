@@ -45,18 +45,30 @@ describe("services/hackernews", () => {
       expect(result).toBe(true);
     });
 
+    it("logs safe diagnostics without credentials", async () => {
+      axios.post.mockResolvedValue({
+        status: 200,
+        request: { path: "/news" },
+      });
+
+      await hackernews.login("news", "testuser", "supersecret", { requestId: "req-1" });
+
+      expect(console.log).toHaveBeenCalledWith(
+        "[hn-login] requestId=req-1 outcome=success status=200 finalPath=/news"
+      );
+      const logOutput = console.log.mock.calls.flat().join(" ");
+      expect(logOutput).not.toContain("supersecret");
+      expect(logOutput).not.toContain("testuser");
+    });
+
     it("returns false when redirected back to /login", async () => {
       axios.post.mockResolvedValue({
         status: 200,
         request: { path: "/login" },
       });
 
-      const consoleSpy = jest
-        .spyOn(console, "error")
-        .mockImplementation(() => {});
       const result = await hackernews.login("news", "testuser", "wrongpass");
       expect(result).toBe(false);
-      consoleSpy.mockRestore();
     });
 
     it("returns false for unexpected redirect path", async () => {

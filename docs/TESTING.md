@@ -21,26 +21,26 @@ npm test && cd hackernews-frontend && npm test && cd ..
 |------|------|-------|----------------|
 | `tests/unit/middleware.test.js` | Unit | 3 | `unknownEndpoint` (404), `errorHandler` (500 + next) |
 | `tests/unit/config.test.js` | Unit | 1 | `limitResults` constant |
-| `tests/unit/hackernewsService.test.js` | Unit+DB | 22 | HN API functions (axios mocked), SQLite operations, ctx tracking, updateStories return value, undefined score filtering, getAllStoryIds dedup |
+| `tests/unit/hackernewsService.test.js` | Unit+DB | 23 | HN API functions (axios mocked), HN login redirect detection and safe diagnostics, SQLite operations, ctx tracking, updateStories return value, undefined score filtering, getAllStoryIds dedup |
 | `tests/unit/database.test.js` | Unit | 4 | getDb/setDb, initSchema creates tables/indexes/schema_migrations, idempotent schema init |
 | `tests/unit/dbLogger.test.js` | Unit | 13 | createDbContext: counters, read/write, L1/MISS cache, per-table breakdown, query inline logging |
 | `tests/unit/migrator.test.js` | Unit | 10 | ensureMigrationsTable, runMigrations (order, skip, auto-create, tables, timestamps), rollback, status |
 | `tests/integration/storyService.test.js` | Integration | 28 | All storyService CRUD, L1 cache, hidden cache+dedup, cache expiry, query caps, hiddenIds mutation guard |
 | `tests/integration/api.test.js` | Integration | 33 | Full HTTP request/response via supertest, username length validation |
 | `tests/integration/worker.test.js` | Integration | 13 | syncOnce() direct tests, compound staleness queries, batch limits, utility functions, empty getAllStoryIds |
-| **Total** | | **127** | |
+| **Total** | | **128** | |
 
 ### Frontend (Vitest + React Testing Library)
 
 | File | Type | Tests | What it covers |
 |------|------|-------|----------------|
-| `src/App.test.jsx` | Component | 18 | App rendering, timespan, loading, auth, login button disable, re-fetch on login, hide button visibility, timespan persistence |
+| `src/App.test.jsx` | Component | 19 | App rendering, timespan, auth-first loading, login button disable, re-fetch on login, hide button visibility, timespan persistence |
 | `src/components/StoryList.test.jsx` | Component | 2 | List rendering (react-virtuoso mocked) |
 | `src/components/Story.test.jsx` | Component | 12 | Story card: title, author, score, time, favicon, hide, URL safety, hide button conditional |
 | `src/hooks/useTheme.test.js` | Hook | 4 | Theme detection, live changes, cleanup |
 | `src/services/storyService.test.js` | Unit | 3 | Axios calls for stories/addHidden |
 | `src/services/loginService.test.js` | Unit | 4 | Axios calls for login, logout, getMe |
-| **Total** | | **43** | |
+| **Total** | | **44** | |
 
 ## Key Technical Details
 
@@ -151,4 +151,6 @@ CI uploads coverage artifacts (14-day retention) via `actions/upload-artifact@v4
 | `storyService.test.js` | "deduplicates concurrent getHidden calls for same user" | Race condition: simultaneous requests doubled reads |
 | `App.test.jsx` | "disables login button while login is in flight" | Double login POST from rapid button clicks |
 | `App.test.jsx` | "re-fetches stories after login" | Stories not reflecting server-side hidden filtering after login |
+| `App.test.jsx` | "waits for login state before fetching stories" | Articles loading before `/me` resolves and showing the wrong logged-out state |
+| `hackernewsService.test.js` | "logs safe diagnostics without credentials" | Production HN login failures lacked enough safe detail to diagnose |
 | `hackernewsService.test.js` | "skips stories with undefined score in return value" | Worker `updateStories` returning undefined scores for deleted/flagged stories |

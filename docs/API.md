@@ -99,6 +99,8 @@ Authenticate via HackerNews credentials. Proxies the login request to `news.ycom
 
 **Rate limited:** 10 requests per 15-minute window (via `express-rate-limit`).
 
+The backend follows HN redirects: a final `/news` path means success, while `/login` means invalid credentials. Each `/login` response includes `X-Login-Request-Id`, and diagnostics log that request ID with outcome, status, and final HN path, but never passwords, tokens, or usernames.
+
 **Request body:**
 ```json
 {

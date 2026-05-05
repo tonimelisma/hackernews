@@ -37,10 +37,29 @@ const App = () => {
   const [loginError, setLoginError] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [loggedInUser, setLoggedInUser] = useState("");
+  const [authChecked, setAuthChecked] = useState(false);
   const [error, setError] = useState(null);
   const [loggingIn, setLoggingIn] = useState(false);
 
   useEffect(() => {
+    loginService
+      .getMe()
+      .then((data) => {
+        setLoggedIn(true);
+        setLoggedInUser(data.username);
+      })
+      .catch(() => {
+        setLoggedIn(false);
+        setLoggedInUser("");
+      })
+      .finally(() => {
+        setAuthChecked(true);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!authChecked) return;
+
     setLoading(true);
     setError(null);
     storyService
@@ -53,24 +72,11 @@ const App = () => {
         setError("Failed to load stories.");
         setLoading(false);
       });
-  }, [timespan, loggedIn]);
+  }, [timespan, loggedIn, authChecked]);
 
   useEffect(() => {
     saveTimespan(timespan);
   }, [timespan]);
-
-  useEffect(() => {
-    loginService
-      .getMe()
-      .then((data) => {
-        setLoggedIn(true);
-        setLoggedInUser(data.username);
-      })
-      .catch(() => {
-        setLoggedIn(false);
-        setLoggedInUser("");
-      });
-  }, []);
 
   const addHidden = (id) => {
     const previousStories = stories;
@@ -180,7 +186,9 @@ const App = () => {
         </div>
         <div className="btn-group">
           <button type="button" className="btn" data-bs-toggle="dropdown" data-bs-auto-close="outside">
-            {loggedIn ? (
+            {!authChecked ? (
+              <span className="spinner-border spinner-border-sm text-light" role="status" aria-label="Checking login" />
+            ) : loggedIn ? (
               <FontAwesomeIcon
                 icon={faUserCircle}
                 size="lg"
@@ -200,7 +208,9 @@ const App = () => {
             className="dropdown-menu dropdown-menu-end"
             id="loginDropdownMenu"
           >
-            {loggedIn ? (
+            {!authChecked ? (
+              <div className="m-3 text-nowrap">Checking login...</div>
+            ) : loggedIn ? (
               <div className="m-3">
                 Logged in as {loggedInUser}
                 <button
@@ -242,7 +252,7 @@ const App = () => {
       {navBar()}
       <main>
         {error && <div className="alert alert-danger m-3">{error}</div>}
-        {loading ? (
+        {!authChecked ? null : loading ? (
           <div className="alert alert-primary align-middle m-3" role="alert">
             Loading... <div className="spinner-border" role="status" />
           </div>

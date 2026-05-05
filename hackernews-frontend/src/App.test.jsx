@@ -37,6 +37,15 @@ beforeEach(() => {
 });
 
 describe("App", () => {
+  it("waits for login state before fetching stories", async () => {
+    loginService.getMe.mockReturnValue(new Promise(() => {}));
+
+    render(<App />);
+
+    expect(loginService.getMe).toHaveBeenCalled();
+    expect(storyService.getAll).not.toHaveBeenCalled();
+  });
+
   it("renders navbar with title", async () => {
     render(<App />);
     expect(screen.getByText("Top Hacker News Stories")).toBeInTheDocument();
@@ -49,11 +58,10 @@ describe("App", () => {
     // Never resolve the promise to keep loading state
     storyService.getAll.mockReturnValue(new Promise(() => {}));
     render(<App />);
-    expect(screen.getByText("Loading...")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toBeInTheDocument();
     await waitFor(() => {
-      expect(loginService.getMe).toHaveBeenCalled();
+      expect(screen.getByText("Loading...")).toBeInTheDocument();
     });
+    expect(screen.getAllByRole("status").length).toBeGreaterThan(0);
   });
 
   it("renders stories after fetch completes", async () => {
