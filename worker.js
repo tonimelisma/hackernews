@@ -91,6 +91,16 @@ const syncOnce = async () => {
     console.error("error updating stories:", e);
   }
 
+  // REFRESH QUERY-PLANNER STATISTICS
+  // Keeps sqlite_stat1 accurate as the table grows so the planner keeps choosing
+  // the right index per timespan (see migrations/002-analyze-statistics.js).
+  // Full ANALYZE is ~70ms on 150k rows and synchronous — cheap once per cycle.
+  try {
+    db.exec("ANALYZE");
+  } catch (e) {
+    console.error("error refreshing statistics:", e);
+  }
+
   const memoryUsage = process.memoryUsage();
   ctx.log("WORKER sync", {
     new: newCount,

@@ -90,7 +90,8 @@ hackernews/
 │   ├── storyService.js     # Story/user CRUD (SQL queries)
 │   └── hackernews.js       # HN API client + story import/update
 ├── migrations/
-│   └── 001-initial-schema.js # Initial tables: stories, users, hidden + indexes
+│   ├── 001-initial-schema.js # Initial tables: stories, users, hidden + indexes
+│   └── 002-analyze-statistics.js # Runs ANALYZE so the planner picks the right index per timespan
 ├── util/
 │   ├── config.js           # Environment config (limitResults)
 │   ├── dbLogger.js         # Per-request DB operation & cache analytics logging
@@ -126,7 +127,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 2. **In-memory SQLite for tests**: Tests use `better-sqlite3` with `:memory:` databases via `setDb()` in `tests/setup.js`. No credentials, no network, no mocking of database modules. `clearDatabase()` truncates all tables between tests. Backend tests run in ~1 second.
 
-3. **Worker testable via `syncOnce()`**: `worker.js` exports `syncOnce()` (one full sync cycle) and guards `main()` with `require.main === module`. Tests import `syncOnce()` directly with mocked `services/hackernews`. Worker is integrated into the Express process via `setInterval` in `bin/www`. Worker fetches ~1200 unique story IDs per cycle (`newstories` + `topstories` + `beststories`), batch limit 500.
+3. **Worker testable via `syncOnce()`**: `worker.js` exports `syncOnce()` (one full sync cycle) and guards `main()` with `require.main === module`. Tests import `syncOnce()` directly with mocked `services/hackernews`. Worker is integrated into the Express process via `setInterval` in `bin/www`. Worker fetches ~1200 unique story IDs per cycle (`newstories` + `topstories` + `beststories`), batch limit 500. At the end of each cycle it runs `ANALYZE` to keep query-planner statistics fresh (see gotcha #20).
 
 4. **Single SQL query for stories**: `getStories()` uses a single SQL query that handles time filtering, hidden story exclusion, score sorting, and pagination — all in one step. No client-side sorting, no multi-tier cache, no merge logic needed.
 
@@ -158,7 +159,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 18. **CSP uses script hash (not unsafe-inline)**: The inline dark mode script in `index.html` is allowed via `'sha256-8y8P8Mwo9xa1B5mBjxyt9mk3G0AxFcNMDqIEmr6vUkQ='` in the CSP `script-src` directive. If the inline script content changes (even whitespace), the hash must be recomputed and updated in `app.js`.
 
-19. **Database migration system**: `services/migrator.js` reads numbered `.js` files from `migrations/`, runs pending `up()` functions in transactions, and tracks applied migrations in `schema_migrations` table. `rollbackMigration()` runs `down()` and removes the record. CLI: `node scripts/migrate.js [up|rollback|status]`. New schema changes must be added as new migration files (e.g., `migrations/002-add-column.js`).
+19. **Database migration system**: `services/migrator.js` reads numbered `.js` files from `migrations/`, runs pending `up()` functions in transactions, and tracks applied migrations in `schema_migrations` table. `rollbackMigration()` runs `down()` and removes the record. CLI: `node scripts/migrate.js [up|rollback|status]`. New schema changes must be added as new migration files (e.g., `migrations/003-add-column.js`).
+
+20. **Query-planner statistics are mandatory (ANALYZE)**: `getStories` runs `WHERE time > ? ORDER BY score DESC LIMIT 500`, which no single index satisfies. Without `sqlite_stat1` stats the planner always scans `idx_stories_score` and filters by time, which is pathological for the *selective* "Day" window (few hundred matches scattered across 150k+ rows) — measured at ~125 ms median / **27 s worst case** on production, and since `better-sqlite3` is synchronous that freezes the whole process. `migrations/002-analyze-statistics.js` runs `ANALYZE` so the planner uses `idx_stories_time` for Day/Week and `idx_stories_score` for Month/Year/All. The worker re-runs `ANALYZE` each cycle (~70 ms) to keep stats fresh. **Use full `ANALYZE`** — do not set `PRAGMA analysis_limit` (the sampled variant produced stats that did not flip the Day plan). "Day" is the frontend default, so this query is the most common page load. See [docs/DATABASE.md](docs/DATABASE.md#query-planner-statistics-analyze).
 
 ## Documentation
 
@@ -173,12 +176,12 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, database, dbLogger, migrator) | 54 |
-| Backend integration (storyService, api, worker) | 74 |
+| Backend unit (middleware, config, hackernews, database, dbLogger, migrator) | 56 |
+| Backend integration (storyService, api, worker) | 75 |
 | Frontend component (App, StoryList, Story) | 33 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 7 |
-| **Total** | **172** |
+| **Total** | **175** |
 
 ## Project Health
 
@@ -246,3 +249,4 @@ All of these must be kept current with every change:
 - **CSP script hash**: `'unsafe-inline'` replaced with SHA-256 hash of the inline dark mode script in `index.html`. Hash must be recomputed if the script content changes. Use: `python3 -c "import hashlib, base64; ..."` or `openssl dgst -sha256 -binary | openssl base64`.
 - **Database migration system**: `services/migrator.js` handles versioned schema migrations. Each migration file exports `up(db)` and `down(db)`. Migrations run in transactions. `initSchema()` in `database.js` is now a wrapper around `runMigrations()`. Migration tests use their own in-memory databases (not shared test setup).
 - **Cache key array mutation**: `storyService.getStories()` sorts `hiddenIds` for cache key computation — must copy with `[...hiddenIds]` first to avoid mutating the caller's array.
+- **ANALYZE drives index choice (the inverse-latency bug)**: Profiling prod (152k rows) showed the *fewest-matches* timespan was the *slowest*: "Day" ran ~125 ms median / 27 s worst, while "All" ran ~2 ms. Cause: no `sqlite_stat1` stats existed, so the planner always scanned `idx_stories_score` top-down and filtered `time > ?` row-by-row, clawing through the whole table to find a few hundred recent rows. A one-time `ANALYZE` (migration 002) lets the planner pick `idx_stories_time` for selective windows and `idx_stories_score` for broad ones — every timespan dropped to ≤7 ms median. Refresh stats periodically (worker does it each cycle) as the table grows. Lesson: with a time-filter + different-column sort + LIMIT, accurate stats matter more than adding indexes. Profile with `process.hrtime.bigint()` around `stmt.all()` and `EXPLAIN QUERY PLAN`, not wall-time.

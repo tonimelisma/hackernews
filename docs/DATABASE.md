@@ -89,10 +89,45 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 | Index | Columns | Purpose |
 |-------|---------|---------|
-| `idx_stories_score` | `score DESC` | Fast `ORDER BY score DESC` for "All" timespan |
-| `idx_stories_time` | `time DESC` | Fast time-range filtering |
+| `idx_stories_score` | `score DESC` | Fast `ORDER BY score DESC` for the broad (Month/Year/All) timespans |
+| `idx_stories_time` | `time DESC` | Fast filtering for the selective (Day/Week) timespans |
 | `idx_stories_time_updated` | `time, updated` | Worker stale-story detection queries |
 | `idx_hidden_username` | `username` | Fast hidden story lookups per user |
+
+## Query-Planner Statistics (ANALYZE)
+
+`getStories` runs `WHERE time > ? ORDER BY score DESC LIMIT 500`. There is no single
+index that satisfies both the time-range filter and the score ordering, so the
+planner must choose: scan `idx_stories_score` top-to-bottom and filter by time
+(no sort, but reads until it collects `LIMIT` matches), **or** range-scan
+`idx_stories_time` for the matching rows then sort them by score (extra sort, but
+reads only matching rows). Which is cheaper depends entirely on how many rows fall
+inside the window — and the planner can only know that if statistics exist.
+
+**Without statistics**, the planner defaults to the `idx_stories_score` scan for
+every timespan. That is pathological for selective windows: the "Day" window
+matches only a few hundred rows scattered across 150k+ by score, so the scan claws
+through nearly the whole table. Measured on production (152k rows):
+
+| Timespan | Rows in window | No stats (median / worst) | After `ANALYZE` (median) | Index chosen with stats |
+|----------|----------------|---------------------------|--------------------------|-------------------------|
+| Day | ~850 | 125 ms / **27,090 ms** | **~3 ms** | `idx_stories_time` |
+| Week | ~7,000 | 33 ms | ~7 ms | `idx_stories_time_updated` |
+| Month | ~28,000 | 8 ms | ~7 ms | `idx_stories_score` |
+| Year | ~136,000 | 5 ms | ~3 ms | `idx_stories_score` |
+| All | ~152,000 | 2 ms | ~2 ms | `idx_stories_score` |
+
+Because `better-sqlite3` is synchronous, the 27 s worst case froze the entire
+Node process (all requests, the worker, and the health check). "Day" is also the
+frontend's default timespan, so the most common page load hit the worst query.
+
+**The fix:** [`migrations/002-analyze-statistics.js`](../migrations/002-analyze-statistics.js)
+runs `ANALYZE`, populating `sqlite_stat1` so the planner picks the right index per
+timespan. The worker re-runs `ANALYZE` at the end of every sync cycle
+([worker.js](../worker.js)) — full `ANALYZE` is ~70 ms on 150k rows — so stats stay
+accurate as the table grows. Use a **full** `ANALYZE` (do **not** set
+`PRAGMA analysis_limit`); the sampled/limited variant produced coarser stats that
+did not flip the "Day" plan in testing.
 
 ## Connection Management
 
@@ -142,7 +177,7 @@ Runs every 15 minutes with three staleness tiers:
 - **Weekly stories** (last 7 days): stale after 6h
 - **Monthly stories** (last 28 days): stale after 48h
 
-Each query is capped at `WORKER_BATCH_LIMIT=200`.
+Each query is capped at `WORKER_BATCH_LIMIT=500`.
 
 ### Worker — find latest story
 

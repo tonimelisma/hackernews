@@ -24,11 +24,11 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `tests/unit/hackernewsService.test.js` | Unit+DB | 23 | HN API functions (axios mocked), HN login redirect detection and safe diagnostics, SQLite operations, ctx tracking, updateStories return value, undefined score filtering, getAllStoryIds dedup |
 | `tests/unit/database.test.js` | Unit | 4 | getDb/setDb, initSchema creates tables/indexes/schema_migrations, idempotent schema init |
 | `tests/unit/dbLogger.test.js` | Unit | 13 | createDbContext: counters, read/write, L1/MISS cache, per-table breakdown, query inline logging |
-| `tests/unit/migrator.test.js` | Unit | 10 | ensureMigrationsTable, runMigrations (order, skip, auto-create, tables, timestamps), rollback, status |
+| `tests/unit/migrator.test.js` | Unit | 12 | ensureMigrationsTable, runMigrations (order, skip, auto-create, tables, timestamps), migration 002 ANALYZE/sqlite_stat1 + Day-query plan uses idx_stories_time, rollback, status |
 | `tests/integration/storyService.test.js` | Integration | 28 | All storyService CRUD, L1 cache, hidden cache+dedup, cache expiry, query caps, hiddenIds mutation guard |
 | `tests/integration/api.test.js` | Integration | 33 | Full HTTP request/response via supertest, username length validation |
-| `tests/integration/worker.test.js` | Integration | 13 | syncOnce() direct tests, compound staleness queries, batch limits, utility functions, empty getAllStoryIds |
-| **Total** | | **128** | |
+| `tests/integration/worker.test.js` | Integration | 14 | syncOnce() direct tests, compound staleness queries, batch limits, ANALYZE stats refresh per cycle, utility functions, empty getAllStoryIds |
+| **Total** | | **131** | |
 
 ### Frontend (Vitest + React Testing Library)
 

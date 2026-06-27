@@ -198,6 +198,29 @@ describe("syncOnce()", () => {
     expect(Remote.checkStoryExists).not.toHaveBeenCalled();
     expect(Remote.addStories).not.toHaveBeenCalled();
   });
+
+  // Regression: the worker must refresh query-planner statistics each cycle so
+  // sqlite_stat1 stays accurate as the table grows and the "Day" query keeps
+  // using idx_stories_time instead of a full idx_stories_score scan.
+  it("refreshes query-planner statistics (ANALYZE) at the end of a cycle", async () => {
+    for (let i = 1; i <= 50; i++) seedStory({ id: i, score: i, time: Date.now() });
+    const { getDb } = require("../../services/database");
+    // Drop stats seeded by migration 002 to prove the worker regenerates them.
+    getDb().exec("DROP TABLE IF EXISTS sqlite_stat1");
+
+    Remote.getAllStoryIds.mockResolvedValue([]);
+
+    await syncOnce();
+
+    const statTable = getDb().prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_stat1'"
+    ).all();
+    expect(statTable).toHaveLength(1);
+    const storiesStat = getDb().prepare(
+      "SELECT count(*) c FROM sqlite_stat1 WHERE tbl = 'stories'"
+    ).get();
+    expect(storiesStat.c).toBeGreaterThan(0);
+  });
 });
 
 describe("utility functions", () => {

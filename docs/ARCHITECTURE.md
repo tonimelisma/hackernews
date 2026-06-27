@@ -290,7 +290,8 @@ hackernews/
 │   └── hackernews.js               # HN API client + story import/update
 │
 ├── migrations/
-│   └── 001-initial-schema.js       # Initial tables: stories, users, hidden + indexes
+│   ├── 001-initial-schema.js       # Initial tables: stories, users, hidden + indexes
+│   └── 002-analyze-statistics.js   # ANALYZE — query-planner stats for per-timespan index choice
 │
 ├── util/
 │   ├── config.js                   # dotenv config (limitResults)
@@ -359,6 +360,7 @@ hackernews/
    - Check which IDs are missing from SQLite via `checkStoryExists()`
    - Add missing stories via `INSERT OR REPLACE`
    - Update scores for stale stories, tiered by age: 1h/6h/48h, batch limit 500
+   - Run `ANALYZE` to refresh query-planner statistics (keeps per-timespan index choice correct as the table grows; see DATABASE.md)
 3. All writes happen in SQLite transactions for performance
 4. Graceful shutdown: SIGTERM/SIGINT clear worker interval, close server and DB
 
