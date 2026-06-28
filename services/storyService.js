@@ -51,7 +51,7 @@ const getStories = async (timespan, limit, skip = undefined, ctx, hiddenIds = []
   let stories;
 
   if (timespanSeconds === null) {
-    // "All" — score index matches ORDER BY; no time filter to benefit from time index
+    // "All" — score index matches ORDER BY; no time filter
     if (hiddenIds.length > 0) {
       const placeholders = hiddenIds.map(() => "?").join(",");
       const stmt = db.prepare(
@@ -72,14 +72,17 @@ const getStories = async (timespan, limit, skip = undefined, ctx, hiddenIds = []
       stories = stmt.all(limit, skipN);
     }
   } else {
-    // Always filter via time index — read-only frontend; avoids pathological
-    // idx_stories_score scans when high-scored rows fall outside the window
+    // Day–Month: time index (selective; score scan can take 16s+ on Month).
+    // Year: score index (~89% of rows match; time scan + sort takes 14–17s).
+    const indexHint = timespan === "Year"
+      ? " INDEXED BY idx_stories_score"
+      : " INDEXED BY idx_stories_time";
     const threshold = Date.now() - timespanSeconds * 1000;
     if (hiddenIds.length > 0) {
       const placeholders = hiddenIds.map(() => "?").join(",");
       const stmt = db.prepare(
         `SELECT id, by, descendants, score, time, title, url
-         FROM stories INDEXED BY idx_stories_time
+         FROM stories${indexHint}
          WHERE time > ?
            AND id NOT IN (${placeholders})
          ORDER BY score DESC
@@ -89,7 +92,7 @@ const getStories = async (timespan, limit, skip = undefined, ctx, hiddenIds = []
     } else {
       const stmt = db.prepare(
         `SELECT id, by, descendants, score, time, title, url
-         FROM stories INDEXED BY idx_stories_time
+         FROM stories${indexHint}
          WHERE time > ?
          ORDER BY score DESC
          LIMIT ? OFFSET ?`

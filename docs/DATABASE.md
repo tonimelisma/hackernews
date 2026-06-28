@@ -108,10 +108,12 @@ inside the window — and the planner can only know that if statistics exist.
 frontend is read-only and writes are rare, so we optimize for predictable latency
 over planner heuristics:
 
-- **Day / Week / Month / Year:** `INDEXED BY idx_stories_time` — range-scan recent
+- **Day / Week / Month:** `INDEXED BY idx_stories_time` — range-scan recent
   rows, sort by score. Avoids pathological `idx_stories_score` scans when
   high-scored stories fall outside the window (measured **16 s** on prod for Month).
-- **All:** `INDEXED BY idx_stories_score` — no time filter; score order is the query.
+- **Year / All:** `INDEXED BY idx_stories_score` — Year matches ~89% of rows
+  (136k/153k); forcing the time index reads and sorts the whole window (**14–17 s**
+  on prod). Score index stops at 500 matches.
 
 `ANALYZE` (migration 002, worker refresh) still keeps worker staleness queries
 fast; the hints apply only to `getStories`.

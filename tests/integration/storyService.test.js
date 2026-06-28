@@ -68,8 +68,8 @@ describe("services/storyService", () => {
     });
 
     // Regression: Month used idx_stories_score on prod (16s worst case) when top
-    // scores fell outside the window. getStories forces idx_stories_time for reads.
-    it("uses idx_stories_time for Month and Year queries (INDEXED BY hint)", async () => {
+    // scores fell outside the window. Year must use score index (~136k rows match).
+    it("uses correct INDEXED BY hint per timespan", async () => {
       await db.clearDatabase();
       const { getDb } = require("../../services/database");
       const database = getDb();
@@ -94,6 +94,15 @@ describe("services/storyService", () => {
       ).all(monthThreshold).map(r => r.detail).join(" | ");
       expect(monthPlan).toMatch(/idx_stories_time/);
       expect(monthPlan).not.toMatch(/idx_stories_score/);
+
+      const yearThreshold = now - 365 * 24 * 60 * 60 * 1000;
+      const yearPlan = database.prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT id, score, time FROM stories INDEXED BY idx_stories_score
+         WHERE time > ? ORDER BY score DESC LIMIT 500`
+      ).all(yearThreshold).map(r => r.detail).join(" | ");
+      expect(yearPlan).toMatch(/idx_stories_score/);
+      expect(yearPlan).not.toMatch(/idx_stories_time/);
 
       const allPlan = database.prepare(
         `EXPLAIN QUERY PLAN
