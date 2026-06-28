@@ -104,30 +104,17 @@ planner must choose: scan `idx_stories_score` top-to-bottom and filter by time
 reads only matching rows). Which is cheaper depends entirely on how many rows fall
 inside the window — and the planner can only know that if statistics exist.
 
-**Without statistics**, the planner defaults to the `idx_stories_score` scan for
-every timespan. That is pathological for selective windows: the "Day" window
-matches only a few hundred rows scattered across 150k+ by score, so the scan claws
-through nearly the whole table. Measured on production (152k rows):
+**Read path:** `getStories` forces index choice via SQLite `INDEXED BY` hints — the
+frontend is read-only and writes are rare, so we optimize for predictable latency
+over planner heuristics:
 
-| Timespan | Rows in window | No stats (median / worst) | After `ANALYZE` (median) | Index chosen with stats |
-|----------|----------------|---------------------------|--------------------------|-------------------------|
-| Day | ~850 | 125 ms / **27,090 ms** | **~3 ms** | `idx_stories_time` |
-| Week | ~7,000 | 33 ms | ~7 ms | `idx_stories_time_updated` |
-| Month | ~28,000 | 8 ms | ~7 ms | `idx_stories_score` |
-| Year | ~136,000 | 5 ms | ~3 ms | `idx_stories_score` |
-| All | ~152,000 | 2 ms | ~2 ms | `idx_stories_score` |
+- **Day / Week / Month / Year:** `INDEXED BY idx_stories_time` — range-scan recent
+  rows, sort by score. Avoids pathological `idx_stories_score` scans when
+  high-scored stories fall outside the window (measured **16 s** on prod for Month).
+- **All:** `INDEXED BY idx_stories_score` — no time filter; score order is the query.
 
-Because `better-sqlite3` is synchronous, the 27 s worst case froze the entire
-Node process (all requests, the worker, and the health check). "Day" is also the
-frontend's default timespan, so the most common page load hit the worst query.
-
-**The fix:** [`migrations/002-analyze-statistics.js`](../migrations/002-analyze-statistics.js)
-runs `ANALYZE`, populating `sqlite_stat1` so the planner picks the right index per
-timespan. The worker re-runs `ANALYZE` at the end of every sync cycle
-([worker.js](../worker.js)) — full `ANALYZE` is ~70 ms on 150k rows — so stats stay
-accurate as the table grows. Use a **full** `ANALYZE` (do **not** set
-`PRAGMA analysis_limit`); the sampled/limited variant produced coarser stats that
-did not flip the "Day" plan in testing.
+`ANALYZE` (migration 002, worker refresh) still keeps worker staleness queries
+fast; the hints apply only to `getStories`.
 
 ## Connection Management
 
@@ -146,18 +133,18 @@ did not flip the "Day" plan in testing.
 Single SQL query handles everything:
 
 ```sql
--- Time-filtered with hidden exclusion
+-- Time-filtered with hidden exclusion (INDEXED BY idx_stories_time)
 SELECT id, by, descendants, score, time, title, url
-FROM stories
+FROM stories INDEXED BY idx_stories_time
 WHERE time > ?
-  AND id NOT IN (SELECT story_id FROM hidden WHERE username = ?)
+  AND id NOT IN (...)
 ORDER BY score DESC
 LIMIT ? OFFSET ?
 
--- "All" timespan (no time filter)
+-- "All" timespan (INDEXED BY idx_stories_score)
 SELECT id, by, descendants, score, time, title, url
-FROM stories
-WHERE id NOT IN (SELECT story_id FROM hidden WHERE username = ?)
+FROM stories INDEXED BY idx_stories_score
+WHERE id NOT IN (...)
 ORDER BY score DESC
 LIMIT ? OFFSET ?
 ```

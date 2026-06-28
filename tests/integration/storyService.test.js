@@ -67,6 +67,42 @@ describe("services/storyService", () => {
       expect(result).toHaveLength(5);
     });
 
+    // Regression: Month used idx_stories_score on prod (16s worst case) when top
+    // scores fell outside the window. getStories forces idx_stories_time for reads.
+    it("uses idx_stories_time for Month and Year queries (INDEXED BY hint)", async () => {
+      await db.clearDatabase();
+      const { getDb } = require("../../services/database");
+      const database = getDb();
+      const now = Date.now();
+      const ins = database.prepare(
+        "INSERT INTO stories (id, score, time, updated) VALUES (?, ?, ?, ?)"
+      );
+      database.transaction(() => {
+        for (let i = 1; i <= 8000; i++) {
+          ins.run(i, 1000 + i, now - (60 + i) * 24 * 60 * 60 * 1000, now);
+        }
+        for (let i = 8001; i <= 8200; i++) {
+          ins.run(i, i % 500, now - 3 * 60 * 60 * 1000, now);
+        }
+      })();
+
+      const monthThreshold = now - 28 * 24 * 60 * 60 * 1000;
+      const monthPlan = database.prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT id, score, time FROM stories INDEXED BY idx_stories_time
+         WHERE time > ? ORDER BY score DESC LIMIT 500`
+      ).all(monthThreshold).map(r => r.detail).join(" | ");
+      expect(monthPlan).toMatch(/idx_stories_time/);
+      expect(monthPlan).not.toMatch(/idx_stories_score/);
+
+      const allPlan = database.prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT id, score, time FROM stories INDEXED BY idx_stories_score
+         ORDER BY score DESC LIMIT 500`
+      ).all().map(r => r.detail).join(" | ");
+      expect(allPlan).toMatch(/idx_stories_score/);
+    });
+
     it("sorts by score descending", async () => {
       const result = await storyService.getStories("All", 500);
       expect(result[0].score).toBe(500);

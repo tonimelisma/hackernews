@@ -161,7 +161,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 19. **Database migration system**: `services/migrator.js` reads numbered `.js` files from `migrations/`, runs pending `up()` functions in transactions, and tracks applied migrations in `schema_migrations` table. `rollbackMigration()` runs `down()` and removes the record. CLI: `node scripts/migrate.js [up|rollback|status]`. New schema changes must be added as new migration files (e.g., `migrations/003-add-column.js`). **The `Dockerfile` runtime stage MUST `COPY migrations ./migrations`** — without it, `loadMigrationFiles()` finds nothing in the container and `runMigrations()` silently runs zero migrations (`schema_migrations` stays empty). This was broken in prod until 2026-06-27; guarded by `tests/unit/dockerfile.test.js`.
 
-20. **Query-planner statistics are mandatory (ANALYZE)**: `getStories` runs `WHERE time > ? ORDER BY score DESC LIMIT 500`, which no single index satisfies. Without `sqlite_stat1` stats the planner always scans `idx_stories_score` and filters by time, which is pathological for the *selective* "Day" window (few hundred matches scattered across 150k+ rows) — measured at ~125 ms median / **27 s worst case** on production, and since `better-sqlite3` is synchronous that freezes the whole process. `migrations/002-analyze-statistics.js` runs `ANALYZE` so the planner uses `idx_stories_time` for Day/Week and `idx_stories_score` for Month/Year/All. The worker re-runs `ANALYZE` each cycle (~70 ms) to keep stats fresh. **Use full `ANALYZE`** — do not set `PRAGMA analysis_limit` (the sampled variant produced stats that did not flip the Day plan). "Day" is the frontend default, so this query is the most common page load. See [docs/DATABASE.md](docs/DATABASE.md#query-planner-statistics-analyze).
+20. **Query-planner statistics are mandatory (ANALYZE)**: `getStories` runs `WHERE time > ? ORDER BY score DESC LIMIT 500`, which no single index satisfies. Without `sqlite_stat1` stats the planner always scans `idx_stories_score` and filters by time, which is pathological for the *selective* "Day" window (few hundred matches scattered across 150k+ rows) — measured at ~125 ms median / **27 s worst case** on production, and since `better-sqlite3` is synchronous that freezes the whole process. `migrations/002-analyze-statistics.js` runs `ANALYZE`; the worker re-runs it each cycle (~70 ms). **Read path:** `getStories` forces `INDEXED BY idx_stories_time` for Day–Year and `INDEXED BY idx_stories_score` for All — avoids planner score scans for Month when top-scored rows fall outside the window (measured **16 s** on prod). See [docs/DATABASE.md](docs/DATABASE.md#query-planner-statistics-analyze).
 
 ## Documentation
 
@@ -177,11 +177,11 @@ All of these must be kept current with every change:
 | Suite | Tests |
 |-------|-------|
 | Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile) | 58 |
-| Backend integration (storyService, api, worker) | 75 |
+| Backend integration (storyService, api, worker) | 76 |
 | Frontend component (App, StoryList, Story) | 33 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 7 |
-| **Total** | **177** |
+| **Total** | **178** |
 
 ## Project Health
 
