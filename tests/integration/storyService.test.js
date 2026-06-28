@@ -5,7 +5,6 @@ beforeAll(async () => await db.connect());
 const storyService = require("../../services/storyService");
 
 afterEach(async () => {
-  await storyService.clearCache();
   await db.clearDatabase();
 });
 afterAll(async () => await db.closeDatabase());
@@ -144,17 +143,14 @@ describe("services/storyService", () => {
       expect(result[0].time).toBeInstanceOf(Date);
     });
 
-    it("returns cached data on second call", async () => {
+    it("returns fresh data on second call", async () => {
       const first = await storyService.getStories("All", 500);
-      // Add another story after caching (outside Day range)
       seedStory({ id: 99, score: 999, time: Date.now() - 48 * 60 * 60 * 1000 });
       const second = await storyService.getStories("All", 500);
-      // Should return same count (cache hit)
-      expect(second).toHaveLength(first.length);
+      expect(second).toHaveLength(first.length + 1);
     });
 
     it("Year returns high-scoring old stories even with >500 stories in range", async () => {
-      await storyService.clearCache();
       await db.clearDatabase();
 
       const now = Date.now();
@@ -212,7 +208,6 @@ describe("services/storyService", () => {
     });
 
     it("handles self-post stories with no url field", async () => {
-      await storyService.clearCache();
       await db.clearDatabase();
 
       seedStory({ id: 1, score: 100, time: Date.now(), url: null });
@@ -268,23 +263,6 @@ describe("services/storyService", () => {
       expect(result1.sort()).toEqual([100, 200]);
       expect(result2.sort()).toEqual([100, 200]);
     });
-
-    it("returns cached hidden IDs on second call", async () => {
-      const { getDb } = require("../../services/database");
-      const d = getDb();
-      d.prepare("INSERT INTO users (username) VALUES (?)").run("cacheuser");
-      d.prepare("INSERT INTO hidden (username, story_id) VALUES (?, ?)").run("cacheuser", 100);
-
-      const first = await storyService.getHidden("cacheuser");
-      expect(first).toEqual([100]);
-
-      // Add another hidden ID directly (bypassing upsertHidden to avoid cache invalidation)
-      d.prepare("INSERT INTO hidden (username, story_id) VALUES (?, ?)").run("cacheuser", 200);
-
-      // Second call should return cached result (only 100)
-      const second = await storyService.getHidden("cacheuser");
-      expect(second).toEqual([100]);
-    });
   });
 
   describe("upsertHidden", () => {
@@ -313,20 +291,17 @@ describe("services/storyService", () => {
       expect(ids).toContain(200);
     });
 
-    it("invalidates hidden cache after upsert", async () => {
+    it("getHidden reflects upsert immediately", async () => {
       const { getDb } = require("../../services/database");
       const d = getDb();
       d.prepare("INSERT INTO users (username) VALUES (?)").run("invaliduser");
       d.prepare("INSERT INTO hidden (username, story_id) VALUES (?, ?)").run("invaliduser", 100);
 
-      // Populate hidden cache
       const first = await storyService.getHidden("invaliduser");
       expect(first).toEqual([100]);
 
-      // upsertHidden should invalidate cache
       await storyService.upsertHidden("invaliduser", 200);
 
-      // Next getHidden should re-read from database
       const second = await storyService.getHidden("invaliduser");
       expect(second.sort()).toEqual([100, 200]);
     });

@@ -346,9 +346,7 @@ hackernews/
 ### Story Fetch (Frontend → Backend → SQLite)
 1. Frontend waits for `GET /api/v1/me` to settle, then calls `GET /api/v1/stories?timespan=Day`
 2. `routes/api.js` parses timespan, limit, skip
-3. `storyService.getStories()` checks L1 in-memory cache (1-minute TTL):
-   - **L1 hit**: Return cached stories immediately
-   - **L1 miss**: Run SQL query against SQLite, cache result in L1
+3. `storyService.getStories()` runs SQL against SQLite with forced `INDEXED BY` hints (see DATABASE.md)
 4. SQL query handles everything in one step: time filter + hidden exclusion + score sort + pagination
 5. If authenticated, hidden story IDs are excluded via `WHERE id NOT IN (...)` in the SQL query
 6. Response: JSON array of stories

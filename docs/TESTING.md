@@ -26,10 +26,10 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `tests/unit/dbLogger.test.js` | Unit | 13 | createDbContext: counters, read/write, L1/MISS cache, per-table breakdown, query inline logging |
 | `tests/unit/migrator.test.js` | Unit | 12 | ensureMigrationsTable, runMigrations (order, skip, auto-create, tables, timestamps), migration 002 ANALYZE/sqlite_stat1 + Day-query plan uses idx_stories_time, rollback, status |
 | `tests/unit/dockerfile.test.js` | Unit | 2 | Runtime image copies migrations/ (and bin/routes/services/util) so the migration system works in the container |
-| `tests/integration/storyService.test.js` | Integration | 29 | All storyService CRUD, L1 cache, hidden cache+dedup, cache expiry, query caps, hiddenIds mutation guard, INDEXED BY regression |
+| `tests/integration/storyService.test.js` | Integration | 28 | All storyService CRUD, getHidden dedup, query caps, hiddenIds mutation guard, INDEXED BY regression |
 | `tests/integration/api.test.js` | Integration | 33 | Full HTTP request/response via supertest, username length validation |
 | `tests/integration/worker.test.js` | Integration | 14 | syncOnce() direct tests, compound staleness queries, batch limits, ANALYZE stats refresh per cycle, utility functions, empty getAllStoryIds |
-| **Total** | | **133** | |
+| **Total** | | **132** | |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -86,7 +86,6 @@ Each test file imports setup and uses:
 ```js
 beforeAll(async () => await db.connect());
 afterEach(async () => {
-  await storyService.clearCache(); // clears L1 + hidden in-memory caches
   await db.clearDatabase();
 });
 afterAll(async () => await db.closeDatabase());

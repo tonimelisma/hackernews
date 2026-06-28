@@ -29,8 +29,6 @@ jest.mock("../../services/hackernews");
 const hackernews = require("../../services/hackernews");
 
 afterEach(async () => {
-  const storyService = require("../../services/storyService");
-  await storyService.clearCache();
   await db.clearDatabase();
   jest.clearAllMocks();
   // Clear token store

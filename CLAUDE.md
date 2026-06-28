@@ -137,31 +137,27 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 7. **Node.js 25+ crashes the app**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. `SlowBuffer` was removed in Node 25. No upstream fix available. **Use Node.js 18 or 20.**
 
-8. **L1 in-memory cache**: `storyService.js` caches SQL query results per timespan with a 1-minute TTL in an in-memory `Map`. `clearCache()` clears both the story cache and the per-user hidden cache. Tests must `await clearCache()` in afterEach.
+8. **Server-side hidden story filtering**: `GET /stories` optionally reads the auth cookie via `optionalAuth()`. If authenticated, fetches hidden IDs and passes them to `getStories()` which excludes them via SQL `WHERE id NOT IN (...)`. Anonymous users are unaffected.
 
-9. **Hidden stories in-memory cache + deduplication**: `getHidden()` caches per-user hidden IDs for 5 minutes (`HIDDEN_CACHE_TTL`). `upsertHidden()` invalidates the cache. Concurrent requests for the same user are deduplicated via `hiddenPending` Map (returns same in-flight Promise).
+9. **react-virtuoso for story lists**: `StoryList.jsx` uses `<Virtuoso useWindowScroll>` to render only visible stories from up to 500 items. Tests mock `react-virtuoso` to render all items synchronously.
 
-10. **Server-side hidden story filtering**: `GET /stories` optionally reads the auth cookie via `optionalAuth()`. If authenticated, fetches hidden IDs and passes them to `getStories()` which excludes them via SQL `WHERE id NOT IN (...)`. The story cache is shared (not per-user). Anonymous users are unaffected.
+10. **Hidden stories are server-side only**: Hiding stories requires login. The server filters hidden stories via SQL `WHERE id NOT IN (...)` before returning results. The hide button only appears for logged-in users. When a story is hidden, it's optimistically removed from the client-side `stories` array (with rollback on POST failure). No client-side hidden filtering or localStorage persistence. Stories are re-fetched on login/logout to reflect server-side filtering changes.
 
-11. **react-virtuoso for story lists**: `StoryList.jsx` uses `<Virtuoso useWindowScroll>` to render only visible stories from up to 500 items. Tests mock `react-virtuoso` to render all items synchronously.
+11. **Timespan localStorage persistence**: Selected timespan filter persists via `localStorage` (`timespan` key) as `{ value, timestamp }`. On page load, restores the saved value if the timestamp is less than 3 hours old; otherwise defaults to "Day". Saved on every timespan change via `useEffect`.
 
-12. **Hidden stories are server-side only**: Hiding stories requires login. The server filters hidden stories via SQL `WHERE id NOT IN (...)` before returning results. The hide button only appears for logged-in users. When a story is hidden, it's optimistically removed from the client-side `stories` array (with rollback on POST failure). No client-side hidden filtering or localStorage persistence. Stories are re-fetched on login/logout to reflect server-side filtering changes.
+12. **Dark mode via system preference**: Bootstrap 5.3's `data-bs-theme` attribute on `<html>`. A synchronous `<script>` in `index.html` sets the attribute before first paint (no flash). `useTheme` hook listens for live OS changes. No manual toggle — system detection only.
 
-13. **Timespan localStorage persistence**: Selected timespan filter persists via `localStorage` (`timespan` key) as `{ value, timestamp }`. On page load, restores the saved value if the timestamp is less than 3 hours old; otherwise defaults to "Day". Saved on every timespan change via `useEffect`.
+13. **Static file caching strategy**: `index.html` served with `Cache-Control: no-cache`; hashed `/assets/*` files served with `max-age=1y, immutable`.
 
-14. **Dark mode via system preference**: Bootstrap 5.3's `data-bs-theme` attribute on `<html>`. A synchronous `<script>` in `index.html` sets the attribute before first paint (no flash). `useTheme` hook listens for live OS changes. No manual toggle — system detection only.
+14. **Docker deployment**: Multi-stage `Dockerfile` builds node:20-alpine image with npm ci + frontend build + SQLite data import (data baked into image). `docker-compose.yml` runs only the HackerNews app with health checks and joins the external `reverse_proxy` Docker network as `hackernews-app`. The host-level Caddy reverse proxy lives outside this repo at `/opt/reverse-proxy` and routes `hackernews.melisma.net` to `hackernews-app:3000`. `docker-compose.dev.yml` is for local testing (app only, port 3000, no Caddy). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d`. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
 
-15. **Static file caching strategy**: `index.html` served with `Cache-Control: no-cache`; hashed `/assets/*` files served with `max-age=1y, immutable`.
+15. **Daily SQLite backup**: `scripts/backup-sqlite.sh` runs SQLite `.backup` inside the container, compresses with gzip, and uploads to `gs://hackernews-melisma-backup/`. Cron job at 3:00 AM UTC daily. 30-day retention. ~3.3 MB compressed per backup, well within GCP Always Free 5 GB.
 
-16. **Docker deployment**: Multi-stage `Dockerfile` builds node:20-alpine image with npm ci + frontend build + SQLite data import (data baked into image). `docker-compose.yml` runs only the HackerNews app with health checks and joins the external `reverse_proxy` Docker network as `hackernews-app`. The host-level Caddy reverse proxy lives outside this repo at `/opt/reverse-proxy` and routes `hackernews.melisma.net` to `hackernews-app:3000`. `docker-compose.dev.yml` is for local testing (app only, port 3000, no Caddy). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d`. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
+16. **CSP uses script hash (not unsafe-inline)**: The inline dark mode script in `index.html` is allowed via `'sha256-8y8P8Mwo9xa1B5mBjxyt9mk3G0AxFcNMDqIEmr6vUkQ='` in the CSP `script-src` directive. If the inline script content changes (even whitespace), the hash must be recomputed and updated in `app.js`.
 
-17. **Daily SQLite backup**: `scripts/backup-sqlite.sh` runs SQLite `.backup` inside the container, compresses with gzip, and uploads to `gs://hackernews-melisma-backup/`. Cron job at 3:00 AM UTC daily. 30-day retention. ~3.3 MB compressed per backup, well within GCP Always Free 5 GB.
+17. **Database migration system**: `services/migrator.js` reads numbered `.js` files from `migrations/`, runs pending `up()` functions in transactions, and tracks applied migrations in `schema_migrations` table. `rollbackMigration()` runs `down()` and removes the record. CLI: `node scripts/migrate.js [up|rollback|status]`. New schema changes must be added as new migration files (e.g., `migrations/003-add-column.js`). **The `Dockerfile` runtime stage MUST `COPY migrations ./migrations`** — without it, `loadMigrationFiles()` finds nothing in the container and `runMigrations()` silently runs zero migrations (`schema_migrations` stays empty). This was broken in prod until 2026-06-27; guarded by `tests/unit/dockerfile.test.js`.
 
-18. **CSP uses script hash (not unsafe-inline)**: The inline dark mode script in `index.html` is allowed via `'sha256-8y8P8Mwo9xa1B5mBjxyt9mk3G0AxFcNMDqIEmr6vUkQ='` in the CSP `script-src` directive. If the inline script content changes (even whitespace), the hash must be recomputed and updated in `app.js`.
-
-19. **Database migration system**: `services/migrator.js` reads numbered `.js` files from `migrations/`, runs pending `up()` functions in transactions, and tracks applied migrations in `schema_migrations` table. `rollbackMigration()` runs `down()` and removes the record. CLI: `node scripts/migrate.js [up|rollback|status]`. New schema changes must be added as new migration files (e.g., `migrations/003-add-column.js`). **The `Dockerfile` runtime stage MUST `COPY migrations ./migrations`** — without it, `loadMigrationFiles()` finds nothing in the container and `runMigrations()` silently runs zero migrations (`schema_migrations` stays empty). This was broken in prod until 2026-06-27; guarded by `tests/unit/dockerfile.test.js`.
-
-20. **Query-planner statistics are mandatory (ANALYZE)**: `getStories` runs `WHERE time > ? ORDER BY score DESC LIMIT 500`, which no single index satisfies. Without `sqlite_stat1` stats the planner always scans `idx_stories_score` and filters by time, which is pathological for the *selective* "Day" window (few hundred matches scattered across 150k+ rows) — measured at ~125 ms median / **27 s worst case** on production, and since `better-sqlite3` is synchronous that freezes the whole process. `migrations/002-analyze-statistics.js` runs `ANALYZE`; the worker re-runs it each cycle (~70 ms). **Read path:** `getStories` forces `INDEXED BY idx_stories_time` for Day–Month and `INDEXED BY idx_stories_score` for Year/All — Month score scans hit **16 s** when top scores fall outside the window; Year time scans hit **14–17 s** because ~89% of rows match. See [docs/DATABASE.md](docs/DATABASE.md#query-planner-statistics-analyze).
+18. **Query-planner statistics are mandatory (ANALYZE)**: `getStories` runs `WHERE time > ? ORDER BY score DESC LIMIT 500`, which no single index satisfies. Without `sqlite_stat1` stats the planner always scans `idx_stories_score` and filters by time, which is pathological for the *selective* "Day" window (few hundred matches scattered across 150k+ rows) — measured at ~125 ms median / **27 s worst case** on production, and since `better-sqlite3` is synchronous that freezes the whole process. `migrations/002-analyze-statistics.js` runs `ANALYZE`; the worker re-runs it each cycle (~70 ms). **Read path:** `getStories` forces `INDEXED BY idx_stories_time` for Day–Month and `INDEXED BY idx_stories_score` for Year/All — Month score scans hit **16 s** when top scores fall outside the window; Year time scans hit **14–17 s** because ~89% of rows match. See [docs/DATABASE.md](docs/DATABASE.md#query-planner-statistics-analyze).
 
 ## Documentation
 
@@ -177,11 +173,11 @@ All of these must be kept current with every change:
 | Suite | Tests |
 |-------|-------|
 | Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile) | 58 |
-| Backend integration (storyService, api, worker) | 76 |
+| Backend integration (storyService, api, worker) | 75 |
 | Frontend component (App, StoryList, Story) | 33 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 7 |
-| **Total** | **178** |
+| **Total** | **177** |
 
 ## Project Health
 
@@ -196,7 +192,7 @@ All of these must be kept current with every change:
 | Architecture | A- | SQLite eliminates all Firestore hacks (L2 cache, patchStoryCache, Day-merge, padId, stripUndefined) |
 | Documentation | A- | CLAUDE.md + 4 reference docs, all updated |
 | DevOps / CI | A- | Docker app behind shared Caddy reverse proxy on VPS (live), GitHub Actions CI/CD with SSH deploy, npm audit, ESLint, pre-commit hooks, daily GCS backups |
-| Performance | A- | Sub-ms SQL queries, L1 cache, hidden cache, react-virtuoso |
+| Performance | A- | Sub-ms SQL queries, react-virtuoso |
 | Dependencies | A- | 0 vulnerabilities in both backend and frontend |
 
 ### Open Issues
@@ -248,6 +244,5 @@ All of these must be kept current with every change:
 - **In-memory SQLite for tests**: `better-sqlite3` with `new Database(":memory:")` via `setDb()`. No moduleNameMapper needed. `clearDatabase()` runs `DELETE FROM` on all tables. Tests complete in ~1 second.
 - **CSP script hash**: `'unsafe-inline'` replaced with SHA-256 hash of the inline dark mode script in `index.html`. Hash must be recomputed if the script content changes. Use: `python3 -c "import hashlib, base64; ..."` or `openssl dgst -sha256 -binary | openssl base64`.
 - **Database migration system**: `services/migrator.js` handles versioned schema migrations. Each migration file exports `up(db)` and `down(db)`. Migrations run in transactions. `initSchema()` in `database.js` is now a wrapper around `runMigrations()`. Migration tests use their own in-memory databases (not shared test setup).
-- **Cache key array mutation**: `storyService.getStories()` sorts `hiddenIds` for cache key computation — must copy with `[...hiddenIds]` first to avoid mutating the caller's array.
 - **Dockerfile must copy `migrations/`**: The runtime stage copied `bin/routes/services/util` but not `migrations/`, so `loadMigrationFiles()` found nothing in the container and `runMigrations()` ran zero migrations — `schema_migrations` stayed empty and the migration system was silently inert in prod (discovered 2026-06-27 when migration 002 didn't apply on deploy). The tables existed only because `import-json-to-sqlite.js` bakes them into the image. Fix: `COPY migrations ./migrations`. Lesson: anything `services/*` loads from disk at runtime (here, a sibling dir via `__dirname/../migrations`) must be in the final image — verify by checking `schema_migrations` is populated after deploy, not just that the app boots.
 - **ANALYZE drives index choice (the inverse-latency bug)**: Profiling prod (152k rows) showed the *fewest-matches* timespan was the *slowest*: "Day" ran ~125 ms median / 27 s worst, while "All" ran ~2 ms. Cause: no `sqlite_stat1` stats existed, so the planner always scanned `idx_stories_score` top-down and filtered `time > ?` row-by-row, clawing through the whole table to find a few hundred recent rows. A one-time `ANALYZE` (migration 002) lets the planner pick `idx_stories_time` for selective windows and `idx_stories_score` for broad ones — every timespan dropped to ≤7 ms median. Refresh stats periodically (worker does it each cycle) as the table grows. Lesson: with a time-filter + different-column sort + LIMIT, accurate stats matter more than adding indexes. Profile with `process.hrtime.bigint()` around `stmt.all()` and `EXPLAIN QUERY PLAN`, not wall-time.

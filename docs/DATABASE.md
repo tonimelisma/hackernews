@@ -153,7 +153,13 @@ LIMIT ? OFFSET ?
 
 This single query replaces the previous Firestore approach which required: L1 check → L2 cache check → Firestore query → client-side sort → Day-merge → hidden filter → slice.
 
-Results are cached in an L1 in-memory Map with a 1-minute TTL.
+### `getHidden(username)` — `storyService.js`
+
+```sql
+SELECT story_id FROM hidden WHERE username = ?
+```
+
+Concurrent requests for the same user are deduplicated via an in-flight promise (`hiddenPending`); no TTL cache.
 
 ### Worker — stale story detection
 
@@ -173,14 +179,6 @@ Each query is capped at `WORKER_BATCH_LIMIT=500`.
 ```sql
 SELECT id FROM stories ORDER BY id DESC LIMIT 1
 ```
-
-### `getHidden` — `storyService.js`
-
-```sql
-SELECT story_id FROM hidden WHERE username = ?
-```
-
-Results cached in a 5-minute per-user in-memory cache. `upsertHidden` invalidates the cache entry.
 
 ### `upsertHidden` — `storyService.js`
 

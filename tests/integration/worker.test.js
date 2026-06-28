@@ -1,5 +1,4 @@
 const db = require("../setup");
-const storyService = require("../../services/storyService");
 
 jest.mock("../../services/hackernews");
 const Remote = require("../../services/hackernews");
@@ -8,7 +7,6 @@ const { syncOnce, formatBytes, sleep, WORKER_BATCH_LIMIT } = require("../../work
 
 beforeAll(async () => await db.connect());
 afterEach(async () => {
-  await storyService.clearCache();
   await db.clearDatabase();
   jest.restoreAllMocks();
 });
