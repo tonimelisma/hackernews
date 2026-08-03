@@ -164,13 +164,13 @@ docker compose -f docker-compose.dev.yml down
 ### Dockerfile Details
 
 Multi-stage build:
-1. **Builder stage** (node:20-alpine + python3/make/g++ for native modules):
+1. **Builder stage** (node:24-alpine + python3/make/g++ for native modules):
    - `npm pkg delete scripts.prepare` to skip husky in Docker
    - `npm ci --omit=dev` for backend deps
    - `npm ci` for frontend deps
    - Frontend build (`vite build` → `hackernews-frontend/build/`)
    - Import JSON data into SQLite (`/data/hackernews.db`)
-2. **Runtime stage** (node:20-alpine + wget + sqlite3):
+2. **Runtime stage** (node:24-alpine + wget + sqlite3):
    - Copies `node_modules`, frontend build, baked SQLite DB
    - Copies only the app source files needed at runtime
    - ~160 MB final image
@@ -330,7 +330,7 @@ hackernews/
 │
 ├── docs/                           # LLM-geared documentation
 │
-├── Dockerfile                     # Multi-stage Docker build (node:20-alpine, bakes data into image)
+├── Dockerfile                     # Multi-stage Docker build (node:24-alpine, bakes data into image)
 ├── docker-compose.yml             # Production: App service, SQLite volume, external reverse_proxy network
 ├── docker-compose.dev.yml         # Local dev: App only on port 3000, no Caddy
 ├── .dockerignore                  # Files excluded from Docker build

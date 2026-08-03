@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const config = require("../util/config");
-const jwt = require("jsonwebtoken");
+const { SignJWT, jwtVerify } = require("jose");
 const rateLimit = require("express-rate-limit");
 const { randomUUID } = require("crypto");
 
@@ -29,6 +29,15 @@ const isValidUsername = (input) => {
 const TOKEN_EXPIRY = "365d";
 const COOKIE_MAX_AGE = 365 * 24 * 60 * 60 * 1000;
 
+const secretKey = () => new TextEncoder().encode(process.env.SECRET);
+
+const signToken = (payload) =>
+  new SignJWT(payload)
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(TOKEN_EXPIRY)
+    .sign(secretKey());
+
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging",
@@ -37,17 +46,17 @@ const COOKIE_OPTIONS = {
   path: "/api",
 };
 
-const authenticateToken = (req, res, next) => {
+const authenticateToken = async (req, res, next) => {
   const token = req.cookies && req.cookies.token;
   if (!token) {
     return res.status(401).json({ error: "authentication error" });
   }
   try {
-    const decodedToken = jwt.verify(token, process.env.SECRET);
-    if (!decodedToken.username) {
+    const { payload } = await jwtVerify(token, secretKey());
+    if (!payload.username) {
       return res.status(401).json({ error: "invalid token" });
     }
-    req.user = decodedToken;
+    req.user = payload;
     next();
   } catch (e) {
     console.error("auth error:", e);
@@ -55,12 +64,12 @@ const authenticateToken = (req, res, next) => {
   }
 };
 
-const optionalAuth = (req) => {
+const optionalAuth = async (req) => {
   const token = req.cookies && req.cookies.token;
   if (!token) return null;
   try {
-    const decoded = jwt.verify(token, process.env.SECRET);
-    return decoded.username ? { username: decoded.username } : null;
+    const { payload } = await jwtVerify(token, secretKey());
+    return payload.username ? { username: payload.username } : null;
   } catch {
     return null;
   }
@@ -89,7 +98,7 @@ router.get("/stories", async (req, res) => {
 
   const ctx = createDbContext();
   try {
-    const user = optionalAuth(req);
+    const user = await optionalAuth(req);
     const hiddenIds = user ? await storyService.getHidden(user.username, ctx) : [];
 
     const skip = !isNaN(req.query.skip) && req.query.skip > 0
@@ -147,7 +156,7 @@ router.post("/login", loginLimiter, async (req, res) => {
       const ctx = createDbContext();
       const loginCorrect = await hackernewsService.login(goto, acct, pw, { requestId });
       if (loginCorrect) {
-        const token = jwt.sign({ username: acct }, process.env.SECRET, { expiresIn: TOKEN_EXPIRY });
+        const token = await signToken({ username: acct });
         await storyService.upsertUser(acct, ctx);
         res.cookie("token", token, COOKIE_OPTIONS);
         res.status(200).json({ username: acct });
@@ -168,8 +177,8 @@ router.post("/logout", (req, res) => {
   res.status(200).json({ success: true });
 });
 
-router.get("/me", authenticateToken, (req, res) => {
-  const token = jwt.sign({ username: req.user.username }, process.env.SECRET, { expiresIn: TOKEN_EXPIRY });
+router.get("/me", authenticateToken, async (req, res) => {
+  const token = await signToken({ username: req.user.username });
   res.cookie("token", token, COOKIE_OPTIONS);
   res.status(200).json({ username: req.user.username });
 });

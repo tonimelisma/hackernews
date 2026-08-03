@@ -29,7 +29,7 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `tests/integration/storyService.test.js` | Integration | 28 | All storyService CRUD, getHidden dedup, query caps, hiddenIds mutation guard, INDEXED BY regression |
 | `tests/integration/api.test.js` | Integration | 33 | Full HTTP request/response via supertest, username length validation |
 | `tests/integration/worker.test.js` | Integration | 14 | syncOnce() direct tests, compound staleness queries, batch limits, ANALYZE stats refresh per cycle, utility functions, empty getAllStoryIds |
-| **Total** | | **132** | |
+| **Total** | | **133** | |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -91,9 +91,9 @@ afterEach(async () => {
 afterAll(async () => await db.closeDatabase());
 ```
 
-### JWT Mock in API Tests
+### JWT Signing in API Tests
 
-`jsonwebtoken` depends on `buffer-equal-constant-time` which uses `SlowBuffer` — removed in Node.js 25. The API test mocks `jsonwebtoken` entirely with a simple token store to avoid this incompatibility. Auth tokens are sent via `Cookie` header (`.set("Cookie", "token=...")`) matching the HTTP-only cookie auth flow.
+Auth uses `jose` (pure-JS, works on all modern Node versions), so the API tests sign and verify real HS256 JWTs — no mocking needed. `createToken()` in `tests/integration/api.test.js` builds a `SignJWT` with the test `SECRET`, and the "365d expiration" test decodes the cookie token with `jwtVerify` to assert `exp - iat === 365 * 24 * 60 * 60`. Auth tokens are sent via `Cookie` header (`.set("Cookie", "token=...")`) matching the HTTP-only cookie auth flow.
 
 ### Worker Testing Strategy
 
@@ -107,7 +107,6 @@ afterAll(async () => await db.closeDatabase());
 |--------|-----------|--------|
 | `better-sqlite3` | In-memory `:memory:` via `setDb()` | Fast, isolated test database |
 | `axios` | `jest.mock("axios")` | Avoid real HTTP calls to HN API |
-| `jsonwebtoken` | `jest.mock("jsonwebtoken")` | SlowBuffer removed in Node 25 |
 | `services/hackernews` | `jest.mock()` | Isolate API route tests and worker tests from HN service |
 | `console.log` | `jest.spyOn` | Suppress noise from production code |
 

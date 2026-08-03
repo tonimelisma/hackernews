@@ -1,4 +1,3 @@
-import React from "react";
 import { Virtuoso } from "react-virtuoso";
 import Story from "./Story";
 

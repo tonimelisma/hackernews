@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -9,7 +9,7 @@ COPY . .
 RUN cd hackernews-frontend && npm run build
 RUN mkdir -p /data && node scripts/import-json-to-sqlite.js /data/hackernews.db
 
-FROM node:20-alpine
+FROM node:24-alpine
 RUN apk add --no-cache wget sqlite
 WORKDIR /app
 COPY --from=builder /app/node_modules ./node_modules

@@ -1,20 +1,6 @@
 const db = require("../setup");
 
-// jsonwebtoken's transitive dependency buffer-equal-constant-time uses SlowBuffer
-// which was removed in Node.js 25. We mock jsonwebtoken to avoid this.
-const mockTokens = {};
-jest.mock("jsonwebtoken", () => ({
-  sign: (payload, secret, options) => {
-    const token = `mock-token-${payload.username}-${Date.now()}`;
-    mockTokens[token] = { ...payload, options };
-    return token;
-  },
-  verify: (token, _secret) => {
-    const payload = mockTokens[token];
-    if (!payload) throw new Error("invalid token");
-    return payload;
-  },
-}));
+const { SignJWT, jwtVerify } = require("jose");
 
 // Connect to database before requiring app (which requires storyService)
 beforeAll(async () => {
@@ -31,8 +17,6 @@ const hackernews = require("../../services/hackernews");
 afterEach(async () => {
   await db.clearDatabase();
   jest.clearAllMocks();
-  // Clear token store
-  Object.keys(mockTokens).forEach((k) => delete mockTokens[k]);
 });
 
 afterAll(async () => await db.closeDatabase());
@@ -57,10 +41,13 @@ const seedStory = (overrides = {}) => {
   return story;
 };
 
-const createToken = (username = "testuser") => {
-  const jwt = require("jsonwebtoken");
-  return jwt.sign({ username }, process.env.SECRET);
-};
+const secretKey = () => new TextEncoder().encode(process.env.SECRET);
+
+const createToken = async (username = "testuser") =>
+  new SignJWT({ username })
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime("365d")
+    .sign(secretKey());
 
 const extractCookieToken = (res) => {
   const setCookie = res.headers["set-cookie"];
@@ -183,7 +170,7 @@ describe("API routes", () => {
       d.prepare("INSERT INTO users (username) VALUES (?)").run("testuser");
       d.prepare("INSERT INTO hidden (username, story_id) VALUES (?, ?)").run("testuser", 2);
 
-      const token = createToken("testuser");
+      const token = await createToken("testuser");
       const res = await request(app)
         .get("/api/v1/stories")
         .set("Cookie", `token=${token}`);
@@ -212,7 +199,7 @@ describe("API routes", () => {
       d.prepare("INSERT INTO users (username) VALUES (?)").run("testuser");
       d.prepare("INSERT INTO hidden (username, story_id) VALUES (?, ?)").run("testuser", 123);
       d.prepare("INSERT INTO hidden (username, story_id) VALUES (?, ?)").run("testuser", 456);
-      const token = createToken("testuser");
+      const token = await createToken("testuser");
 
       const res = await request(app)
         .get("/api/v1/hidden")
@@ -241,7 +228,7 @@ describe("API routes", () => {
     it("adds hidden ID for authenticated user", async () => {
       const { getDb } = require("../../services/database");
       getDb().prepare("INSERT INTO users (username) VALUES (?)").run("testuser");
-      const token = createToken("testuser");
+      const token = await createToken("testuser");
 
       const res = await request(app)
         .post("/api/v1/hidden")
@@ -253,7 +240,7 @@ describe("API routes", () => {
     });
 
     it("returns 400 for non-integer hidden id", async () => {
-      const token = createToken("testuser");
+      const token = await createToken("testuser");
 
       const res = await request(app)
         .post("/api/v1/hidden")
@@ -265,7 +252,7 @@ describe("API routes", () => {
     });
 
     it("returns 400 for negative hidden id", async () => {
-      const token = createToken("testuser");
+      const token = await createToken("testuser");
 
       const res = await request(app)
         .post("/api/v1/hidden")
@@ -277,7 +264,7 @@ describe("API routes", () => {
     });
 
     it("returns 400 for missing hidden id", async () => {
-      const token = createToken("testuser");
+      const token = await createToken("testuser");
 
       const res = await request(app)
         .post("/api/v1/hidden")
@@ -350,8 +337,8 @@ describe("API routes", () => {
 
       expect(res.status).toBe(200);
       const cookieToken = extractCookieToken(res);
-      const tokenData = mockTokens[cookieToken];
-      expect(tokenData.options).toEqual({ expiresIn: '365d' });
+      const { payload } = await jwtVerify(cookieToken, secretKey());
+      expect(payload.exp - payload.iat).toBe(365 * 24 * 60 * 60);
     });
 
     it("creates user in DB on successful login", async () => {
@@ -419,7 +406,7 @@ describe("API routes", () => {
 
   describe("GET /api/v1/me", () => {
     it("returns username for authenticated user", async () => {
-      const token = createToken("testuser");
+      const token = await createToken("testuser");
 
       const res = await request(app)
         .get("/api/v1/me")
@@ -430,7 +417,7 @@ describe("API routes", () => {
     });
 
     it("refreshes token cookie on GET /me", async () => {
-      const token = createToken("refreshuser");
+      const token = await createToken("refreshuser");
 
       const res = await request(app)
         .get("/api/v1/me")

@@ -16,7 +16,7 @@ Live at: https://hackernews.melisma.net
 
 ## Tech Stack
 
-- **Backend:** Node.js 20, Express 5
+- **Backend:** Node.js 24, Express 5
 - **Frontend:** React 19 (Vite)
 - **Database:** SQLite (better-sqlite3, WAL mode)
 - **Worker:** Integrated setInterval (15-minute cycle)
@@ -25,7 +25,7 @@ Live at: https://hackernews.melisma.net
 
 ## Prerequisites
 
-- Node.js 20 (Node 25+ is **not supported** due to `SlowBuffer` removal in `jsonwebtoken` dependency chain)
+- Node.js 24 (JWT auth uses `jose`, compatible with all modern Node versions)
 - A `.env` file with `SECRET` set (see `.env.example`)
 
 No external database credentials needed — SQLite runs locally.
@@ -67,7 +67,7 @@ npm run test:coverage
 cd hackernews-frontend && npm run test:coverage
 ```
 
-170 total tests (127 backend + 43 frontend). Backend tests run in ~1 second using in-memory SQLite.
+177 total tests (133 backend + 44 frontend). Backend tests run in ~1 second using in-memory SQLite.
 
 ## Documentation
 

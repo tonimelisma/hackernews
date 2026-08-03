@@ -7,8 +7,8 @@ HackerNews aggregator: a Node.js/Express backend with a React frontend, deployed
 ## Quick Reference Commands
 
 ```bash
-# IMPORTANT: Use Node.js 20 (Node 25+ crashes due to SlowBuffer removal)
-# If using Homebrew: PATH="/opt/homebrew/opt/node@20/bin:$PATH"
+# IMPORTANT: Use Node.js 24 (jose JWT library is compatible with all modern Node)
+# If using Homebrew: PATH="/opt/homebrew/opt/node@24/bin:$PATH"
 
 # Backend tests (uses in-memory SQLite — no credentials or network needed)
 npm test
@@ -97,7 +97,7 @@ hackernews/
 │   ├── dbLogger.js         # Per-request DB operation & cache analytics logging
 │   └── middleware.js        # Express error handlers
 ├── eslint.config.js        # ESLint flat config (backend)
-├── Dockerfile              # Multi-stage Docker build (node:20-alpine)
+├── Dockerfile              # Multi-stage Docker build (node:24-alpine)
 ├── docker-compose.yml      # App service, SQLite volume, external reverse_proxy network
 ├── hackernews-frontend/    # React frontend (Vite + Vitest)
 │   └── src/
@@ -135,7 +135,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 6. **`getHidden` returns empty array for missing users**: If username doesn't exist in the database, `getHidden` returns `[]` (no hidden stories).
 
-7. **Node.js 25+ crashes the app**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. `SlowBuffer` was removed in Node 25. No upstream fix available. **Use Node.js 18 or 20.**
+7. **jose replaces jsonwebtoken**: JWT auth uses `jose` (pure-JS, native CJS build, works on all modern Node versions). The old `jsonwebtoken` chain (`jwa` → `buffer-equal-constant-time`) accessed removed `SlowBuffer.prototype` and crashed on Node 25+. `jose` eliminated that constraint entirely — tokens are standard HS256 JWTs (same `SECRET`), so existing cookies keep working across the swap. `signToken()` in `routes/api.js` sets `alg: HS256`, `iat`, and 365-day `exp`; `jwtVerify()` checks expiry. **Use Node.js 24.**
 
 8. **Server-side hidden story filtering**: `GET /stories` optionally reads the auth cookie via `optionalAuth()`. If authenticated, fetches hidden IDs and passes them to `getStories()` which excludes them via SQL `WHERE id NOT IN (...)`. Anonymous users are unaffected.
 
@@ -149,7 +149,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 13. **Static file caching strategy**: `index.html` served with `Cache-Control: no-cache`; hashed `/assets/*` files served with `max-age=1y, immutable`.
 
-14. **Docker deployment**: Multi-stage `Dockerfile` builds node:20-alpine image with npm ci + frontend build + SQLite data import (data baked into image). `docker-compose.yml` runs only the HackerNews app with health checks and joins the external `reverse_proxy` Docker network as `hackernews-app`. The host-level Caddy reverse proxy lives outside this repo at `/opt/reverse-proxy` and routes `hackernews.melisma.net` to `hackernews-app:3000`. `docker-compose.dev.yml` is for local testing (app only, port 3000, no Caddy). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d`. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
+14. **Docker deployment**: Multi-stage `Dockerfile` builds node:24-alpine image with npm ci + frontend build + SQLite data import (data baked into image). `docker-compose.yml` runs only the HackerNews app with health checks and joins the external `reverse_proxy` Docker network as `hackernews-app`. The host-level Caddy reverse proxy lives outside this repo at `/opt/reverse-proxy` and routes `hackernews.melisma.net` to `hackernews-app:3000`. `docker-compose.dev.yml` is for local testing (app only, port 3000, no Caddy). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d`. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
 
 15. **Daily SQLite backup**: `scripts/backup-sqlite.sh` runs SQLite `.backup` inside the container, compresses with gzip, and uploads to `gs://hackernews-melisma-backup/`. Cron job at 3:00 AM UTC daily. 30-day retention. ~3.3 MB compressed per backup, well within GCP Always Free 5 GB.
 
@@ -186,18 +186,18 @@ All of these must be kept current with every change:
 | Category | Grade | Summary |
 |----------|-------|---------|
 | Functionality | A- | Core features work; dead scraper code removed |
-| Security | A | Helmet (CSP with script hash), CORS, rate limiting, JWT in HTTP-only cookie, SECRET validation, username length validation |
-| Testing | A- | 172 tests, in-memory SQLite, ~1s backend runs |
+| Security | A | Helmet (CSP with script hash), CORS, rate limiting, JWT in HTTP-only cookie (jose), SECRET validation, username length validation |
+| Testing | A- | 177 tests, in-memory SQLite, ~1s backend runs |
 | Code Quality | A- | Clean codebase, dead code removed, SQLite simplification |
 | Architecture | A- | SQLite eliminates all Firestore hacks (L2 cache, patchStoryCache, Day-merge, padId, stripUndefined) |
 | Documentation | A- | CLAUDE.md + 4 reference docs, all updated |
-| DevOps / CI | A- | Docker app behind shared Caddy reverse proxy on VPS (live), GitHub Actions CI/CD with SSH deploy, npm audit, ESLint, pre-commit hooks, daily GCS backups |
+| DevOps / CI | A- | Docker app behind shared Caddy reverse proxy on VPS (live), GitHub Actions CI/CD with SSH deploy, npm audit, ESLint (backend + frontend), pre-commit hooks, daily GCS backups |
 | Performance | A- | Sub-ms SQL queries, react-virtuoso |
 | Dependencies | A- | 0 vulnerabilities in both backend and frontend |
 
 ### Open Issues
 
-- **Node.js 25+ crash** — `jsonwebtoken` chain uses removed `SlowBuffer`; no upstream fix
+- None — the `jsonwebtoken`/`SlowBuffer` Node 25+ crash was resolved by migrating to `jose` (2026-08).
 
 ### Vulnerability Status
 
@@ -208,7 +208,7 @@ All of these must be kept current with every change:
 ## Backlog
 
 ### Frontend
-- Replace FontAwesome 5 packages with lighter alternative
+- Replace FontAwesome packages with lighter alternative (only ~6 icons used across 4 packages)
 
 ### Testing & Quality
 - Add end-to-end tests (Playwright or Cypress)
@@ -224,14 +224,14 @@ All of these must be kept current with every change:
 ## Key Learnings
 
 - **SQLite eliminates Firestore architectural hacks**: Moving from Firestore to SQLite removed: L2 cache, patchStoryCache, mergeStories, Day-merge, padId, stripUndefined, MAX_QUERY_DOCS buffer, cacheDocToStories, storiesToCacheDoc, CACHE_TTLS, environment-prefixed collections, subcollection pattern for hidden stories, batched operations (BATCH_SIZE=20). A single SQL query (`WHERE time > ? AND id NOT IN (...) ORDER BY score DESC LIMIT ? OFFSET ?`) replaces ~200 lines of cache/merge/filter logic.
-- **Node.js 25+ incompatibility**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accesses `SlowBuffer.prototype` at require time. Must mock `jsonwebtoken` in tests; use Node.js 18/20 in production.
+- **jose replaces jsonwebtoken (the SlowBuffer fix)**: `jsonwebtoken` → `jwa` → `buffer-equal-constant-time` accessed removed `SlowBuffer.prototype` at require time, crashing Node 25+. Swapped to `jose` (v5, native CJS) — same HS256 JWT standard, same `SECRET`, so deployed cookies keep verifying. `jose` v6 is ESM-only, which would require Jest transform config; v5 ships a `require` export and is the drop-in CJS choice for this CommonJS backend. The old test mock of `jsonwebtoken` was removed — the API tests now sign/verify real JWTs with `jose`. Use Node.js 24.
 - **Vitest mock differences**: `vi.mock()` factory must return an object with `default` key for default exports. No `__esModule: true` needed. Axios mock: `vi.mock("axios", () => ({ default: { get: vi.fn(), post: vi.fn() } }))`.
 - **Node.js 22 localStorage conflict**: Node.js 22's built-in `localStorage` (experimental) conflicts with jsdom in Vitest. Must stub localStorage with `vi.stubGlobal("localStorage", mockImpl)` in tests that use it.
 - **Rate limiter state persists across tests** — rate-limit test must be last in its describe block.
 - **`bin/www` for startup checks**: SECRET validation lives in `bin/www` (not `app.js`) so tests can `require('../../app')` without triggering exit. Database initialization and worker startup also live in `bin/www`.
 - **jsdom lacks `window.matchMedia`**: Must stub in `setupTests.js` (global) for any component using `useTheme`. Tests that need specific matchMedia behavior reassign `window.matchMedia` in `beforeEach`.
 - **Logging convention**: `console.error` for errors (catch blocks), `console.log` for operational info (startup, sync progress). `tests/setup.js` suppresses both globally. Per-request DB analytics use `[db]`-tagged structured log lines via `util/dbLogger.js` — tracks per-table reads/writes, L1/MISS cache metrics, and latency. `[db-query]` inline logs show individual query details with row counts and timing.
-- **Pre-commit hooks**: husky + lint-staged run `eslint --fix` on staged `.js` files. Backend ESLint config ignores `hackernews-frontend/`.
+- **Pre-commit hooks**: husky + lint-staged run `eslint --fix` on staged `.js` files. Backend ESLint config ignores `hackernews-frontend/`; the frontend has its own flat ESLint config (`hackernews-frontend/eslint.config.js`) run via `cd hackernews-frontend && eslint --fix`.
 - **Bootstrap 5 data attributes**: Use `data-bs-toggle`/`data-bs-dismiss` (not `data-toggle`/`data-dismiss`). Class `dropdown-menu-right` was renamed to `dropdown-menu-end`.
 - **`errorHandler` must not call `next()`**: Calling `next(error)` after `res.status().json()` triggers "headers already sent" errors if another error handler exists downstream.
 - **Vite build output**: `build.outDir` set to `"build"` in `vite.config.js` to match Express static path in `app.js`. `build/` is gitignored.

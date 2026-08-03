@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faHackerNewsSquare } from "@fortawesome/free-brands-svg-icons";
@@ -100,7 +100,7 @@ const App = () => {
       setLoginError(false);
       setUsername("");
       setPassword("");
-    } catch (error) {
+    } catch {
       setLoginError(true);
     } finally {
       setLoggingIn(false);
@@ -110,7 +110,7 @@ const App = () => {
   const handleLogout = async () => {
     try {
       await loginService.logout();
-    } catch (error) {
+    } catch {
       // logout best-effort
     }
     setLoggedIn(false);
