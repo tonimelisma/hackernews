@@ -245,17 +245,17 @@ gcloud compute firewall-rules list
 
 ### Shared Caddy Reverse Proxy
 
-Caddy runs from `/opt/reverse-proxy` as the `caddy` container and is shared by all public services on the VPS. Its `Caddyfile` currently includes:
+Caddy runs from `/opt/reverse-proxy` as the `caddy` container. As of 2026-09-29 HackerNews is the only site on the VPS (the relay demo, mcp-fakes inbox and koskiset-feedback services were removed), so the `Caddyfile` is just:
 
 ```caddy
 hackernews.melisma.net {
 	reverse_proxy hackernews-app:3000
 }
-
-koskiset-api.melisma.net {
-	reverse_proxy koskiset-feedback:8080
-}
 ```
+
+The Caddyfile is bind-mounted as a single file, so edit it in place (e.g. `>` redirect), not by replacing the file (a new inode is invisible to the container). Validate and reload with `docker exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile` and `docker exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile`.
+
+**Host baseline (2026-09-29 cleanup):** snapd and all snaps removed and pinned out (`/etc/apt/preferences.d/no-snapd.pref`) — there is no `gcloud` on the box; multipath-tools, the `ubuntu-server` metapackage and its unused recommends (open-iscsi, open-vm-tools, landscape) purged, with the remaining `ubuntu-server` dependencies marked manual; journald capped at 200 MB (`/etc/systemd/journald.conf.d/size.conf`); Docker build cache pruned.
 
 The reverse proxy uses the external Docker network `reverse_proxy`. HackerNews joins that network with the alias `hackernews-app`; unrelated services should join the same network with service-specific aliases.
 
