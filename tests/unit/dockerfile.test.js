@@ -21,12 +21,18 @@ describe("Dockerfile", () => {
 
   // Regression guard: scripts/users.js is the only way to create accounts and
   // set passwords, and it is run inside the container via `docker exec`.
-  it("copies the scripts directory so the account admin CLI is available", () => {
-    expect(runtimeStage).toMatch(/^COPY\s+scripts\b/m);
+  it("copies the account admin CLI into the runtime image", () => {
+    expect(runtimeStage).toMatch(/^COPY\s+[^\n]*scripts\/users\.js/m);
+  });
+
+  // scripts/data/ holds local JSON exports (usernames + hidden lists); they are
+  // only for the builder's import step and must not ship in the runtime image.
+  it("does not copy the whole scripts directory (keeps data exports out)", () => {
+    expect(runtimeStage).not.toMatch(/^COPY\s+scripts\s/m);
   });
 
   it("copies the application directories needed at runtime", () => {
-    for (const dir of ["bin", "routes", "services", "util", "migrations", "scripts"]) {
+    for (const dir of ["bin", "routes", "services", "util", "migrations"]) {
       expect(runtimeStage).toMatch(new RegExp(`\\bCOPY\\s+[^\\n]*\\b${dir}\\b`));
     }
   });

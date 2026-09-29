@@ -80,31 +80,75 @@ jobs:
         run: npm audit --audit-level=moderate
         working-directory: hackernews-frontend
 
-  deploy:
+  image:
     needs: [backend-tests, frontend-tests]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build here, not on the VPS: an on-box build saturated its pd-standard
+      # disk (94% util, 88% iowait) and died with the SSH session (2026-09-29).
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/tonimelisma/hackernews:${{ github.sha }}
+            ghcr.io/tonimelisma/hackernews:latest
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: [image]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    concurrency: production-deploy
+    permissions:
+      packages: read
     steps:
       - uses: appleboy/ssh-action@v1.2.5
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          GHCR_USER: ${{ github.actor }}
+          # This job's short-lived token: pulls the private package, then is
+          # logged out; nothing long-lived is stored on the VPS.
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: 34.45.72.52
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          # The image builds on the 1 GB e2-micro itself; a full rebuild
-          # (npm ci ×2 + vite build under swap) takes well over the action's
-          # 10m default, which failed the job while the build kept running.
-          command_timeout: 40m
+          envs: IMAGE_TAG,GHCR_USER,GHCR_TOKEN
+          command_timeout: 20m
           script: |
             set -e
             cd /opt/hackernews
             git pull --ff-only origin master
             docker network inspect reverse_proxy >/dev/null
+            export IMAGE_TAG
 
-            # Tag current image for rollback
-            docker tag hackernews-app:latest hackernews-app:previous 2>/dev/null || true
+            # Pull the CI-built image (no building on the VPS)
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            docker compose pull app
+            docker logout ghcr.io
 
-            # Build and deploy the app behind the shared reverse proxy
-            docker compose up --build -d --remove-orphans
+            # Remember the running image for rollback
+            PREV_IMAGE=$(docker inspect --format='{{.Config.Image}}' hackernews-app-1 2>/dev/null || true)
+
+            docker compose up -d --remove-orphans
 
             # Wait for health check (up to 90s)
             echo "Waiting for health check..."
@@ -113,15 +157,19 @@ jobs:
               if [ "$STATUS" = "healthy" ]; then
                 echo "Health check passed"
                 docker compose ps
+                # Drop unused images older than a week (keeps recent rollback targets)
+                docker image prune -af --filter until=168h
                 exit 0
               fi
               echo "  attempt $i: $STATUS"
               sleep 5
             done
 
-            # Health check failed — rollback
-            echo "HEALTH CHECK FAILED — rolling back"
-            docker tag hackernews-app:previous hackernews-app:latest 2>/dev/null || true
-            docker compose up -d --remove-orphans
+            # Health check failed — roll back to the previously running image
+            echo "HEALTH CHECK FAILED — rolling back to $PREV_IMAGE"
+            if [ -n "$PREV_IMAGE" ]; then
+              docker tag "$PREV_IMAGE" ghcr.io/tonimelisma/hackernews:rollback
+              IMAGE_TAG=rollback docker compose up -d --remove-orphans
+            fi
             docker compose ps
             exit 1

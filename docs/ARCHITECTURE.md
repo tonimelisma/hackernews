@@ -60,8 +60,9 @@ docker compose logs --tail 100 app
 # Restart app (no rebuild)
 docker compose restart app
 
-# Rebuild and redeploy app
-docker compose up --build -d
+# Redeploy the CI-built image (never build on the VPS)
+IMAGE_TAG=<commit-sha> docker compose pull app   # private package: docker login ghcr.io first
+IMAGE_TAG=<commit-sha> docker compose up -d
 
 # Stop HackerNews app
 docker compose down
@@ -84,8 +85,8 @@ docker compose ps
 # Caddy logs
 docker compose logs --tail 50 caddy
 
-# Reload Caddy config after editing Caddyfile
-docker compose restart caddy
+# Reload Caddy config after editing Caddyfile (no restart)
+docker exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 ```
 
 The Caddy container is named `caddy`, not `hackernews-caddy-1`. It owns host ports 80/443 and routes public hostnames to containers on the external `reverse_proxy` Docker network.
@@ -120,24 +121,28 @@ gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --comma
 
 ### CI/CD Pipeline
 
-Push to `master` triggers: **backend tests → frontend tests → SSH deploy → health check → auto-rollback on failure**.
+Push to `master` triggers: **backend tests → frontend tests → image build in CI → SSH deploy (pull only) → health check → auto-rollback on failure**. The repo is public, so standard GitHub-hosted runner minutes are free.
 
 ```
 ci.yml flow:
   backend-tests (lint + jest + npm audit --omit=dev)
   frontend-tests (vitest + build + npm audit)
        ↓ both pass
-  deploy (only on push to master, not PRs)
+  image (only on push to master): buildx linux/amd64 → push
+        ghcr.io/tonimelisma/hackernews:<sha> and :latest (GHA layer cache)
        ↓
-  SSH into VPS → git pull → docker compose up --build -d
+  deploy (concurrency: production-deploy)
+       ↓
+  SSH into VPS → git pull → docker login ghcr.io (job token) →
+  IMAGE_TAG=<sha> docker compose pull → docker logout → docker compose up -d
        ↓
   Poll health check for 90s
        ↓
-  ✓ healthy → done
-  ✗ unhealthy → rollback to previous Docker image, exit 1
+  ✓ healthy → prune unused images older than 7 days → done
+  ✗ unhealthy → re-tag the previously running image as :rollback, start it, exit 1
 ```
 
-The image is built **on the VPS** (1 GB e2-micro, 30 GB `pd-standard` disk). A full rebuild takes well over 10 minutes, so the SSH step sets `command_timeout: 40m`. On 2026-09-29 the action's 10m default ended the SSH session mid-build; the remote build died with the session ~5 minutes later and the old container kept serving. During the build the disk saturated (94% util, 81 ms await) and requests slowed to ~14 s with occasional 502s. Building the image in CI instead is on the backlog in `CLAUDE.md`.
+**Nothing is built on the VPS.** On 2026-09-29 an on-box build (the old `docker compose up --build` deploy) saturated the 30 GB `pd-standard` disk (94% util, 81 ms await, 88% iowait), slowed requests to ~14 s, and then died with its SSH session when the action's 10m timeout ended it — leaving the old container running. The GHCR package is private (GitHub's default); the deploy job passes its own short-lived `GITHUB_TOKEN` (`packages: read`) to the VPS for the pull and logs out afterwards, so no long-lived registry credential lives on the box. `docker-compose.yml` has no `build:` (guarded by `tests/unit/compose.test.js`); `docker-compose.dev.yml` still builds locally.
 
 **GitHub secrets** (repo-level, not environment):
 - `VPS_USER` — SSH username (`tonimelisma`)
@@ -146,7 +151,9 @@ The image is built **on the VPS** (1 GB e2-micro, 30 GB `pd-standard` disk). A f
 ### Manual Deploy (bypassing CI)
 
 ```bash
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/hackernews && git pull origin master && docker compose up --build -d"
+# Re-run the CI deploy for an existing commit instead (GitHub → Actions → CI → Re-run),
+# or pull a pushed image by hand (needs a token with read:packages):
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --ssh-flag=-t --command="cd /opt/hackernews && git pull --ff-only origin master && docker login ghcr.io && IMAGE_TAG=<sha> docker compose pull app && docker logout ghcr.io && IMAGE_TAG=<sha> docker compose up -d"
 ```
 
 ### Local Docker Testing
@@ -174,7 +181,8 @@ Multi-stage build:
    - Import JSON data into SQLite (`/data/hackernews.db`)
 2. **Runtime stage** (node:24-alpine + wget + sqlite3):
    - Copies `node_modules`, frontend build, baked SQLite DB
-   - Copies only the app source files needed at runtime (`bin`, `routes`, `services`, `util`, `migrations`, `scripts` — guarded by `tests/unit/dockerfile.test.js`)
+   - Copies only the app source files needed at runtime (`bin`, `routes`, `services`, `util`, `migrations`, plus `scripts/users.js` and `scripts/migrate.js` — not all of `scripts/`, which would ship local `scripts/data/` exports; guarded by `tests/unit/dockerfile.test.js`)
+   - Built by CI, not on the VPS. CI checkouts have no `scripts/data/*.json`, so the baked DB is empty; production data lives in the `sqlite-data` volume mounted over `/data`
    - ~160 MB final image
 
 ### Backups
@@ -255,7 +263,7 @@ hackernews.melisma.net {
 
 The Caddyfile is bind-mounted as a single file, so edit it in place (e.g. `>` redirect), not by replacing the file (a new inode is invisible to the container). Validate and reload with `docker exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile` and `docker exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile`.
 
-**Host baseline (2026-09-29 cleanup):** snapd and all snaps removed and pinned out (`/etc/apt/preferences.d/no-snapd.pref`) — there is no `gcloud` on the box; multipath-tools, the `ubuntu-server` metapackage and its unused recommends (open-iscsi, open-vm-tools, landscape) purged, with the remaining `ubuntu-server` dependencies marked manual; journald capped at 200 MB (`/etc/systemd/journald.conf.d/size.conf`); Docker build cache pruned.
+**Host baseline (2026-09-29 cleanup):** snapd and all snaps removed and pinned out (`/etc/apt/preferences.d/no-snapd.pref`) — there is no `gcloud` on the box; multipath-tools, the `ubuntu-server` metapackage and its unused recommends (open-iscsi, open-vm-tools, landscape) purged, with the remaining `ubuntu-server` dependencies marked manual; journald capped at 200 MB (`/etc/systemd/journald.conf.d/size.conf`); Docker build cache pruned; both containers' json-file logs capped at 10 MB × 3 (app via this repo's `docker-compose.yml`, Caddy via `/opt/reverse-proxy/docker-compose.yml`); `/etc/logrotate.d/hackernews-backup` rotates the backup log monthly (`su root syslog`, re-creates it owned by `tonimelisma`); `packagekit` masked (not purged — purging would remove `software-properties-common`).
 
 The reverse proxy uses the external Docker network `reverse_proxy`. HackerNews joins that network with the alias `hackernews-app`; unrelated services should join the same network with service-specific aliases.
 

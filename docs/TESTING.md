@@ -25,13 +25,14 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `tests/unit/database.test.js` | Unit | 4 | getDb/setDb, initSchema creates tables/indexes/schema_migrations, idempotent schema init |
 | `tests/unit/dbLogger.test.js` | Unit | 13 | createDbContext: counters, read/write, L1/MISS cache, per-table breakdown, query inline logging |
 | `tests/unit/migrator.test.js` | Unit | 15 | ensureMigrationsTable, runMigrations (order, skip, auto-create, tables, timestamps), migration 002 ANALYZE/sqlite_stat1 + Day-query plan uses idx_stories_time, migration 003 adds password columns while preserving existing users/hidden and rolls back cleanly, rollback, status |
-| `tests/unit/dockerfile.test.js` | Unit | 3 | Runtime image copies migrations/ (migration system) and scripts/ (account admin CLI), plus bin/routes/services/util |
+| `tests/unit/dockerfile.test.js` | Unit | 4 | Runtime image copies migrations/ (migration system) and scripts/users.js (account admin CLI) but not all of scripts/ (keeps data exports out), plus bin/routes/services/util |
+| `tests/unit/compose.test.js` | Unit | 5 | Production compose never builds, runs the GHCR image pinned by `IMAGE_TAG`, caps container logs; CI builds/pushes the image and the deploy job only pulls |
 | `tests/unit/auth.test.js` | Unit | 26 | scrypt hash format/default params, verify correct/wrong/tampered/malformed, per-hash salt, username and new-password validation |
 | `tests/integration/storyService.test.js` | Integration | 26 | storyService queries, getHidden dedup, upsertHidden never creates users, query caps, hiddenIds mutation guard, INDEXED BY regression |
 | `tests/integration/api.test.js` | Integration | 49 | Full HTTP request/response via supertest: local-password login (success, wrong password, unknown user, no-password user, 400 validation incl. old HN payload, no credential logging, per-IP rate limit), sessions (pre-migration cookie stays valid, cookie upgraded to `tv`, simultaneous sessions, revoke-sessions, deleted user) |
 | `tests/integration/users.test.js` | Integration | 24 | userService, `auth.verifyCredentials`, and the `scripts/users.js` CLI (`list`, `add`, `set-password` keeps sessions + history, `revoke-sessions`, validation and usage errors) via its exported `run()` |
 | `tests/integration/worker.test.js` | Integration | 14 | syncOnce() direct tests, compound staleness queries, batch limits, ANALYZE stats refresh per cycle, utility functions, empty getAllStoryIds |
-| **Total** | | **197** | |
+| **Total** | | **203** | |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -163,5 +164,7 @@ CI uploads coverage artifacts (14-day retention) via `actions/upload-artifact@v4
 | `users.test.js` | "sets a first password on a legacy account, keeping sessions and history" | Same, for the production rollout step |
 | `migrator.test.js` | "preserves pre-existing users and hidden history" | Migration 003 must not alter existing account rows |
 | `api.test.js` | "returns 401 for an existing user who has no password yet" | Password-less pre-migration rows must not be loggable-into |
-| `dockerfile.test.js` | "copies the scripts directory so the account admin CLI is available" | Admin CLI missing from runtime image (same class of bug as the migrations/ COPY) |
+| `dockerfile.test.js` | "copies the account admin CLI into the runtime image" | Admin CLI missing from runtime image (same class of bug as the migrations/ COPY) |
+| `compose.test.js` | "never builds on the VPS" / "deploys by pulling, not building, on the VPS" | On-box build saturated the VPS disk and died with its SSH session (2026-09-29) |
+| `compose.test.js` | "caps container log size" | Unbounded json-file container logs (42 MB after four weeks) |
 | `hackernewsService.test.js` | "skips stories with undefined score in return value" | Worker `updateStories` returning undefined scores for deleted/flagged stories |

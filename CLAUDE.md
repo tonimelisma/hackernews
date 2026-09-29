@@ -157,7 +157,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 13. **Static file caching strategy**: `index.html` served with `Cache-Control: no-cache`; hashed `/assets/*` files served with `max-age=1y, immutable`.
 
-14. **Docker deployment**: Multi-stage `Dockerfile` builds node:24-alpine image with npm ci + frontend build + SQLite data import (data baked into image). `docker-compose.yml` runs only the HackerNews app with health checks and joins the external `reverse_proxy` Docker network as `hackernews-app`. The host-level Caddy reverse proxy lives outside this repo at `/opt/reverse-proxy` and routes `hackernews.melisma.net` to `hackernews-app:3000`. `docker-compose.dev.yml` is for local testing (app only, port 3000, no Caddy). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d` (`appleboy/ssh-action` with `command_timeout: 40m` — the 10m default killed the job mid-build on 2026-09-29; the image builds on the VPS itself, which saturates its disk and slows the live site; see Backlog). If the SSH session ends, the remote `docker compose up --build` dies with it (2026-09-29: session removed 07:14:33, BuildKit `context canceled` 07:14:46), so a timed-out deploy leaves the OLD container running. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
+14. **Docker deployment — images are built in CI, never on the VPS**: Multi-stage `Dockerfile` (node:24-alpine). The CI `image` job builds linux/amd64 with buildx and pushes `ghcr.io/tonimelisma/hackernews:<sha>` + `:latest` (private package). The `deploy` job SSHes in, `git pull`s, logs in to GHCR with its own short-lived `GITHUB_TOKEN`, runs `IMAGE_TAG=<sha> docker compose pull && up -d`, logs out, waits for health, and on failure re-tags the previously running image as `:rollback` and starts it. `docker-compose.yml` has `image: ghcr.io/…:${IMAGE_TAG:-latest}`, no `build:`, and json-file logs capped at 10 MB × 3 (all guarded by `tests/unit/compose.test.js`); `docker-compose.dev.yml` still builds locally. **Why:** on 2026-09-29 an on-box build saturated the 30 GB `pd-standard` disk (94% util, 88% iowait, load 12.6 with runq 0) and then died with its SSH session (logind removed the session 07:14:33, BuildKit `context canceled` 07:14:46), leaving the old container running. Joins the external `reverse_proxy` network as `hackernews-app`; the host Caddy at `/opt/reverse-proxy` (outside this repo) routes `hackernews.melisma.net` to it. SQLite data lives in the `sqlite-data` volume (the image's baked DB is empty when built in CI). Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
 
 15. **Daily SQLite backup**: `scripts/backup-sqlite.sh` runs SQLite `.backup` inside the container, compresses with gzip, and uploads to `gs://hackernews-melisma-backup/` with `curl` + the VM service account's metadata-server token (no `gcloud` on the box — the snap was removed). Cron job (user `tonimelisma`) at 3:00 AM UTC daily, appending to `/var/log/hackernews-backup.log`. **That log file must exist and be owned by `tonimelisma`**: the shell evaluates the `>>` redirect before running the script, so when the file could not be created (`/var/log` is root-writable only) the job silently never ran — no scheduled backup from at least 2026-02-20 until the 2026-09-29 fix. Keeps the newest 30 objects. ~32 MB compressed per backup, well within GCP Always Free 5 GB.
 
@@ -182,12 +182,12 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile, auth) | 84 |
+| Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile, compose, auth) | 90 |
 | Backend integration (storyService, api, worker, users) | 113 |
 | Frontend component (App, StoryList, Story) | 39 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 7 |
-| **Total** | **247** |
+| **Total** | **253** |
 
 ## Project Health
 
@@ -197,11 +197,11 @@ All of these must be kept current with every change:
 |----------|-------|---------|
 | Functionality | A- | Core features work; dead scraper code removed |
 | Security | A | Helmet (CSP with script hash), CORS, per-IP login rate limiting, local scrypt password hashes (no third-party credentials handled), JWT in HTTP-only cookie (jose) with server-side revocation (`token_version`), timing-uniform login, SECRET validation |
-| Testing | A- | 247 tests, in-memory SQLite, ~3s backend runs |
+| Testing | A- | 253 tests, in-memory SQLite, ~3s backend runs |
 | Code Quality | A- | Clean codebase, dead code removed, SQLite simplification |
 | Architecture | A- | SQLite eliminates all Firestore hacks (L2 cache, patchStoryCache, Day-merge, padId, stripUndefined) |
 | Documentation | A- | CLAUDE.md + 4 reference docs, all updated |
-| DevOps / CI | A- | Docker app behind shared Caddy reverse proxy on VPS (live), GitHub Actions CI/CD with SSH deploy, npm audit, ESLint (backend + frontend), pre-commit hooks, daily GCS backups |
+| DevOps / CI | A- | Docker app behind shared Caddy reverse proxy on VPS (live), GitHub Actions CI/CD (image built in CI → GHCR, pull-only SSH deploy with health-check rollback), npm audit, ESLint (backend + frontend), pre-commit hooks, daily GCS backups |
 | Performance | A- | Sub-ms SQL queries, react-virtuoso |
 | Dependencies | A- | 0 vulnerabilities in both backend and frontend |
 
@@ -229,7 +229,8 @@ All of these must be kept current with every change:
 - Add LICENSE file
 
 ### Infrastructure
-- **Build the image off-box.** Deploys run `docker compose up --build` on the 1 GB e2-micro. Measured 2026-09-29 (sysstat): during the build the 30 GB `pd-standard` disk (Google-rated 22.5 read / 45 write IOPS, 3.6 MiB/s) hit 94% util, 81 ms await, queue 24; iowait 88%; load 12.6 with runq 0 and 20 blocked tasks — I/O-bound, not CPU. The build then died with its SSH session (gotcha #14). Build in GitHub Actions, ship via GHCR, deploy with `docker compose pull && docker compose up -d`.
+- **Faster disk tier.** The 30 GB `pd-standard` disk (Google-rated 22.5 read / 45 write IOPS, 3.6 MiB/s) is the box's binding constraint; moving to a faster tier needs a snapshot + disk swap (brief downtime). Not yet priced.
+- **Restrict SSH.** ~100 MB of `btmp` failed-login records in two months from brute force (all preauth). Limiting the `allow-ssh` firewall rule to Google's IAP range would stop it, but the CI deploy SSHes in from GitHub runners, so it needs a different deploy trigger first.
 
 ## Key Learnings
 

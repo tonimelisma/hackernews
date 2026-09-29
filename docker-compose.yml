@@ -1,6 +1,10 @@
 services:
   app:
-    build: .
+    # Built and pushed by CI (.github/workflows/ci.yml); the VPS only pulls.
+    # Never build on the VPS: a build saturates its pd-standard disk and
+    # starves the live app (measured 2026-09-29). IMAGE_TAG is the commit SHA
+    # set by the deploy job; manual runs fall back to :latest.
+    image: ghcr.io/tonimelisma/hackernews:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       - NODE_ENV=production
@@ -19,6 +23,11 @@ services:
       timeout: 5s
       retries: 3
       start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 volumes:
   sqlite-data:
 networks:
