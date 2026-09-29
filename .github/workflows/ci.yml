@@ -90,6 +90,10 @@ jobs:
           host: 34.45.72.52
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          # The image builds on the 1 GB e2-micro itself; a full rebuild
+          # (npm ci ×2 + vite build under swap) takes well over the action's
+          # 10m default, which failed the job while the build kept running.
+          command_timeout: 40m
           script: |
             set -e
             cd /opt/hackernews

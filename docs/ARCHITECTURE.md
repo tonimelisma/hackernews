@@ -137,6 +137,8 @@ ci.yml flow:
   ✗ unhealthy → rollback to previous Docker image, exit 1
 ```
 
+The image is built **on the VPS** (1 GB e2-micro, 30 GB `pd-standard` disk). A full rebuild takes well over 10 minutes, so the SSH step sets `command_timeout: 40m`. On 2026-09-29 the action's 10m default ended the SSH session mid-build; the remote build died with the session ~5 minutes later and the old container kept serving. During the build the disk saturated (94% util, 81 ms await) and requests slowed to ~14 s with occasional 502s. Building the image in CI instead is on the backlog in `CLAUDE.md`.
+
 **GitHub secrets** (repo-level, not environment):
 - `VPS_USER` — SSH username (`tonimelisma`)
 - `VPS_SSH_KEY` — ed25519 private key (public key in `~/.ssh/authorized_keys` on VPS)
@@ -199,7 +201,9 @@ gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --comma
 gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="tail -20 /var/log/hackernews-backup.log"
 ```
 
-Backup process: `sqlite3 .backup` inside container → `docker cp` out → `gzip` → `gcloud storage cp` to GCS. 30-day retention, ~3.3 MB per backup.
+Backup process: `sqlite3 .backup` inside container → `docker cp` out → `gzip` → upload with `curl` to the GCS JSON API using the VM service account's token from the metadata server (no `gcloud` on the box — the snap was removed 2026-09-29). Keeps the newest 30 objects; ~32 MB per backup. Cron runs as `tonimelisma` at 03:00 UTC and appends to `/var/log/hackernews-backup.log`, which must exist and be owned by that user (the redirect is evaluated by the shell before the script runs — when the file could not be created, the job silently never ran from at least 2026-02-20 to 2026-09-29).
+
+The `gcloud` commands above run from a workstation, not the VPS.
 
 ### Account Administration
 

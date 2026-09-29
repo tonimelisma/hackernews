@@ -157,9 +157,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 13. **Static file caching strategy**: `index.html` served with `Cache-Control: no-cache`; hashed `/assets/*` files served with `max-age=1y, immutable`.
 
-14. **Docker deployment**: Multi-stage `Dockerfile` builds node:24-alpine image with npm ci + frontend build + SQLite data import (data baked into image). `docker-compose.yml` runs only the HackerNews app with health checks and joins the external `reverse_proxy` Docker network as `hackernews-app`. The host-level Caddy reverse proxy lives outside this repo at `/opt/reverse-proxy` and routes `hackernews.melisma.net` to `hackernews-app:3000`. `docker-compose.dev.yml` is for local testing (app only, port 3000, no Caddy). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d`. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
+14. **Docker deployment**: Multi-stage `Dockerfile` builds node:24-alpine image with npm ci + frontend build + SQLite data import (data baked into image). `docker-compose.yml` runs only the HackerNews app with health checks and joins the external `reverse_proxy` Docker network as `hackernews-app`. The host-level Caddy reverse proxy lives outside this repo at `/opt/reverse-proxy` and routes `hackernews.melisma.net` to `hackernews-app:3000`. `docker-compose.dev.yml` is for local testing (app only, port 3000, no Caddy). SQLite data persisted via Docker volume. CI/CD deploys via SSH + `docker compose up --build -d` (`appleboy/ssh-action` with `command_timeout: 40m` — the 10m default killed the job mid-build on 2026-09-29; the image builds on the VPS itself, which saturates its disk and slows the live site; see Backlog). If the SSH session ends, the remote `docker compose up --build` dies with it (2026-09-29: session removed 07:14:33, BuildKit `context canceled` 07:14:46), so a timed-out deploy leaves the OLD container running. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
 
-15. **Daily SQLite backup**: `scripts/backup-sqlite.sh` runs SQLite `.backup` inside the container, compresses with gzip, and uploads to `gs://hackernews-melisma-backup/`. Cron job at 3:00 AM UTC daily. 30-day retention. ~3.3 MB compressed per backup, well within GCP Always Free 5 GB.
+15. **Daily SQLite backup**: `scripts/backup-sqlite.sh` runs SQLite `.backup` inside the container, compresses with gzip, and uploads to `gs://hackernews-melisma-backup/` with `curl` + the VM service account's metadata-server token (no `gcloud` on the box — the snap was removed). Cron job (user `tonimelisma`) at 3:00 AM UTC daily, appending to `/var/log/hackernews-backup.log`. **That log file must exist and be owned by `tonimelisma`**: the shell evaluates the `>>` redirect before running the script, so when the file could not be created (`/var/log` is root-writable only) the job silently never ran — no scheduled backup from at least 2026-02-20 until the 2026-09-29 fix. Keeps the newest 30 objects. ~32 MB compressed per backup, well within GCP Always Free 5 GB.
 
 16. **CSP uses script hash (not unsafe-inline)**: The inline dark mode script in `index.html` is allowed via `'sha256-8y8P8Mwo9xa1B5mBjxyt9mk3G0AxFcNMDqIEmr6vUkQ='` in the CSP `script-src` directive. If the inline script content changes (even whitespace), the hash must be recomputed and updated in `app.js`.
 
@@ -229,7 +229,7 @@ All of these must be kept current with every change:
 - Add LICENSE file
 
 ### Infrastructure
-- Set up GitHub secrets (`VPS_USER`, `VPS_SSH_KEY`) and `production` environment for CI deploy job
+- **Build the image off-box.** Deploys run `docker compose up --build` on the 1 GB e2-micro. Measured 2026-09-29 (sysstat): during the build the 30 GB `pd-standard` disk (Google-rated 22.5 read / 45 write IOPS, 3.6 MiB/s) hit 94% util, 81 ms await, queue 24; iowait 88%; load 12.6 with runq 0 and 20 blocked tasks — I/O-bound, not CPU. The build then died with its SSH session (gotcha #14). Build in GitHub Actions, ship via GHCR, deploy with `docker compose pull && docker compose up -d`.
 
 ## Key Learnings
 
