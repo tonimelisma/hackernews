@@ -2,7 +2,7 @@
 
 ## Project Summary
 
-HackerNews aggregator: a Node.js/Express backend with a React frontend, deployed on a GCP e2-micro VPS via Docker behind the host-level shared Caddy reverse proxy. The backend scrapes Hacker News stories, stores them in SQLite, and serves them via a REST API. An integrated background worker (setInterval, 15-minute cycle) syncs new stories and updates scores. The frontend displays top stories with filtering by timespan and user-hidden stories.
+HackerNews aggregator: a Node.js/Express backend with a React frontend, deployed on a GCP e2-micro VPS via Docker behind the host-level shared Caddy reverse proxy. The backend scrapes Hacker News stories, stores them in SQLite, and serves them via a REST API. An integrated background worker (setInterval, 15-minute cycle) syncs new stories and updates scores. The frontend displays top stories with filtering by timespan and user-hidden stories. Users log in with local username/password accounts, created and reset manually via `scripts/users.js`.
 
 ## Quick Reference Commands
 
@@ -39,6 +39,10 @@ npm run worker
 
 # Import JSON data to SQLite
 npm run import
+
+# Account admin (local DB; in prod run inside the container, see docs/ARCHITECTURE.md#account-administration)
+npm run users -- list
+npm run users -- set-password <username>
 
 # Database migrations
 npm run migrate            # Run pending migrations
@@ -87,11 +91,14 @@ hackernews/
 ├── services/
 │   ├── database.js         # SQLite singleton (getDb, setDb, initSchema → runs migrations)
 │   ├── migrator.js         # Database migration runner (runMigrations, rollback, status)
-│   ├── storyService.js     # Story/user CRUD (SQL queries)
+│   ├── storyService.js     # Story + hidden-story queries
+│   ├── userService.js      # users table (get/create/setPasswordHash/revokeSessions/list)
+│   ├── auth.js             # scrypt password hashing + verifyCredentials
 │   └── hackernews.js       # HN API client + story import/update
 ├── migrations/
 │   ├── 001-initial-schema.js # Initial tables: stories, users, hidden + indexes
-│   └── 002-analyze-statistics.js # Runs ANALYZE so the planner picks the right index per timespan
+│   ├── 002-analyze-statistics.js # Runs ANALYZE so the planner picks the right index per timespan
+│   └── 003-local-passwords.js # users.password_hash, token_version, created_at
 ├── util/
 │   ├── config.js           # Environment config (limitResults)
 │   ├── dbLogger.js         # Per-request DB operation & cache analytics logging
@@ -113,6 +120,7 @@ hackernews/
 ├── scripts/
 │   ├── import-json-to-sqlite.js # Import JSON → SQLite
 │   ├── migrate.js              # CLI: node scripts/migrate.js [up|rollback|status]
+│   ├── users.js                # CLI: node scripts/users.js [list|add|set-password|revoke-sessions]
 │   └── backup-sqlite.sh        # Daily SQLite backup to GCS
 ├── .github/workflows/ci.yml # CI + SSH deploy pipeline
 ├── .husky/pre-commit       # Pre-commit hook (lint-staged)
@@ -131,11 +139,11 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 4. **Single SQL query for stories**: `getStories()` uses a single SQL query that handles time filtering, hidden story exclusion, score sorting, and pagination — all in one step. No client-side sorting, no multi-tier cache, no merge logic needed.
 
-5. **Input validation**: The `/stories` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint has `isValidUsername()` validation (alphanumeric + `_-`, max 32 chars). `/stories` optionally reads auth cookie for server-side hidden filtering.
+5. **Input validation**: The `/stories` endpoint doesn't validate timespan beyond a switch/default. The `/login` endpoint validates `{ username, password }` via `auth.isValidUsername()` (alphanumeric + `_-`, max 32 chars) and a 1–1024 char password. `/stories` optionally reads auth cookie for server-side hidden filtering.
 
 6. **`getHidden` returns empty array for missing users**: If username doesn't exist in the database, `getHidden` returns `[]` (no hidden stories).
 
-7. **jose replaces jsonwebtoken**: JWT auth uses `jose` (pure-JS, native CJS build, works on all modern Node versions). The old `jsonwebtoken` chain (`jwa` → `buffer-equal-constant-time`) accessed removed `SlowBuffer.prototype` and crashed on Node 25+. `jose` eliminated that constraint entirely — tokens are standard HS256 JWTs (same `SECRET`), so existing cookies keep working across the swap. `signToken()` in `routes/api.js` sets `alg: HS256`, `iat`, and 365-day `exp`; `jwtVerify()` checks expiry. **Use Node.js 24.**
+7. **jose replaces jsonwebtoken**: JWT auth uses `jose` (pure-JS, native CJS build, works on all modern Node versions). The old `jsonwebtoken` chain (`jwa` → `buffer-equal-constant-time`) accessed removed `SlowBuffer.prototype` and crashed on Node 25+. `jose` eliminated that constraint entirely — tokens are standard HS256 JWTs (same `SECRET`), so existing cookies keep working across the swap. `signToken(user)` in `routes/api.js` signs `{ username, tv }` with `alg: HS256`, `iat`, and 365-day `exp`; `jwtVerify()` checks expiry (see gotcha #19 for `tv`). **Use Node.js 24.**
 
 8. **Server-side hidden story filtering**: `GET /stories` optionally reads the auth cookie via `optionalAuth()`. If authenticated, fetches hidden IDs and passes them to `getStories()` which excludes them via SQL `WHERE id NOT IN (...)`. Anonymous users are unaffected.
 
@@ -155,9 +163,11 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 16. **CSP uses script hash (not unsafe-inline)**: The inline dark mode script in `index.html` is allowed via `'sha256-8y8P8Mwo9xa1B5mBjxyt9mk3G0AxFcNMDqIEmr6vUkQ='` in the CSP `script-src` directive. If the inline script content changes (even whitespace), the hash must be recomputed and updated in `app.js`.
 
-17. **Database migration system**: `services/migrator.js` reads numbered `.js` files from `migrations/`, runs pending `up()` functions in transactions, and tracks applied migrations in `schema_migrations` table. `rollbackMigration()` runs `down()` and removes the record. CLI: `node scripts/migrate.js [up|rollback|status]`. New schema changes must be added as new migration files (e.g., `migrations/003-add-column.js`). **The `Dockerfile` runtime stage MUST `COPY migrations ./migrations`** — without it, `loadMigrationFiles()` finds nothing in the container and `runMigrations()` silently runs zero migrations (`schema_migrations` stays empty). This was broken in prod until 2026-06-27; guarded by `tests/unit/dockerfile.test.js`.
+17. **Database migration system**: `services/migrator.js` reads numbered `.js` files from `migrations/`, runs pending `up()` functions in transactions, and tracks applied migrations in `schema_migrations` table. `rollbackMigration()` runs `down()` and removes the record. CLI: `node scripts/migrate.js [up|rollback|status]`. New schema changes must be added as new migration files (e.g., `migrations/004-add-column.js`). **The `Dockerfile` runtime stage MUST `COPY migrations ./migrations`** — without it, `loadMigrationFiles()` finds nothing in the container and `runMigrations()` silently runs zero migrations (`schema_migrations` stays empty). This was broken in prod until 2026-06-27; guarded by `tests/unit/dockerfile.test.js`.
 
 18. **Query-planner statistics are mandatory (ANALYZE)**: `getStories` runs `WHERE time > ? ORDER BY score DESC LIMIT 500`, which no single index satisfies. Without `sqlite_stat1` stats the planner always scans `idx_stories_score` and filters by time, which is pathological for the *selective* "Day" window (few hundred matches scattered across 150k+ rows) — measured at ~125 ms median / **27 s worst case** on production, and since `better-sqlite3` is synchronous that freezes the whole process. `migrations/002-analyze-statistics.js` runs `ANALYZE`; the worker re-runs it each cycle (~70 ms). **Read path:** `getStories` forces `INDEXED BY idx_stories_time` for Day–Month and `INDEXED BY idx_stories_score` for Year/All — Month score scans hit **16 s** when top scores fall outside the window; Year time scans hit **14–17 s** because ~89% of rows match. See [docs/DATABASE.md](docs/DATABASE.md#query-planner-statistics-analyze).
+
+19. **Local password accounts (no HN involvement)**: `POST /login` takes `{ username, password }` and checks an scrypt hash in `users.password_hash` (`services/auth.js`; format `scrypt$N$r$p$salt$key`, OWASP N=2^14/r=8/p=5 — **not** N=2^17, which needs 128 MiB per hash and pushed the 1 GB e2-micro into swap at 3.4 s/hash). No signup/reset endpoints: accounts are managed with `scripts/users.js` (`list`, `add`, `set-password`, `revoke-sessions`) run via `docker exec -it` in the container — the Dockerfile must `COPY scripts` (guarded by `tests/unit/dockerfile.test.js`). Sessions: JWT carries `tv` = `users.token_version`; every authenticated request loads the user row and rejects the cookie if the user is gone or `tv` mismatches. **Cookies without `tv` (issued in the HN-proxy era) count as `tv: 0` — do not remove that default or pre-migration sessions get logged out.** Each browser has an independent cookie, so simultaneous sessions just work; `set-password` deliberately leaves `token_version` alone (no logout), `revoke-sessions` bumps it (logs out every browser). Login never creates users, and neither does `upsertHidden`. Unknown users / NULL passwords hash against a dummy for uniform timing.
 
 ## Documentation
 
@@ -172,12 +182,12 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile) | 58 |
-| Backend integration (storyService, api, worker) | 75 |
-| Frontend component (App, StoryList, Story) | 33 |
+| Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile, auth) | 84 |
+| Backend integration (storyService, api, worker, users) | 113 |
+| Frontend component (App, StoryList, Story) | 39 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 7 |
-| **Total** | **177** |
+| **Total** | **247** |
 
 ## Project Health
 
@@ -186,8 +196,8 @@ All of these must be kept current with every change:
 | Category | Grade | Summary |
 |----------|-------|---------|
 | Functionality | A- | Core features work; dead scraper code removed |
-| Security | A | Helmet (CSP with script hash), CORS, rate limiting, JWT in HTTP-only cookie (jose), SECRET validation, username length validation |
-| Testing | A- | 177 tests, in-memory SQLite, ~1s backend runs |
+| Security | A | Helmet (CSP with script hash), CORS, per-IP login rate limiting, local scrypt password hashes (no third-party credentials handled), JWT in HTTP-only cookie (jose) with server-side revocation (`token_version`), timing-uniform login, SECRET validation |
+| Testing | A- | 247 tests, in-memory SQLite, ~3s backend runs |
 | Code Quality | A- | Clean codebase, dead code removed, SQLite simplification |
 | Architecture | A- | SQLite eliminates all Firestore hacks (L2 cache, patchStoryCache, Day-merge, padId, stripUndefined) |
 | Documentation | A- | CLAUDE.md + 4 reference docs, all updated |
@@ -236,7 +246,7 @@ All of these must be kept current with every change:
 - **`errorHandler` must not call `next()`**: Calling `next(error)` after `res.status().json()` triggers "headers already sent" errors if another error handler exists downstream.
 - **Vite build output**: `build.outDir` set to `"build"` in `vite.config.js` to match Express static path in `app.js`. `build/` is gitignored.
 - **JWT/cookie expiry and refresh**: JWT and cookie both expire after 365 days. `GET /me` issues a fresh JWT+cookie on each call (rolling refresh). Since the frontend calls `getMe()` before fetching stories on every page load, active users are effectively never logged out and the nav never flashes the wrong logged-out state first. Tokens survive deployments as long as the `SECRET` env var in the VPS `.env` file stays the same.
-- **HN login detection via redirect path**: After POSTing to HN login with `{ withCredentials: true }`, axios follows the redirect. On success, `response.request.path` is `/news`; on failure, it's `/login`. Each `/login` response includes `X-Login-Request-Id`; the auth proxy logs `[hn-login]` diagnostics with request ID, outcome, status, and final path, but never logs passwords, tokens, or usernames.
+- **HN blocks proxied logins from datacenter IPs (why local accounts exist)**: Login used to POST the user's credentials to `news.ycombinator.com/login` and treat a final `/news` path as success and `/login` as bad credentials. By 2026-09 HN answered every login from the GCP VPS IP with a "Validation required" reCAPTCHA page — which also lands on `/login` — so every login failed as "wrong password" while the same credentials worked in a browser. Diagnosed by probing from inside the container with a fake account and inspecting the body (a plain GET of `/login` was *not* challenged; only the POST). Lesson: a redirect-path heuristic cannot tell "bad password" from "bot wall"; inspect the response body before trusting an auth outcome, and don't build auth on a third party's login form. Replaced with local accounts (gotcha #19); usernames — and therefore all hidden history — carried over unchanged, and existing cookies stayed valid via the `tv`-defaults-to-0 rule.
 - **Bootstrap `data-bs-auto-close="outside"`**: Prevents dropdown from closing on clicks inside the menu (e.g., login form). Without it, clicking the Login button closes the dropdown before the user sees the result.
 - **react-virtuoso for list virtualization**: `<Virtuoso useWindowScroll data={...} itemContent={...} />` renders only visible items. In tests, mock with a simple `({ data, itemContent }) => data.map(...)` to render all items synchronously. Must mock in every test file that renders a component using Virtuoso (both StoryList.test.jsx and App.test.jsx).
 - **Hidden stories are server-side only**: Hiding requires login. Server filters via SQL, client optimistically removes from `stories` array. No localStorage hidden persistence. Stories re-fetched on login/logout state change.

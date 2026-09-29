@@ -45,11 +45,20 @@ CREATE INDEX IF NOT EXISTS idx_stories_time_updated ON stories(time, updated);
 CREATE TABLE IF NOT EXISTS users (
   username TEXT PRIMARY KEY
 );
+-- migration 003-local-passwords
+ALTER TABLE users ADD COLUMN password_hash TEXT;
+ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN created_at INTEGER;
 ```
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `username` | TEXT PRIMARY KEY | HN username |
+| `username` | TEXT PRIMARY KEY | Account name (case-sensitive). Accounts that predate local passwords keep their original HN username, which is also the key of their `hidden` rows |
+| `password_hash` | TEXT | `scrypt$N$r$p$<salt b64>$<key b64>`, or NULL = cannot log in until set via `scripts/users.js set-password` |
+| `token_version` | INTEGER NOT NULL DEFAULT 0 | Must equal the session JWT's `tv` claim (missing `tv` = 0). Bumped by `scripts/users.js revoke-sessions` to log out every browser |
+| `created_at` | INTEGER | Account creation (epoch ms); NULL for pre-migration accounts |
+
+Rows are created only by `scripts/users.js add` — neither login nor hiding a story creates users.
 
 ### Hidden
 
@@ -65,7 +74,7 @@ CREATE INDEX IF NOT EXISTS idx_hidden_username ON hidden(username);
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `username` | TEXT NOT NULL | HN username |
+| `username` | TEXT NOT NULL | Owning account's `users.username` |
 | `story_id` | INTEGER NOT NULL | Hidden story ID |
 | `added_at` | INTEGER | Timestamp when hidden (epoch milliseconds) |
 
@@ -127,6 +136,7 @@ fast; the hints apply only to `getStories`.
 | `services/database.js:initSchema()` | Wrapper around `runMigrations()` for backward compatibility with test setup |
 | `services/migrator.js` | Reads `migrations/*.js`, runs pending `up()` in transactions, tracks in `schema_migrations` |
 | `scripts/migrate.js` | CLI: `node scripts/migrate.js [up\|rollback\|status]` |
+| `scripts/users.js` | CLI: `node scripts/users.js [list\|add\|set-password\|revoke-sessions]` (opens the DB via `getDb()`, so pending migrations run first) |
 
 ## Query Patterns
 
@@ -183,11 +193,18 @@ SELECT id FROM stories ORDER BY id DESC LIMIT 1
 ### `upsertHidden` — `storyService.js`
 
 ```sql
-INSERT OR IGNORE INTO users (username) VALUES (?);
 INSERT OR REPLACE INTO hidden (username, story_id) VALUES (?, ?);
 ```
 
-Naturally idempotent — hiding the same story twice is a no-op.
+Naturally idempotent — hiding the same story twice is a no-op. Only reachable with a valid session, so the user row always exists.
+
+### Session check — `userService.getUser` (every authenticated request)
+
+```sql
+SELECT username, password_hash, token_version, created_at FROM users WHERE username = ?
+```
+
+Primary-key lookup; the route compares `token_version` to the JWT's `tv`.
 
 ### Story import/update — `hackernews.js`
 

@@ -6,7 +6,8 @@ const rateLimit = require("express-rate-limit");
 const { randomUUID } = require("crypto");
 
 const storyService = require("../services/storyService");
-const hackernewsService = require("../services/hackernews");
+const userService = require("../services/userService");
+const auth = require("../services/auth");
 const { createDbContext } = require("../util/dbLogger");
 
 const loginLimiter = rateLimit({
@@ -22,17 +23,15 @@ const loginLimiter = rateLimit({
   },
 });
 
-const isValidUsername = (input) => {
-  return input.length <= 32 && /^[a-zA-Z0-9_-]+$/.test(input);
-};
-
 const TOKEN_EXPIRY = "365d";
 const COOKIE_MAX_AGE = 365 * 24 * 60 * 60 * 1000;
 
 const secretKey = () => new TextEncoder().encode(process.env.SECRET);
 
-const signToken = (payload) =>
-  new SignJWT(payload)
+// `tv` is the user's token_version at signing time; revoke-sessions bumps the
+// stored version, invalidating every cookie signed before it.
+const signToken = (user) =>
+  new SignJWT({ username: user.username, tv: user.token_version })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(TOKEN_EXPIRY)
@@ -46,17 +45,26 @@ const COOKIE_OPTIONS = {
   path: "/api",
 };
 
-const authenticateToken = async (req, res, next) => {
+// Resolves the session cookie to a current user row, or null. Cookies issued
+// before local passwords (HN-proxy era) have no `tv` claim; they count as
+// version 0 so those sessions survived the migration. Throws on a bad JWT.
+const sessionUser = async (req) => {
   const token = req.cookies && req.cookies.token;
-  if (!token) {
-    return res.status(401).json({ error: "authentication error" });
-  }
+  if (!token) return null;
+  const { payload } = await jwtVerify(token, secretKey());
+  if (typeof payload.username !== "string") return null;
+  const user = userService.getUser(payload.username);
+  if (!user || (payload.tv ?? 0) !== user.token_version) return null;
+  return { username: user.username, token_version: user.token_version };
+};
+
+const authenticateToken = async (req, res, next) => {
   try {
-    const { payload } = await jwtVerify(token, secretKey());
-    if (!payload.username) {
-      return res.status(401).json({ error: "invalid token" });
+    const user = await sessionUser(req);
+    if (!user) {
+      return res.status(401).json({ error: "authentication error" });
     }
-    req.user = payload;
+    req.user = user;
     next();
   } catch (e) {
     console.error("auth error:", e);
@@ -65,11 +73,8 @@ const authenticateToken = async (req, res, next) => {
 };
 
 const optionalAuth = async (req) => {
-  const token = req.cookies && req.cookies.token;
-  if (!token) return null;
   try {
-    const { payload } = await jwtVerify(token, secretKey());
-    return payload.username ? { username: payload.username } : null;
+    return await sessionUser(req);
   } catch {
     return null;
   }
@@ -145,30 +150,28 @@ router.post("/hidden", authenticateToken, async (req, res) => {
 router.post("/login", loginLimiter, async (req, res) => {
   const requestId = randomUUID();
   res.set("X-Login-Request-Id", requestId);
-  const goto = req.body.goto;
-  const pw = req.body.pw;
-  const acct = req.body.acct;
-  if (!goto || !pw || !acct || !isValidUsername(acct)) {
+  const { username, password } = req.body ?? {};
+  if (
+    !auth.isValidUsername(username) ||
+    typeof password !== "string" ||
+    password.length === 0 ||
+    password.length > auth.MAX_PASSWORD_LENGTH
+  ) {
     console.log(`[login] requestId=${requestId} outcome=bad-request`);
-    res.status(400).json({ error: "missing fields" });
-  } else {
-    try {
-      const ctx = createDbContext();
-      const loginCorrect = await hackernewsService.login(goto, acct, pw, { requestId });
-      if (loginCorrect) {
-        const token = await signToken({ username: acct });
-        await storyService.upsertUser(acct, ctx);
-        res.cookie("token", token, COOKIE_OPTIONS);
-        res.status(200).json({ username: acct });
-        ctx.log("POST /login", { user: acct, requestId });
-      } else {
-        console.log(`[login] requestId=${requestId} outcome=invalid-credentials`);
-        res.status(401).json({ error: "invalid credentials" });
-      }
-    } catch (e) {
-      console.error(`login error requestId=${requestId}:`, e);
-      res.status(500).json({ error: "internal server error" });
+    return res.status(400).json({ error: "missing fields" });
+  }
+  try {
+    const user = await auth.verifyCredentials(username, password);
+    if (!user) {
+      console.log(`[login] requestId=${requestId} outcome=invalid-credentials`);
+      return res.status(401).json({ error: "invalid credentials" });
     }
+    res.cookie("token", await signToken(user), COOKIE_OPTIONS);
+    res.status(200).json({ username: user.username });
+    console.log(`[login] requestId=${requestId} outcome=success`);
+  } catch (e) {
+    console.error(`login error requestId=${requestId}:`, e);
+    res.status(500).json({ error: "internal server error" });
   }
 });
 
@@ -178,7 +181,7 @@ router.post("/logout", (req, res) => {
 });
 
 router.get("/me", authenticateToken, async (req, res) => {
-  const token = await signToken({ username: req.user.username });
+  const token = await signToken(req.user);
   res.cookie("token", token, COOKIE_OPTIONS);
   res.status(200).json({ username: req.user.username });
 });

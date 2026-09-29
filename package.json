@@ -15,7 +15,8 @@
     "import": "node scripts/import-json-to-sqlite.js",
     "migrate": "node scripts/migrate.js up",
     "migrate:rollback": "node scripts/migrate.js rollback",
-    "migrate:status": "node scripts/migrate.js status"
+    "migrate:status": "node scripts/migrate.js status",
+    "users": "node scripts/users.js"
   },
   "dependencies": {
     "axios": "^1.19.0",

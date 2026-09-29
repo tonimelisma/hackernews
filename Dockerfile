@@ -22,5 +22,6 @@ COPY routes ./routes
 COPY services ./services
 COPY util ./util
 COPY migrations ./migrations
+COPY scripts ./scripts
 EXPOSE 3000
 CMD ["node", "bin/www"]

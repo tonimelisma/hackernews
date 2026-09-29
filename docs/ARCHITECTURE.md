@@ -34,13 +34,13 @@ HackerNews aggregator with a single Node.js process and a SQLite database, deplo
 
 ```bash
 # Interactive shell
-gcloud compute ssh vps-1 --zone=us-central1-a
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a
 
 # Run a single command
-gcloud compute ssh vps-1 --zone=us-central1-a --command="<cmd>"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="<cmd>"
 
 # Copy files to VPS
-gcloud compute scp <local-path> vps-1:<remote-path> --zone=us-central1-a
+gcloud compute scp --project=melisma-services <local-path> vps-1:<remote-path> --zone=us-central1-a
 ```
 
 ### Docker Commands (run on VPS)
@@ -94,28 +94,28 @@ The Caddy container is named `caddy`, not `hackernews-caddy-1`. It owns host por
 
 ```bash
 # Test API from inside container (bypasses Caddy)
-gcloud compute ssh vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 wget -qO- 'http://localhost:3000/api/v1/stories?timespan=Day&limit=1'"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 wget -qO- 'http://localhost:3000/api/v1/stories?timespan=Day&limit=1'"
 
 # Test API via public HTTPS
 curl -s "https://hackernews.melisma.net/api/v1/stories?timespan=Day&limit=1"
 
 # Check container health status
-gcloud compute ssh vps-1 --zone=us-central1-a --command="docker inspect --format='{{.State.Health.Status}}' hackernews-app-1"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="docker inspect --format='{{.State.Health.Status}}' hackernews-app-1"
 
 # Check worker sync logs (last sync cycle)
-gcloud compute ssh vps-1 --zone=us-central1-a --command="cd /opt/hackernews && docker compose logs app 2>&1 | grep -E '(sync|WORKER|fetched|adding)' | tail -20"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/hackernews && docker compose logs app 2>&1 | grep -E '(sync|WORKER|fetched|adding)' | tail -20"
 
 # Check memory usage
-gcloud compute ssh vps-1 --zone=us-central1-a --command="docker stats --no-stream"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="docker stats --no-stream"
 
 # Check disk usage
-gcloud compute ssh vps-1 --zone=us-central1-a --command="df -h / && du -sh /opt/hackernews"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="df -h / && du -sh /opt/hackernews"
 
 # Query SQLite directly inside container
-gcloud compute ssh vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 sqlite3 /data/hackernews.db 'SELECT COUNT(*) FROM stories;'"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 sqlite3 /data/hackernews.db 'SELECT COUNT(*) FROM stories;'"
 
 # Check SQLite DB size
-gcloud compute ssh vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 ls -lh /data/hackernews.db"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 ls -lh /data/hackernews.db"
 ```
 
 ### CI/CD Pipeline
@@ -144,7 +144,7 @@ ci.yml flow:
 ### Manual Deploy (bypassing CI)
 
 ```bash
-gcloud compute ssh vps-1 --zone=us-central1-a --command="cd /opt/hackernews && git pull origin master && docker compose up --build -d"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/hackernews && git pull origin master && docker compose up --build -d"
 ```
 
 ### Local Docker Testing
@@ -172,14 +172,14 @@ Multi-stage build:
    - Import JSON data into SQLite (`/data/hackernews.db`)
 2. **Runtime stage** (node:24-alpine + wget + sqlite3):
    - Copies `node_modules`, frontend build, baked SQLite DB
-   - Copies only the app source files needed at runtime
+   - Copies only the app source files needed at runtime (`bin`, `routes`, `services`, `util`, `migrations`, `scripts` — guarded by `tests/unit/dockerfile.test.js`)
    - ~160 MB final image
 
 ### Backups
 
 ```bash
 # Manual backup
-gcloud compute ssh vps-1 --zone=us-central1-a --command="bash /opt/hackernews/scripts/backup-sqlite.sh"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="bash /opt/hackernews/scripts/backup-sqlite.sh"
 
 # List backups
 gcloud storage ls -l gs://hackernews-melisma-backup/
@@ -189,17 +189,37 @@ gcloud storage cp gs://hackernews-melisma-backup/hackernews-20260220.db.gz .
 
 # Restore a backup
 gunzip hackernews-20260220.db.gz
-gcloud compute scp hackernews-20260220.db vps-1:/tmp/restore.db --zone=us-central1-a
-gcloud compute ssh vps-1 --zone=us-central1-a --command="docker compose -f /opt/hackernews/docker-compose.yml cp /tmp/restore.db app:/data/hackernews.db && cd /opt/hackernews && docker compose restart app"
+gcloud compute scp --project=melisma-services hackernews-20260220.db vps-1:/tmp/restore.db --zone=us-central1-a
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="docker compose -f /opt/hackernews/docker-compose.yml cp /tmp/restore.db app:/data/hackernews.db && cd /opt/hackernews && docker compose restart app"
 
 # Check cron is installed
-gcloud compute ssh vps-1 --zone=us-central1-a --command="crontab -l"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="crontab -l"
 
 # Check backup logs
-gcloud compute ssh vps-1 --zone=us-central1-a --command="tail -20 /var/log/hackernews-backup.log"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="tail -20 /var/log/hackernews-backup.log"
 ```
 
 Backup process: `sqlite3 .backup` inside container → `docker cp` out → `gzip` → `gcloud storage cp` to GCS. 30-day retention, ~3.3 MB per backup.
+
+### Account Administration
+
+Accounts are local username/password accounts. There is no signup or reset flow in the app — accounts are managed by hand with `scripts/users.js`, run inside the container (`-t`/`-it` give it a TTY so passwords are read without echo; they are never passed as arguments):
+
+```bash
+# Set or reset a password (browsers already logged in stay logged in)
+gcloud compute ssh vps-1 --project=melisma-services --zone=us-central1-a --ssh-flag=-t --command="docker exec -it hackernews-app-1 node scripts/users.js set-password <username>"
+
+# Create an account (prompts for the password)
+gcloud compute ssh vps-1 --project=melisma-services --zone=us-central1-a --ssh-flag=-t --command="docker exec -it hackernews-app-1 node scripts/users.js add <username>"
+
+# List accounts (password set?, session version, hidden-story count)
+gcloud compute ssh vps-1 --project=melisma-services --zone=us-central1-a --command="docker exec hackernews-app-1 node scripts/users.js list"
+
+# Log an account out of every browser (e.g. lost device, after a forced reset)
+gcloud compute ssh vps-1 --project=melisma-services --zone=us-central1-a --command="docker exec hackernews-app-1 node scripts/users.js revoke-sessions <username>"
+```
+
+Piped (non-TTY) input is also accepted: one line for the password, one for the confirmation. Minimum password length is 8.
 
 ### GCP Firewall Rules
 
@@ -239,10 +259,10 @@ Caddy auto-provisions Let's Encrypt certs. Cert data is stored in the Docker vol
 
 ```bash
 # Check Caddy logs for cert issues
-gcloud compute ssh vps-1 --zone=us-central1-a --command="cd /opt/reverse-proxy && docker compose logs caddy | tail -20"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/reverse-proxy && docker compose logs caddy | tail -20"
 
 # Force cert renewal (rarely needed)
-gcloud compute ssh vps-1 --zone=us-central1-a --command="cd /opt/reverse-proxy && docker compose restart caddy"
+gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/reverse-proxy && docker compose restart caddy"
 ```
 
 ### VPS Service Account Scopes
@@ -250,9 +270,9 @@ gcloud compute ssh vps-1 --zone=us-central1-a --command="cd /opt/reverse-proxy &
 The VM service account has `storage-rw`, `logging-write`, `monitoring-write`. If you need to change scopes, the VM must be stopped first:
 
 ```bash
-gcloud compute instances stop vps-1 --zone=us-central1-a
-gcloud compute instances set-service-account vps-1 --zone=us-central1-a --scopes=storage-rw,logging-write,monitoring-write
-gcloud compute instances start vps-1 --zone=us-central1-a
+gcloud compute instances stop --project=melisma-services vps-1 --zone=us-central1-a
+gcloud compute instances set-service-account --project=melisma-services vps-1 --zone=us-central1-a --scopes=storage-rw,logging-write,monitoring-write
+gcloud compute instances start --project=melisma-services vps-1 --zone=us-central1-a
 # Docker containers auto-restart (restart: unless-stopped)
 ```
 
@@ -286,12 +306,15 @@ hackernews/
 ├── services/
 │   ├── database.js                 # SQLite singleton (getDb, setDb, initSchema → runs migrations)
 │   ├── migrator.js                 # Database migration runner (runMigrations, rollback, status)
-│   ├── storyService.js             # Story/user CRUD (SQL queries)
+│   ├── storyService.js             # Story + hidden-story queries
+│   ├── userService.js              # users table: get/create/setPasswordHash/revokeSessions/list
+│   ├── auth.js                     # scrypt password hashing + credential verification
 │   └── hackernews.js               # HN API client + story import/update
 │
 ├── migrations/
 │   ├── 001-initial-schema.js       # Initial tables: stories, users, hidden + indexes
-│   └── 002-analyze-statistics.js   # ANALYZE — query-planner stats for per-timespan index choice
+│   ├── 002-analyze-statistics.js   # ANALYZE — query-planner stats for per-timespan index choice
+│   └── 003-local-passwords.js      # users.password_hash, token_version, created_at
 │
 ├── util/
 │   ├── config.js                   # dotenv config (limitResults)
@@ -326,6 +349,7 @@ hackernews/
 │   ├── data/                       # Exported JSON data (gitignored)
 │   ├── import-json-to-sqlite.js    # Import JSON stories/users/hidden → SQLite
 │   ├── migrate.js                  # CLI: node scripts/migrate.js [up|rollback|status]
+│   ├── users.js                    # CLI: node scripts/users.js [list|add|set-password|revoke-sessions]
 │   └── backup-sqlite.sh            # Daily SQLite backup to GCS
 │
 ├── docs/                           # LLM-geared documentation
@@ -367,16 +391,18 @@ Express serves the Vite build output from `hackernews-frontend/build/` with a tw
 - **`/assets/*`** (hashed filenames): `Cache-Control: public, max-age=31536000, immutable`
 - **`index.html`**: `Cache-Control: no-cache`
 
-### Authentication (Frontend → HN → Backend → JWT Cookie)
-1. Frontend POSTs credentials to `/api/v1/login`
-2. Backend proxies login to `news.ycombinator.com/login` (axios follows redirects)
-3. If HN redirects to `/news` → success → issue JWT (365d expiry) as HTTP-only cookie + upsert user; if HN redirects to `/login` → invalid credentials
+### Authentication (Frontend → Backend → JWT Cookie)
+1. Frontend POSTs `{ username, password }` to `/api/v1/login` (rate limited per client IP)
+2. `auth.verifyCredentials()` looks up the user and checks the password against its scrypt hash; unknown users and users without a password are hashed against a dummy so timing is uniform
+3. Success → issue JWT `{ username, tv: token_version }` (365d expiry) as HTTP-only cookie; failure → `401`. Login never creates users — accounts come only from `scripts/users.js`
 4. Cookie (`token`) sent automatically with all `/api` requests (httpOnly, secure in prod, sameSite=strict)
 5. On page load, frontend calls `GET /me` before fetching stories to check login state — this also refreshes the JWT+cookie (rolling expiry)
-6. Protected routes (`/hidden`, `/me`) verify JWT via `authenticateToken` middleware and extract username
-7. Logout: `POST /logout` clears the cookie
+6. Protected routes (`/hidden`, `/me`) and the optional auth on `/stories` verify the JWT, then require the user row to exist with `token_version` equal to the token's `tv` (missing `tv` = 0, for pre-migration cookies)
+7. Logout: `POST /logout` clears this browser's cookie only; other browsers stay logged in. `scripts/users.js revoke-sessions` bumps `token_version` to log out every browser
 
-Each `/login` response includes `X-Login-Request-Id` for browser-to-server log correlation. Login diagnostics are emitted as `[hn-login]` lines with request ID, outcome, status, and final HN path. They intentionally omit passwords, tokens, and usernames.
+Each `/login` response includes `X-Login-Request-Id` for browser-to-server log correlation. Login outcomes are logged as `[login] requestId=… outcome=…` lines, intentionally omitting passwords, tokens, and usernames.
+
+**History (2026-09):** login used to be proxied to `news.ycombinator.com/login`. HN began answering logins from the VPS's datacenter IP with a "Validation required" reCAPTCHA page, which the proxy misread as invalid credentials, so every login failed. Local accounts replaced it; usernames (and therefore every hidden story) carried over unchanged.
 
 ## Environment Variables
 

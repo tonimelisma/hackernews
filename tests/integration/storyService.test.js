@@ -266,13 +266,15 @@ describe("services/storyService", () => {
   });
 
   describe("upsertHidden", () => {
-    it("creates user and adds hidden ID when user does not exist", async () => {
+    // Accounts are created only by scripts/users.js; hiding a story must not
+    // silently create a password-less user row.
+    it("does not create a user row", async () => {
       await storyService.upsertHidden("newuser", 789);
 
       const { getDb } = require("../../services/database");
       const d = getDb();
       const user = d.prepare("SELECT * FROM users WHERE username = ?").get("newuser");
-      expect(user).toBeDefined();
+      expect(user).toBeUndefined();
       const hidden = d.prepare("SELECT story_id FROM hidden WHERE username = ?").all("newuser");
       expect(hidden.map(r => r.story_id)).toContain(789);
     });
@@ -317,33 +319,6 @@ describe("services/storyService", () => {
       const hidden = d.prepare("SELECT story_id FROM hidden WHERE username = ?").all("testuser");
       const count = hidden.filter(r => r.story_id === 100).length;
       expect(count).toBe(1);
-    });
-  });
-
-  describe("upsertUser", () => {
-    it("creates new user when user does not exist", async () => {
-      await storyService.upsertUser("brandnew");
-
-      const { getDb } = require("../../services/database");
-      const user = getDb().prepare("SELECT * FROM users WHERE username = ?").get("brandnew");
-      expect(user).toBeDefined();
-    });
-
-    it("is a no-op when user already exists", async () => {
-      const { getDb } = require("../../services/database");
-      const d = getDb();
-      d.prepare("INSERT INTO users (username) VALUES (?)").run("existing");
-      d.prepare("INSERT INTO hidden (username, story_id) VALUES (?, ?)").run("existing", 1);
-      d.prepare("INSERT INTO hidden (username, story_id) VALUES (?, ?)").run("existing", 2);
-      d.prepare("INSERT INTO hidden (username, story_id) VALUES (?, ?)").run("existing", 3);
-
-      await storyService.upsertUser("existing");
-
-      const user = d.prepare("SELECT * FROM users WHERE username = ?").get("existing");
-      expect(user).toBeDefined();
-      // hidden should be preserved
-      const hidden = d.prepare("SELECT story_id FROM hidden WHERE username = ?").all("existing");
-      expect(hidden.map(r => r.story_id).sort()).toEqual([1, 2, 3]);
     });
   });
 });

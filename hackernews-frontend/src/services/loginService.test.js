@@ -13,15 +13,13 @@ describe("loginService", () => {
     axios.post.mockResolvedValue(mockResponse);
 
     const result = await loginService.login({
-      goto: "news",
-      acct: "user",
-      pw: "pass",
+      username: "user",
+      password: "pass",
     });
 
     expect(axios.post).toHaveBeenCalledWith(expect.stringContaining("login"), {
-      goto: "news",
-      acct: "user",
-      pw: "pass",
+      username: "user",
+      password: "pass",
     });
     expect(result).toEqual({ username: "user" });
   });
@@ -30,7 +28,7 @@ describe("loginService", () => {
     axios.post.mockRejectedValue(new Error("Network error"));
 
     await expect(
-      loginService.login({ goto: "news", acct: "user", pw: "pass" })
+      loginService.login({ username: "user", password: "pass" })
     ).rejects.toThrow("Network error");
   });
 

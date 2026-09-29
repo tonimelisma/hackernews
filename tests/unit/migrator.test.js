@@ -112,6 +112,51 @@ describe("services/migrator", () => {
     });
   });
 
+  // Migration 003 adds local-password columns to an existing users table. The
+  // production row predates it, so existing users and their hidden history must
+  // survive untouched with no password and token version 0.
+  describe("migration 003 (local passwords)", () => {
+    const latestVersion = () => db.prepare("SELECT max(version) v FROM schema_migrations").get().v;
+
+    const migrateTo = (version) => {
+      runMigrations(db);
+      while (latestVersion() > version) rollbackMigration(db);
+    };
+
+    const userColumns = () => db.prepare("PRAGMA table_info(users)").all().map((c) => c.name);
+
+    it("adds password_hash, token_version and created_at to users", () => {
+      runMigrations(db);
+      expect(userColumns()).toEqual(
+        expect.arrayContaining(["username", "password_hash", "token_version", "created_at"])
+      );
+      const applied = db.prepare("SELECT name FROM schema_migrations WHERE version = 3").get();
+      expect(applied.name).toBe("003-local-passwords");
+    });
+
+    it("preserves pre-existing users and hidden history", () => {
+      migrateTo(2);
+      db.prepare("INSERT INTO users (username) VALUES (?)").run("villahousut");
+      const ins = db.prepare("INSERT INTO hidden (username, story_id) VALUES (?, ?)");
+      for (let id = 1; id <= 50; id++) ins.run("villahousut", id);
+
+      runMigrations(db);
+
+      const user = db.prepare("SELECT * FROM users WHERE username = ?").get("villahousut");
+      expect(user).toMatchObject({ username: "villahousut", password_hash: null, token_version: 0 });
+      const hidden = db.prepare("SELECT count(*) c FROM hidden WHERE username = ?").get("villahousut").c;
+      expect(hidden).toBe(50);
+    });
+
+    it("rolls back to the original users table, keeping rows", () => {
+      runMigrations(db);
+      db.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)").run("alice", "scrypt$x");
+      while (latestVersion() > 2) rollbackMigration(db);
+      expect(userColumns()).toEqual(["username"]);
+      expect(db.prepare("SELECT username FROM users").all()).toEqual([{ username: "alice" }]);
+    });
+  });
+
   describe("rollbackMigration", () => {
     it("rolls back last applied migration", () => {
       runMigrations(db);

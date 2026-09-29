@@ -109,16 +109,8 @@ const getHidden = async (reqUsername, ctx) => {
 
 const upsertHidden = async (reqUsername, reqHidden, ctx) => {
   const db = getDb();
-  db.prepare("INSERT OR IGNORE INTO users (username) VALUES (?)").run(reqUsername);
-  ctx?.write("users", 1);
   db.prepare("INSERT OR REPLACE INTO hidden (username, story_id) VALUES (?, ?)").run(reqUsername, reqHidden);
   ctx?.write("hidden", 1);
 };
 
-const upsertUser = async (loginUsername, ctx) => {
-  const db = getDb();
-  db.prepare("INSERT OR IGNORE INTO users (username) VALUES (?)").run(loginUsername);
-  ctx?.write("users", 1);
-};
-
-module.exports = { getStories, upsertUser, upsertHidden, getHidden };
+module.exports = { getStories, upsertHidden, getHidden };

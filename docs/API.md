@@ -10,6 +10,12 @@ Authentication uses HTTP-only cookies. On successful login, the server sets a `t
 
 **Token refresh:** `GET /me` issues a fresh JWT and cookie on each call, resetting the 1-year expiry. Since the frontend calls `getMe()` on every page load, active users are effectively never logged out.
 
+**JWT payload:** `{ username, tv, iat, exp }`, HS256-signed with `SECRET`. `tv` is the user's `token_version` at signing time. Every authenticated request looks up the user row and rejects the cookie if the user no longer exists or `tv` ≠ the stored `token_version`. Cookies issued before local passwords (the HN-proxy era) carry no `tv` and count as version `0`, so they stayed valid across the migration.
+
+**Sessions:** each browser holds its own independent cookie — any number of simultaneous sessions are supported, and logging out in one browser (which only clears that browser's cookie) never affects the others. The only way to end every session at once is `node scripts/users.js revoke-sessions <username>`, which bumps `token_version`.
+
+**Accounts** are local username/password accounts, created and reset manually with `scripts/users.js` (see [ARCHITECTURE.md](ARCHITECTURE.md#account-administration)). There is no signup or reset endpoint.
+
 Protected endpoints return `401` if no valid cookie is present.
 
 ## Endpoints
@@ -95,22 +101,23 @@ Uses `INSERT OR REPLACE` — naturally idempotent (hiding the same story twice i
 
 ### POST /login
 
-Authenticate via HackerNews credentials. Proxies the login request to `news.ycombinator.com`.
+Authenticate with a local account. The password is checked against the scrypt hash in `users.password_hash` (`services/auth.js`). Usernames are case-sensitive.
 
-**Rate limited:** 10 requests per 15-minute window (via `express-rate-limit`).
+**Rate limited:** 10 requests per 15-minute window per client IP (via `express-rate-limit`; the app trusts one proxy hop, so the IP comes from Caddy's `X-Forwarded-For`).
 
-The backend follows HN redirects: a final `/news` path means success, while `/login` means invalid credentials. Each `/login` response includes `X-Login-Request-Id`, and diagnostics log that request ID with outcome, status, and final HN path, but never passwords, tokens, or usernames.
+Each `/login` response includes `X-Login-Request-Id`. The server logs `[login] requestId=… outcome=success|invalid-credentials|bad-request|rate-limited` — never usernames or passwords.
 
 **Request body:**
 ```json
 {
-  "goto": "news",
-  "acct": "username",
-  "pw": "password"
+  "username": "username",
+  "password": "password"
 }
 ```
 
-**Validation:** Username must match `[a-zA-Z0-9_-]+` and be at most 32 characters (`isValidUsername()`). Returns `400` if invalid.
+**Validation:** `username` must match `[a-zA-Z0-9_-]+` and be at most 32 characters (`auth.isValidUsername()`); `password` must be a non-empty string of at most 1024 characters. Returns `400` otherwise (including the old HN-era `{ goto, acct, pw }` payload).
+
+**Unknown user, wrong password, or an account with no password set** all return the identical `401`, and all pay for one scrypt hash so timing does not reveal which usernames exist. Login never creates users.
 
 **Response (success):** `200 OK`
 
@@ -119,7 +126,7 @@ Sets an HTTP-only `token` cookie and returns:
 { "username": "username" }
 ```
 
-JWT expires after **365 days**. Signed with `process.env.SECRET` (validated on server startup). The token is refreshed on every `GET /me` call (see above).
+JWT (`{ username, tv }`) expires after **365 days**. Signed with `process.env.SECRET` (validated on server startup). The token is refreshed on every `GET /me` call (see above).
 
 **Response (failure):** `401`
 ```json
@@ -162,7 +169,7 @@ Get the currently authenticated user.
 { "username": "username" }
 ```
 
-Also sets a fresh `token` cookie with a new 365-day JWT, effectively refreshing the session on every page load.
+Also sets a fresh `token` cookie with a new 365-day JWT, effectively refreshing the session on every page load. A pre-migration cookie without `tv` is re-issued with `tv: 0`.
 
 **Error responses:**
 - `401` — missing/invalid token: `{ "error": "authentication error" }`
@@ -171,7 +178,8 @@ Also sets a fresh `token` cookie with a new 365-day JWT, effectively refreshing 
 
 - All endpoints served behind `helmet()` middleware (CSP, HSTS, X-Frame-Options, etc.)
 - CORS restricted to `localhost:3000` in development, same-origin in production
-- Passwords are never stored — only proxied to HN for authentication
+- Passwords are stored only as salted scrypt hashes (`scrypt$N$r$p$salt$key`, OWASP parameters N=2^14, r=8, p=5), compared in constant time; HN credentials are never involved
+- Unknown usernames cost the same hash as real ones (no username enumeration via timing)
 - JWT stored in HTTP-only cookie (not accessible to JavaScript — prevents XSS token theft)
 - Cookie attributes: `httpOnly`, `secure` (production), `sameSite=strict`, `path=/api`
-- Protected routes use `authenticateToken` middleware for JWT verification via cookie
+- Protected routes use `authenticateToken` middleware: JWT verification via cookie, then user-exists and `token_version` checks (server-side revocation)

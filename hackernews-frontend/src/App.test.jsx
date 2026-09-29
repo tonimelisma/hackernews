@@ -264,6 +264,59 @@ describe("App", () => {
     });
   });
 
+  const submitLogin = async (user = "testuser", pass = "secret-pass") => {
+    render(<App />);
+    await waitFor(() => {
+      expect(storyService.getAll).toHaveBeenCalled();
+    });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: user } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: pass } });
+    fireEvent.click(screen.getByRole("button", { name: /log/i }));
+  };
+
+  it("sends username and password to the login API", async () => {
+    loginService.login.mockResolvedValue({ username: "testuser" });
+
+    await submitLogin("testuser", "secret-pass");
+
+    await waitFor(() => {
+      expect(loginService.login).toHaveBeenCalledWith({
+        username: "testuser",
+        password: "secret-pass",
+      });
+    });
+  });
+
+  it.each([
+    [401, /wrong username or password/i],
+    [429, /too many login attempts/i],
+    [500, /login failed/i],
+  ])("shows the right message when login fails with %i", async (status, message) => {
+    loginService.login.mockRejectedValue({ response: { status } });
+
+    await submitLogin();
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+  });
+
+  it("shows a generic message when login fails without a response", async () => {
+    loginService.login.mockRejectedValue(new Error("Network error"));
+
+    await submitLogin();
+
+    expect(await screen.findByText(/login failed/i)).toBeInTheDocument();
+  });
+
+  it("describes invite-only accounts instead of Hacker News login", async () => {
+    render(<App />);
+    await waitFor(() => {
+      expect(storyService.getAll).toHaveBeenCalled();
+    });
+
+    expect(screen.getByText(/invite-only/i)).toBeInTheDocument();
+    expect(screen.queryByText(/register there/i)).not.toBeInTheDocument();
+  });
+
   it("disables login button while login is in flight", async () => {
     let resolveLogin;
     loginService.login.mockReturnValue(new Promise((resolve) => { resolveLogin = resolve; }));

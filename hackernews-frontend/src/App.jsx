@@ -12,6 +12,17 @@ import useTheme from "./hooks/useTheme";
 
 const TIMESPAN_TTL = 3 * 60 * 60 * 1000; // 3 hours
 
+const loginErrorMessage = (err) => {
+  switch (err?.response?.status) {
+    case 401:
+      return "Wrong username or password";
+    case 429:
+      return "Too many login attempts. Try again in 15 minutes.";
+    default:
+      return "Login failed. Try again later.";
+  }
+};
+
 const loadTimespan = () => {
   try {
     const saved = localStorage.getItem("timespan");
@@ -34,7 +45,7 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [loginError, setLoginError] = useState(false);
+  const [loginError, setLoginError] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
   const [loggedInUser, setLoggedInUser] = useState("");
   const [authChecked, setAuthChecked] = useState(false);
@@ -90,18 +101,14 @@ const App = () => {
     event.preventDefault();
     setLoggingIn(true);
     try {
-      const response = await loginService.login({
-        goto: "news",
-        acct: username,
-        pw: password,
-      });
+      const response = await loginService.login({ username, password });
       setLoggedIn(true);
       setLoggedInUser(response.username);
-      setLoginError(false);
+      setLoginError("");
       setUsername("");
       setPassword("");
-    } catch {
-      setLoginError(true);
+    } catch (err) {
+      setLoginError(loginErrorMessage(err));
     } finally {
       setLoggingIn(false);
     }
@@ -146,12 +153,11 @@ const App = () => {
           {loggingIn ? "Logging in\u2026" : "Login"}
         </button>
         {loginError ? (
-          <div className="mb-3 text-danger">Wrong username/password</div>
+          <div className="mb-3 text-danger">{loginError}</div>
         ) : null}
         <div className="small form-group">
           <small>
-            Use your Hacker News login or{" "}
-            <a href="https://news.ycombinator.com/login">register there</a>
+            Accounts are invite-only.
           </small>
         </div>
       </form>
