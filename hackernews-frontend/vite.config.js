@@ -5,6 +5,19 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: "build",
+    rolldownOptions: {
+      output: {
+        // Third-party code in its own long-lived chunks: keeps each chunk
+        // under the 500 kB warning and lets browsers reuse cached vendor code
+        // across app deploys (only the small app chunk changes).
+        codeSplitting: {
+          groups: [
+            { name: "react", test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            { name: "vendor", test: /node_modules[\\/]/ },
+          ],
+        },
+      },
+    },
   },
   server: {
     port: 3000,
