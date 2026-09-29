@@ -229,8 +229,11 @@ All of these must be kept current with every change:
 - Add LICENSE file
 
 ### Infrastructure
-- **Faster disk tier.** The 30 GB `pd-standard` disk (Google-rated 22.5 read / 45 write IOPS, 3.6 MiB/s) is the box's binding constraint; moving to a faster tier needs a snapshot + disk swap (brief downtime). Not yet priced.
-- **Restrict SSH.** ~100 MB of `btmp` failed-login records in two months from brute force (all preauth). Limiting the `allow-ssh` firewall rule to Google's IAP range would stop it, but the CI deploy SSHes in from GitHub runners, so it needs a different deploy trigger first.
+- None open (images built in CI, host cleaned up, sshguard installed — 2026-09-29).
+
+## Budget
+
+**Hard $0/month.** Everything runs on free tiers: GCP Always Free e2-micro + 30 GB pd-standard, GCS free tier for backups, GitHub Actions (free for this public repo), private GHCR. Never add paid infrastructure (faster disks, bigger VMs, paid services) — fix performance by reducing on-box work and footprint instead.
 
 ## Key Learnings
 
