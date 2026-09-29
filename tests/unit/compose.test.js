@@ -20,6 +20,15 @@ describe("docker-compose.yml (production)", () => {
     expect(compose).toMatch(/image:\s*ghcr\.io\/tonimelisma\/hackernews:\$\{IMAGE_TAG:-latest\}/);
   });
 
+  // The check queries SQLite on a pd-standard disk; under I/O contention a
+  // healthy app took >5 s and was marked unhealthy (3 timeouts at 15:08 on
+  // 2026-09-29 with no deploy running).
+  it("gives the health check at least 10 s before timing out", () => {
+    const match = compose.match(/healthcheck:[\s\S]*?timeout:\s*(\d+)s/);
+    expect(match).not.toBeNull();
+    expect(Number(match[1])).toBeGreaterThanOrEqual(10);
+  });
+
   it("caps container log size", () => {
     expect(compose).toMatch(/max-size:\s*"?\d+m"?/);
     expect(compose).toMatch(/max-file:\s*"?\d+"?/);
