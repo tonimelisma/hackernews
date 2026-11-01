@@ -98,6 +98,8 @@ afterAll(async () => await db.closeDatabase());
 
 Auth uses `jose` (pure-JS, works on all modern Node versions), so the API tests sign and verify real HS256 JWTs — no mocking needed. `createToken(username, claims)` in `tests/integration/api.test.js` builds a `SignJWT` with the test `SECRET`; with no claims it mints the pre-migration shape (`{ username }`, no `tv`) so the session-continuity tests exercise exactly what old browsers hold. Authenticated routes also require the user row, so tests seed one with `seedLegacyUser()` (no password) or `seedUser()` (password), and the "365d expiration" test decodes the cookie token with `jwtVerify` to assert `exp - iat === 365 * 24 * 60 * 60`. Auth tokens are sent via `Cookie` header (`.set("Cookie", "token=...")`) matching the HTTP-only cookie auth flow.
 
+`jose` v6 is ESM-only. Plain Node 24 `require()`s it natively, but Jest's own module runtime can only load ESM from a CommonJS `require` when the VM modules API is enabled. So `npm test` and `npm run test:coverage` set `NODE_OPTIONS='--experimental-vm-modules --disable-warning=ExperimentalWarning'`; running `npx jest` directly without that flag fails `api.test.js` with "Must use import to load ES Module".
+
 ### Passwords and Rate Limiting in Tests
 
 - Seeded users are hashed with low-cost scrypt parameters (`{ N: 1024, r: 8, p: 1 }`); `verifyPassword` reads the parameters back out of the stored hash, so these verify exactly like production hashes while keeping the suite fast.
