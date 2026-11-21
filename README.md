@@ -20,8 +20,8 @@ Live at: https://hackernews.melisma.net
 - **Frontend:** React 19 (Vite)
 - **Database:** SQLite (better-sqlite3, WAL mode)
 - **Worker:** Integrated setInterval (15-minute cycle)
-- **Deployment:** Docker app behind shared Caddy reverse proxy on GCP e2-micro
-- **CI:** GitHub Actions (lint, test, deploy via SSH)
+- **Deployment:** Docker app behind shared Caddy reverse proxy on GCP e2-micro. CI pushes the image to `ghcr.io/tonimelisma/hackernews:latest`; the server pulls it every 5 minutes and rolls back if it isn't healthy. The server's compose file lives in the [latchkey](https://github.com/tonimelisma/latchkey) repo; this repo's `docker-compose.yml` is for local use. The app runs there as a non-root user (uid 1000) and may write only to `/data` and `/tmp`
+- **CI:** GitHub Actions (lint, test, build and push the image; no deploy step)
 
 ## Prerequisites
 

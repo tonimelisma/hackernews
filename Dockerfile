@@ -14,7 +14,9 @@ RUN apk add --no-cache wget sqlite
 WORKDIR /app
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/hackernews-frontend/build ./hackernews-frontend/build
-COPY --from=builder /data/hackernews.db /data/hackernews.db
+# The server runs the app as uid 1000 (node) with no capabilities; a fresh
+# volume takes /data's owner from here, so it must belong to node.
+COPY --from=builder --chown=node:node /data /data
 COPY package.json ./
 COPY app.js worker.js ./
 COPY bin ./bin
@@ -23,5 +25,6 @@ COPY services ./services
 COPY util ./util
 COPY migrations ./migrations
 COPY scripts/users.js scripts/migrate.js ./scripts/
+USER node
 EXPOSE 3000
 CMD ["node", "bin/www"]

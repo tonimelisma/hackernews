@@ -1,23 +1,28 @@
 const fs = require("fs");
 const path = require("path");
 
-// Regression guards for the production compose file. On 2026-09-29 a deploy
-// that built the image on the VPS saturated its pd-standard disk (94% util,
-// 88% iowait) and the build died with the SSH session; images are now built in
-// CI and the VPS only pulls. Container logs were also unbounded (json-file
-// with no limits: 42 MB after four weeks).
-describe("docker-compose.yml (production)", () => {
+// The repo's docker-compose.yml is for local use only since 2026-11-21: the
+// server runs a fixed compose file owned by the latchkey repo
+// (deploy/server/host/hackernews-compose.yml). This one runs the same CI-built
+// image with the same limits, so a local run catches what would break there
+// (above all: the app runs as uid 1000 with no capabilities).
+describe("docker-compose.yml (local, mirrors the server)", () => {
   const compose = fs.readFileSync(
     path.join(__dirname, "..", "..", "docker-compose.yml"),
     "utf8"
   );
 
-  it("never builds on the VPS", () => {
+  // On 2026-09-29 an on-box build saturated the server's pd-standard disk;
+  // images are built in CI only.
+  it("runs the CI-built image from GHCR instead of building", () => {
     expect(compose).not.toMatch(/^\s*build:/m);
+    expect(compose).toMatch(/image:\s*ghcr\.io\/tonimelisma\/hackernews:\$\{IMAGE_TAG:-latest\}/);
   });
 
-  it("runs the CI-built image from GHCR, pinned by IMAGE_TAG", () => {
-    expect(compose).toMatch(/image:\s*ghcr\.io\/tonimelisma\/hackernews:\$\{IMAGE_TAG:-latest\}/);
+  it("runs as the non-root node user with no capabilities, like the server", () => {
+    expect(compose).toMatch(/user:\s*"1000:1000"/);
+    expect(compose).toMatch(/cap_drop:\s*\[ALL\]/);
+    expect(compose).toMatch(/no-new-privileges:true/);
   });
 
   // The check queries SQLite on a pd-standard disk; under I/O contention a
@@ -35,20 +40,23 @@ describe("docker-compose.yml (production)", () => {
   });
 });
 
-describe("CI deploy workflow", () => {
+// Since 2026-11-21 the server's SSH is reachable only through Google's IAP
+// tunnel, so CI no longer deploys: the server pulls :latest itself every few
+// minutes. CI must keep pushing :latest, or production never updates.
+describe("CI workflow", () => {
   const ci = fs.readFileSync(
     path.join(__dirname, "..", "..", ".github", "workflows", "ci.yml"),
     "utf8"
   );
-  const deployJob = ci.slice(ci.indexOf("\n  deploy:"));
 
-  it("builds and pushes the image in CI", () => {
+  it("builds and pushes the image with :sha and :latest tags", () => {
     expect(ci).toMatch(/docker\/build-push-action@/);
     expect(ci).toMatch(/ghcr\.io\/tonimelisma\/hackernews:\$\{\{ github\.sha \}\}/);
+    expect(ci).toMatch(/ghcr\.io\/tonimelisma\/hackernews:latest/);
   });
 
-  it("deploys by pulling, not building, on the VPS", () => {
-    expect(deployJob).toMatch(/docker compose pull/);
-    expect(deployJob).not.toMatch(/--build/);
+  it("has no SSH deploy job", () => {
+    expect(ci).not.toMatch(/^\s{2}deploy:/m);
+    expect(ci).not.toMatch(/ssh-action|VPS_SSH_KEY|VPS_USER/);
   });
 });

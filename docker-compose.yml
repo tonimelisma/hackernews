@@ -1,22 +1,28 @@
+# Local use only: runs the CI-built image the way the server does. The server
+# does not use this file; its compose file is fixed and lives in the latchkey
+# repo (deploy/server/host/hackernews-compose.yml), so a push here can change
+# the app but never the container's limits there. The limits below mirror it,
+# so a local run shows what would break on the server. To build from source
+# instead, use docker-compose.dev.yml.
 services:
   app:
-    # Built and pushed by CI (.github/workflows/ci.yml); the VPS only pulls.
-    # Never build on the VPS: a build saturates its pd-standard disk and
-    # starves the live app (measured 2026-09-29). IMAGE_TAG is the commit SHA
-    # set by the deploy job; manual runs fall back to :latest.
+    # IMAGE_TAG picks a commit's image (its SHA); it defaults to :latest,
+    # which is what the server runs.
     image: ghcr.io/tonimelisma/hackernews:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    user: "1000:1000"
     environment:
       - NODE_ENV=production
       - SECRET=${SECRET}
       - SQLITE_PATH=/data/hackernews.db
       - PORT=3000
+    ports:
+      - "127.0.0.1:3000:3000"
     volumes:
       - sqlite-data:/data
-    networks:
-      reverse_proxy:
-        aliases:
-          - hackernews-app
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/v1/stories?timespan=Day&limit=1"]
       interval: 30s
@@ -32,6 +38,3 @@ services:
         max-file: "3"
 volumes:
   sqlite-data:
-networks:
-  reverse_proxy:
-    external: true

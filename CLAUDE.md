@@ -105,7 +105,7 @@ hackernews/
 │   └── middleware.js        # Express error handlers
 ├── eslint.config.js        # ESLint flat config (backend)
 ├── Dockerfile              # Multi-stage Docker build (node:24-alpine)
-├── docker-compose.yml      # App service, SQLite volume, external reverse_proxy network
+├── docker-compose.yml      # Local only: CI image with the server's limits (the server's file is in the latchkey repo)
 ├── hackernews-frontend/    # React frontend (Vite + Vitest)
 │   └── src/
 │       ├── App.jsx         # Main component (stories, auth, filtering)
@@ -122,7 +122,7 @@ hackernews/
 │   ├── migrate.js              # CLI: node scripts/migrate.js [up|rollback|status]
 │   ├── users.js                # CLI: node scripts/users.js [list|add|set-password|revoke-sessions]
 │   └── backup-sqlite.sh        # Daily SQLite backup to GCS
-├── .github/workflows/ci.yml # CI + SSH deploy pipeline
+├── .github/workflows/ci.yml # CI + image push to GHCR (the server pulls :latest itself)
 ├── .husky/pre-commit       # Pre-commit hook (lint-staged)
 └── docs/                   # LLM-geared documentation
 ```
@@ -157,7 +157,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 13. **Static file caching strategy**: `index.html` served with `Cache-Control: no-cache`; hashed `/assets/*` files served with `max-age=1y, immutable`.
 
-14. **Docker deployment — images are built in CI, never on the VPS**: Multi-stage `Dockerfile` (node:24-alpine). The CI `image` job builds linux/amd64 with buildx and pushes `ghcr.io/tonimelisma/hackernews:<sha>` + `:latest` (private package). The `deploy` job SSHes in, `git pull`s, logs in to GHCR with its own short-lived `GITHUB_TOKEN`, runs `IMAGE_TAG=<sha> docker compose pull && up -d`, logs out, waits for health, and on failure re-tags the previously running image as `:rollback` and starts it. `docker-compose.yml` has `image: ghcr.io/…:${IMAGE_TAG:-latest}`, no `build:`, json-file logs capped at 10 MB × 3, and a 15 s health-check timeout (5 s gave false "unhealthy" under disk contention) (all guarded by `tests/unit/compose.test.js`); `docker-compose.dev.yml` still builds locally. **Why:** on 2026-09-29 an on-box build saturated the 30 GB `pd-standard` disk (94% util, 88% iowait, load 12.6 with runq 0) and then died with its SSH session (logind removed the session 07:14:33, BuildKit `context canceled` 07:14:46), leaving the old container running. Joins the external `reverse_proxy` network as `hackernews-app`; the host Caddy at `/opt/reverse-proxy` (outside this repo) routes `hackernews.melisma.net` to it. SQLite data lives in the `sqlite-data` volume (the image's baked DB is empty when built in CI). Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
+14. **Docker deployment — CI builds and pushes, the server pulls**: Multi-stage `Dockerfile` (node:24-alpine). The CI `image` job builds linux/amd64 with buildx and pushes `ghcr.io/tonimelisma/hackernews:<sha>` + `:latest` (public package). There is no deploy job and no deploy secret: since 2026-11-21 the shared server (it also runs the Latchkey relay) accepts SSH only through Google's IAP tunnel, and a systemd timer there (`latchkey-update-apps`, every 5 minutes) pulls `:latest`, restarts the app when the image changed, and goes back to the previous image if the new one isn't healthy within 5 minutes. **CI must keep pushing `:latest`**, or production never updates (guarded by `tests/unit/compose.test.js`). **The server's compose file is not this repo's**: it is a fixed file in the latchkey repo (`deploy/server/host/hackernews-compose.yml`), so a push here changes the app but never the container's limits. It runs the app as **uid 1000 (`node`) with all capabilities dropped and `no-new-privileges`**, on its own Docker network `hackernews-front` (alias `hackernews-app`) shared only with Caddy. **The app must keep working as that non-root user, writing only to `/data` and `/tmp`.** The image's `/data` belongs to `node` and it runs as `USER node`: a fresh volume takes `/data`'s owner from the image, and when it was root-owned the app crashed as uid 1000 with `SQLITE_READONLY_DIRECTORY` (guarded by `tests/unit/dockerfile.test.js`). `/opt/hackernews` on the server is no longer a git checkout; the nightly backup script runs from its existing copy there. This repo's `docker-compose.yml` is for local use only: the CI image with the server's limits (`docker-compose.dev.yml` builds from source). Never build on the server: on 2026-09-29 an on-box build saturated the 30 GB `pd-standard` disk (94% util, 88% iowait). SQLite data lives in the `sqlite-data` volume (the image's baked DB is empty when built in CI). Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
 
 15. **Daily SQLite backup**: `scripts/backup-sqlite.sh` runs SQLite `.backup` inside the container, compresses with gzip, and uploads to `gs://hackernews-melisma-backup/` with `curl` + the VM service account's metadata-server token (no `gcloud` on the box — the snap was removed). Cron job (user `tonimelisma`) at 3:00 AM UTC daily, appending to `/var/log/hackernews-backup.log`. **That log file must exist and be owned by `tonimelisma`**: the shell evaluates the `>>` redirect before running the script, so when the file could not be created (`/var/log` is root-writable only) the job silently never ran — no scheduled backup from at least 2026-02-20 until the 2026-09-29 fix. Keeps the newest 30 objects. ~32 MB compressed per backup, well within GCP Always Free 5 GB.
 
@@ -182,12 +182,12 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile, compose, auth) | 91 |
+| Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile, compose, auth) | 92 |
 | Backend integration (storyService, api, worker, users) | 113 |
 | Frontend component (App, StoryList, Story) | 39 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 7 |
-| **Total** | **254** |
+| **Total** | **255** |
 
 ## Project Health
 
@@ -197,11 +197,11 @@ All of these must be kept current with every change:
 |----------|-------|---------|
 | Functionality | A- | Core features work; dead scraper code removed |
 | Security | A | Helmet (CSP with script hash), CORS, per-IP login rate limiting, local scrypt password hashes (no third-party credentials handled), JWT in HTTP-only cookie (jose) with server-side revocation (`token_version`), timing-uniform login, SECRET validation |
-| Testing | A- | 254 tests, in-memory SQLite, ~3s backend runs |
+| Testing | A- | 255 tests, in-memory SQLite, ~3s backend runs |
 | Code Quality | A- | Clean codebase, dead code removed, SQLite simplification |
 | Architecture | A- | SQLite eliminates all Firestore hacks (L2 cache, patchStoryCache, Day-merge, padId, stripUndefined) |
 | Documentation | A- | CLAUDE.md + 4 reference docs, all updated |
-| DevOps / CI | A- | Docker app behind shared Caddy reverse proxy on VPS (live), GitHub Actions CI/CD (image built in CI → GHCR, pull-only SSH deploy with health-check rollback), npm audit, ESLint (backend + frontend), pre-commit hooks, daily GCS backups |
+| DevOps / CI | A- | Docker app behind shared Caddy reverse proxy on VPS (live), GitHub Actions CI/CD (image built in CI → public GHCR `:latest`; the server pulls it every 5 minutes with health-check rollback), npm audit, ESLint (backend + frontend), pre-commit hooks, daily GCS backups |
 | Performance | A- | Sub-ms SQL queries, react-virtuoso |
 | Dependencies | A- | All at latest (2026-10-31); 0 production or frontend vulnerabilities; 5 low dev-only (`deepmerge` via Jest, no patch exists) |
 

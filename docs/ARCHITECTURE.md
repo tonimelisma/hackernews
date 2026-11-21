@@ -20,27 +20,28 @@ HackerNews aggregator with a single Node.js process and a SQLite database, deplo
 | **VPS** | GCP e2-micro (0.25 vCPU, 1GB RAM, 30GB disk), Ubuntu 24.04 |
 | **Instance** | `vps-1`, zone `us-central1-a`, project `melisma-services` |
 | **Internal hostname** | `vps-1.us-central1-a.c.melisma-services.internal` |
-| **External IP** | `34.45.72.52` (static) |
 | **Domain** | `hackernews.melisma.net` (Cloudflare DNS, A record, DNS-only/gray cloud) |
 | **Docker** | Docker 29.4 + Compose 5.1 |
-| **App path on VPS** | `/opt/hackernews` |
-| **Shared reverse proxy path** | `/opt/reverse-proxy` (`caddy` container, shared by all public services on the host) |
-| **Shared Docker network** | `reverse_proxy` (external Docker bridge network) |
+| **App path on VPS** | `/opt/hackernews`: the server's compose file (installed from the latchkey repo), `.env`, and the backup script's copy. Not a git checkout; nothing pulls this repo there any more |
+| **Shared reverse proxy path** | `/opt/reverse-proxy` (`caddy` container, shared by all public services on the host; its compose file also comes from the latchkey repo) |
+| **App's Docker network** | `hackernews-front` (external; shared only with Caddy, alias `hackernews-app`) |
 | **Secrets on VPS** | `/opt/hackernews/.env` (contains `SECRET=...`) |
 | **Backup bucket** | `gs://hackernews-melisma-backup/` (us-central1, Always Free tier) |
 | **Backup cron** | `0 3 * * *` — daily at 3:00 AM UTC |
 
 ### SSH into VPS
 
+Since 2026-11-21 SSH reaches the server only through Google's IAP tunnel (`--tunnel-through-iap`, used in every command below); port 22 is closed to the internet.
+
 ```bash
 # Interactive shell
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a
 
 # Run a single command
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="<cmd>"
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="<cmd>"
 
 # Copy files to VPS
-gcloud compute scp --project=melisma-services <local-path> vps-1:<remote-path> --zone=us-central1-a
+gcloud compute scp --tunnel-through-iap --project=melisma-services <local-path> vps-1:<remote-path> --zone=us-central1-a
 ```
 
 ### Docker Commands (run on VPS)
@@ -60,9 +61,8 @@ docker compose logs --tail 100 app
 # Restart app (no rebuild)
 docker compose restart app
 
-# Redeploy the CI-built image (never build on the VPS)
-IMAGE_TAG=<commit-sha> docker compose pull app   # private package: docker login ghcr.io first
-IMAGE_TAG=<commit-sha> docker compose up -d
+# Check for a new image now instead of waiting for the 5-minute timer
+sudo systemctl start latchkey-update-apps && journalctl -t latchkey-update-apps -n 20
 
 # Stop HackerNews app
 docker compose down
@@ -89,39 +89,39 @@ docker compose logs --tail 50 caddy
 docker exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 ```
 
-The Caddy container is named `caddy`, not `hackernews-caddy-1`. It owns host ports 80/443 and routes public hostnames to containers on the external `reverse_proxy` Docker network.
+The Caddy container is named `caddy`, not `hackernews-caddy-1`. It owns host ports 80/443 and routes public hostnames to app containers, each on its own network shared only with Caddy (`hackernews-front` for this app).
 
 ### Remote Debugging
 
 ```bash
 # Test API from inside container (bypasses Caddy)
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 wget -qO- 'http://localhost:3000/api/v1/stories?timespan=Day&limit=1'"
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 wget -qO- 'http://localhost:3000/api/v1/stories?timespan=Day&limit=1'"
 
 # Test API via public HTTPS
 curl -s "https://hackernews.melisma.net/api/v1/stories?timespan=Day&limit=1"
 
 # Check container health status
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="docker inspect --format='{{.State.Health.Status}}' hackernews-app-1"
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="docker inspect --format='{{.State.Health.Status}}' hackernews-app-1"
 
 # Check worker sync logs (last sync cycle)
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/hackernews && docker compose logs app 2>&1 | grep -E '(sync|WORKER|fetched|adding)' | tail -20"
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/hackernews && docker compose logs app 2>&1 | grep -E '(sync|WORKER|fetched|adding)' | tail -20"
 
 # Check memory usage
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="docker stats --no-stream"
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="docker stats --no-stream"
 
 # Check disk usage
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="df -h / && du -sh /opt/hackernews"
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="df -h / && du -sh /opt/hackernews"
 
 # Query SQLite directly inside container
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 sqlite3 /data/hackernews.db 'SELECT COUNT(*) FROM stories;'"
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 sqlite3 /data/hackernews.db 'SELECT COUNT(*) FROM stories;'"
 
 # Check SQLite DB size
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 ls -lh /data/hackernews.db"
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 ls -lh /data/hackernews.db"
 ```
 
-### CI/CD Pipeline
+### CI/CD Pipeline and Deploys
 
-Push to `master` triggers: **backend tests → frontend tests → image build in CI → SSH deploy (pull only) → health check → auto-rollback on failure**. The repo is public, so standard GitHub-hosted runner minutes are free.
+Push to `master` triggers: **backend tests → frontend tests → image build in CI → push to GHCR**. CI never touches the server. The repo is public, so standard GitHub-hosted runner minutes are free.
 
 ```
 ci.yml flow:
@@ -130,37 +130,29 @@ ci.yml flow:
        ↓ both pass
   image (only on push to master): buildx linux/amd64 → push
         ghcr.io/tonimelisma/hackernews:<sha> and :latest (GHA layer cache)
-       ↓
-  deploy (concurrency: production-deploy)
-       ↓
-  SSH into VPS → git pull → docker login ghcr.io (job token) →
-  IMAGE_TAG=<sha> docker compose pull → docker logout → docker compose up -d
-       ↓
-  Poll health check for 90s
-       ↓
-  ✓ healthy → prune unused images older than 7 days → done
-  ✗ unhealthy → re-tag the previously running image as :rollback, start it, exit 1
+
+on the server (latchkey-update-apps, a systemd timer every 5 minutes):
+  docker pull ghcr.io/tonimelisma/hackernews:latest
+       ↓ image changed
+  docker compose up -d → wait up to 5 minutes for the health check
+  ✓ healthy → done
+  ✗ unhealthy → back to the previous image; that image is skipped from then on
 ```
 
-**Nothing is built on the VPS.** On 2026-09-29 an on-box build (the old `docker compose up --build` deploy) saturated the 30 GB `pd-standard` disk (94% util, 81 ms await, 88% iowait), slowed requests to ~14 s, and then died with its SSH session when the action's 10m timeout ended it — leaving the old container running. The GHCR package is private (GitHub's default); the deploy job passes its own short-lived `GITHUB_TOKEN` (`packages: read`) to the VPS for the pull and logs out afterwards, so no long-lived registry credential lives on the box. `docker-compose.yml` has no `build:` (guarded by `tests/unit/compose.test.js`); `docker-compose.dev.yml` still builds locally.
+**The server pulls; nothing pushes to it.** Since 2026-11-21 (Toni's lockdown of the shared server, which also runs the Latchkey relay) SSH is reachable only through Google's IAP tunnel, so GitHub Actions can no longer deploy over SSH. The public `:latest` image is the deploy: CI must keep pushing it (guarded by `tests/unit/compose.test.js`), and a push reaches production within about 5 minutes. There are no deploy secrets.
 
-**GitHub secrets** (repo-level, not environment):
-- `VPS_USER` — SSH username (`tonimelisma`)
-- `VPS_SSH_KEY` — ed25519 private key (public key in `~/.ssh/authorized_keys` on VPS)
+**The server's compose file is not in this repo.** It is a fixed file owned by the latchkey repo (`deploy/server/host/hackernews-compose.yml` in github.com/tonimelisma/latchkey), so a push here can change the app but never the container's limits on the server. It runs the app as uid 1000 (the image's `node` user) with all capabilities dropped, `no-new-privileges`, a 384 MB memory cap, and the `sqlite-data` volume on `/data`. **The app must keep working as that non-root user, writing only to `/data` and `/tmp`.** This repo's `docker-compose.yml` is for local use only and mirrors those limits.
 
-### Manual Deploy (bypassing CI)
-
-```bash
-# Re-run the CI deploy for an existing commit instead (GitHub → Actions → CI → Re-run),
-# or pull a pushed image by hand (needs a token with read:packages):
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --ssh-flag=-t --command="cd /opt/hackernews && git pull --ff-only origin master && docker login ghcr.io && IMAGE_TAG=<sha> docker compose pull app && docker logout ghcr.io && IMAGE_TAG=<sha> docker compose up -d"
-```
+**Nothing is built on the VPS.** On 2026-09-29 an on-box build saturated the 30 GB `pd-standard` disk (94% util, 81 ms await, 88% iowait) and slowed requests to ~14 s.
 
 ### Local Docker Testing
 
 ```bash
 # Build and run locally (no Caddy, just app on port 3000)
 SECRET=anysecret docker compose -f docker-compose.dev.yml up --build
+
+# Or run the CI-built image with the server's limits (uid 1000, no capabilities)
+SECRET=anysecret docker compose up
 
 # Test it
 curl "http://localhost:3000/api/v1/stories?timespan=Day&limit=3"
@@ -180,7 +172,7 @@ Multi-stage build:
    - Frontend build (`vite build` → `hackernews-frontend/build/`)
    - Import JSON data into SQLite (`/data/hackernews.db`)
 2. **Runtime stage** (node:24-alpine + wget + sqlite3):
-   - Copies `node_modules`, frontend build, baked SQLite DB
+   - Copies `node_modules`, frontend build, baked SQLite DB; `/data` belongs to `node` and the image runs as `USER node` (a fresh volume takes `/data`'s owner from the image; root-owned, the app crashed as uid 1000 with `SQLITE_READONLY_DIRECTORY`; guarded by `tests/unit/dockerfile.test.js`)
    - Copies only the app source files needed at runtime (`bin`, `routes`, `services`, `util`, `migrations`, plus `scripts/users.js` and `scripts/migrate.js` — not all of `scripts/`, which would ship local `scripts/data/` exports; guarded by `tests/unit/dockerfile.test.js`)
    - Built by CI, not on the VPS. CI checkouts have no `scripts/data/*.json`, so the baked DB is empty; production data lives in the `sqlite-data` volume mounted over `/data`
    - ~160 MB final image
@@ -189,7 +181,7 @@ Multi-stage build:
 
 ```bash
 # Manual backup
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="bash /opt/hackernews/scripts/backup-sqlite.sh"
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="bash /opt/hackernews/scripts/backup-sqlite.sh"
 
 # List backups
 gcloud storage ls -l gs://hackernews-melisma-backup/
@@ -199,14 +191,15 @@ gcloud storage cp gs://hackernews-melisma-backup/hackernews-20260220.db.gz .
 
 # Restore a backup
 gunzip hackernews-20260220.db.gz
-gcloud compute scp --project=melisma-services hackernews-20260220.db vps-1:/tmp/restore.db --zone=us-central1-a
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="docker compose -f /opt/hackernews/docker-compose.yml cp /tmp/restore.db app:/data/hackernews.db && cd /opt/hackernews && docker compose restart app"
+gcloud compute scp --tunnel-through-iap --project=melisma-services hackernews-20260220.db vps-1:/tmp/restore.db --zone=us-central1-a
+# Restore through sqlite3 as the app's user (a file copied straight into /data would be root-owned and read-only to the app)
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/hackernews && docker compose cp /tmp/restore.db app:/tmp/restore.db && docker compose exec -T app sqlite3 /data/hackernews.db '.restore /tmp/restore.db' && docker compose restart app"
 
 # Check cron is installed
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="crontab -l"
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="crontab -l"
 
 # Check backup logs
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="tail -20 /var/log/hackernews-backup.log"
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="tail -20 /var/log/hackernews-backup.log"
 ```
 
 Backup process: `sqlite3 .backup` inside container → `docker cp` out → `gzip` → upload with `curl` to the GCS JSON API using the VM service account's token from the metadata server (no `gcloud` on the box — the snap was removed 2026-09-29). Keeps the newest 30 objects; ~32 MB per backup. Cron runs as `tonimelisma` at 03:00 UTC and appends to `/var/log/hackernews-backup.log`, which must exist and be owned by that user (the redirect is evaluated by the shell before the script runs — when the file could not be created, the job silently never ran from at least 2026-02-20 to 2026-09-29).
@@ -219,16 +212,16 @@ Accounts are local username/password accounts. There is no signup or reset flow 
 
 ```bash
 # Set or reset a password (browsers already logged in stay logged in)
-gcloud compute ssh vps-1 --project=melisma-services --zone=us-central1-a --ssh-flag=-t --command="docker exec -it hackernews-app-1 node scripts/users.js set-password <username>"
+gcloud compute ssh --tunnel-through-iap vps-1 --project=melisma-services --zone=us-central1-a --ssh-flag=-t --command="docker exec -it hackernews-app-1 node scripts/users.js set-password <username>"
 
 # Create an account (prompts for the password)
-gcloud compute ssh vps-1 --project=melisma-services --zone=us-central1-a --ssh-flag=-t --command="docker exec -it hackernews-app-1 node scripts/users.js add <username>"
+gcloud compute ssh --tunnel-through-iap vps-1 --project=melisma-services --zone=us-central1-a --ssh-flag=-t --command="docker exec -it hackernews-app-1 node scripts/users.js add <username>"
 
 # List accounts (password set?, session version, hidden-story count)
-gcloud compute ssh vps-1 --project=melisma-services --zone=us-central1-a --command="docker exec hackernews-app-1 node scripts/users.js list"
+gcloud compute ssh --tunnel-through-iap vps-1 --project=melisma-services --zone=us-central1-a --command="docker exec hackernews-app-1 node scripts/users.js list"
 
 # Log an account out of every browser (e.g. lost device, after a forced reset)
-gcloud compute ssh vps-1 --project=melisma-services --zone=us-central1-a --command="docker exec hackernews-app-1 node scripts/users.js revoke-sessions <username>"
+gcloud compute ssh --tunnel-through-iap vps-1 --project=melisma-services --zone=us-central1-a --command="docker exec hackernews-app-1 node scripts/users.js revoke-sessions <username>"
 ```
 
 Piped (non-TTY) input is also accepted: one line for the password, one for the confirmation. Minimum password length is 8.
@@ -242,18 +235,18 @@ gcloud compute firewall-rules list
 # Required rules (already created):
 # allow-http  — tcp:80  from 0.0.0.0/0
 # allow-https — tcp:443 from 0.0.0.0/0
-# allow-ssh   — tcp:22  from 0.0.0.0/0
+# allow-ssh-iap — tcp:22 from Google's IAP range only (35.235.240.0/20; set up by the latchkey repo's deploy/harden.sh)
 ```
 
 ### DNS (Cloudflare)
 
-- Record: `hackernews` A `34.45.72.52`
+- Record: `hackernews` A → the VM's static external IP
 - Proxy: **DNS-only** (gray cloud) — Caddy handles TLS via Let's Encrypt
 - If you switch to orange cloud (Cloudflare proxy), Caddy's ACME challenge will fail
 
 ### Shared Caddy Reverse Proxy
 
-Caddy runs from `/opt/reverse-proxy` as the `caddy` container. As of 2026-09-29 HackerNews is the only site on the VPS (the relay demo, mcp-fakes inbox and koskiset-feedback services were removed), so the `Caddyfile` is just:
+Caddy runs from `/opt/reverse-proxy` as the `caddy` container. The server is shared with the Latchkey relay; its Caddyfile entry and Caddy's compose file come from the latchkey repo. HackerNews's entry in the `Caddyfile` is:
 
 ```caddy
 hackernews.melisma.net {
@@ -263,18 +256,18 @@ hackernews.melisma.net {
 
 The Caddyfile is bind-mounted as a single file, so edit it in place (e.g. `>` redirect), not by replacing the file (a new inode is invisible to the container). Validate and reload with `docker exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile` and `docker exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile`.
 
-**Host baseline (2026-09-29 cleanup):** snapd and all snaps removed and pinned out (`/etc/apt/preferences.d/no-snapd.pref`) — there is no `gcloud` on the box; multipath-tools, the `ubuntu-server` metapackage and its unused recommends (open-iscsi, open-vm-tools, landscape) purged, with the remaining `ubuntu-server` dependencies marked manual; journald capped at 200 MB (`/etc/systemd/journald.conf.d/size.conf`); Docker build cache pruned; both containers' json-file logs capped at 10 MB × 3 (app via this repo's `docker-compose.yml`, Caddy via `/opt/reverse-proxy/docker-compose.yml`); `/etc/logrotate.d/hackernews-backup` rotates the backup log monthly (`su root syslog`, re-creates it owned by `tonimelisma`); `packagekit` masked (not purged — purging would remove `software-properties-common`). **sshguard** (C, ~10 MB RSS; chosen over Python fail2ban for memory) blocks SSH brute-forcers in nftables: 3 failed logins in 30 min → block starting at 2 min and escalating for repeat offenders; 12 cumulative failures → permanent ban via `BLACKLIST_FILE=120:/var/lib/sshguard/enemies` in `/etc/sshguard/sshguard.conf`. Password auth was already disabled, so this cuts noise/log growth rather than closing a hole. Successful logins (you, CI deploys) never count.
+**Host baseline (2026-09-29 cleanup):** snapd and all snaps removed and pinned out (`/etc/apt/preferences.d/no-snapd.pref`) — there is no `gcloud` on the box; multipath-tools, the `ubuntu-server` metapackage and its unused recommends (open-iscsi, open-vm-tools, landscape) purged, with the remaining `ubuntu-server` dependencies marked manual; journald capped at 200 MB (`/etc/systemd/journald.conf.d/size.conf`); Docker build cache pruned; both containers' json-file logs capped at 10 MB × 3 (both compose files now come from the latchkey repo); `/etc/logrotate.d/hackernews-backup` rotates the backup log monthly (`su root syslog`, re-creates it owned by `tonimelisma`); `packagekit` masked (not purged — purging would remove `software-properties-common`). **sshguard** (C, ~10 MB RSS; chosen over Python fail2ban for memory) blocks SSH brute-forcers in nftables: 3 failed logins in 30 min → block starting at 2 min and escalating for repeat offenders; 12 cumulative failures → permanent ban via `BLACKLIST_FILE=120:/var/lib/sshguard/enemies` in `/etc/sshguard/sshguard.conf`. Password auth was already disabled, so this cuts noise/log growth rather than closing a hole. Successful logins never count.
 
-The reverse proxy uses the external Docker network `reverse_proxy`. HackerNews joins that network with the alias `hackernews-app`; unrelated services should join the same network with service-specific aliases.
+HackerNews joins the external Docker network `hackernews-front`, shared only with Caddy, with the alias `hackernews-app`; other services get networks of their own.
 
 Caddy auto-provisions Let's Encrypt certs. Cert data is stored in the Docker volume originally named `hackernews_caddy-data`, reused by the shared proxy to avoid certificate churn.
 
 ```bash
 # Check Caddy logs for cert issues
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/reverse-proxy && docker compose logs caddy | tail -20"
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/reverse-proxy && docker compose logs caddy | tail -20"
 
 # Force cert renewal (rarely needed)
-gcloud compute ssh --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/reverse-proxy && docker compose restart caddy"
+gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/reverse-proxy && docker compose restart caddy"
 ```
 
 ### VPS Service Account Scopes
@@ -367,10 +360,10 @@ hackernews/
 ├── docs/                           # LLM-geared documentation
 │
 ├── Dockerfile                     # Multi-stage Docker build (node:24-alpine, bakes data into image)
-├── docker-compose.yml             # Production: App service, SQLite volume, external reverse_proxy network
+├── docker-compose.yml             # Local only: the CI image with the server's limits (server's file lives in the latchkey repo)
 ├── docker-compose.dev.yml         # Local dev: App only on port 3000, no Caddy
 ├── .dockerignore                  # Files excluded from Docker build
-├── .github/workflows/ci.yml      # GitHub Actions CI + SSH deploy pipeline
+├── .github/workflows/ci.yml      # GitHub Actions CI + image push (the server pulls :latest)
 ├── .husky/pre-commit              # Pre-commit hook (lint-staged → ESLint)
 ├── eslint.config.js               # ESLint flat config (backend)
 ├── CLAUDE.md                       # Governance document + Definition of Done

@@ -36,4 +36,13 @@ describe("Dockerfile", () => {
       expect(runtimeStage).toMatch(new RegExp(`\\bCOPY\\s+[^\\n]*\\b${dir}\\b`));
     }
   });
+
+  // Regression: the server runs the app as uid 1000 (the image's `node` user)
+  // with all capabilities dropped. A fresh volume takes /data's ownership from
+  // the image, so a root-owned /data crashed the app at startup with
+  // SQLITE_READONLY_DIRECTORY (found 2026-11-21 in a local run as 1000:1000).
+  it("gives /data to the node user and runs as node", () => {
+    expect(runtimeStage).toMatch(/^COPY\s+--from=builder\s+--chown=node:node\s+\/data\s+\/data/m);
+    expect(runtimeStage).toMatch(/^USER\s+node\s*$/m);
+  });
 });
