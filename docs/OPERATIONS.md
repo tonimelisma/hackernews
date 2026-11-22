@@ -108,8 +108,10 @@ decryption, so it is mainly for Toni on a phone.
 Verified 2026-11-22: `GET repos/tonimelisma/hackernews/actions/artifacts`
 and `GET …/actions/artifacts/<id>/zip` both work with `gh api` from a cloud
 session (the zip's redirect to GitHub's blob storage is followed through the
-proxy). `DELETE …/actions/artifacts/<id>` is tried after each download; if
-the proxy refuses it, the artifact still expires after one day.
+proxy). `DELETE …/actions/artifacts/<id>` works too (verified the same day:
+204, then 404 on read-back), so `scripts/ops.sh` removes each artifact right
+after downloading it; if that ever fails, the artifact still expires after
+one day.
 
 ## Owner setup
 
