@@ -11,6 +11,7 @@
 #
 # The hook is killed after 600 s; a cold run takes about a minute.
 set -euo pipefail
+export npm_config_update_notifier=false
 
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   exit 0
@@ -53,8 +54,9 @@ export PATH="$NODE_BIN:$PATH"
 log "node $(node -v), npm $(npm -v)"
 
 # Later Bash calls in this session pick up Node 24 too.
-if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-  echo "export PATH=\"$NODE_BIN:\$PATH\"" >> "$CLAUDE_ENV_FILE"
+line="export PATH=\"$NODE_BIN:\$PATH\""
+if [ -n "${CLAUDE_ENV_FILE:-}" ] && ! grep -qxF "$line" "$CLAUDE_ENV_FILE" 2>/dev/null; then
+  echo "$line" >> "$CLAUDE_ENV_FILE"
 fi
 
 install() {
