@@ -50,9 +50,28 @@ npm run migrate:rollback   # Roll back last migration
 npm run migrate:status     # Show migration status
 ```
 
+## Working with Toni (standing rules)
+
+Copied from Toni's `~/.claude/CLAUDE.md`, which does not reach cloud sessions:
+
+- When it is already clear what Toni wants, do it. Never ask whether to do it, how to do it, or which piece to do first, and never end a turn with a go-ahead question or "Yes, do it" button. Ask only for what only Toni can do (his accounts, devices, approvals) or a real product choice he hasn't made yet.
+- Never end a turn while any item Toni asked for can still move forward without him. When one item is blocked (the Mac locked, something only he can do), go on to the next unblocked one; stop only when every item is done or truly blocked, and list just the Toni-only steps at the end.
+- Live tests may write to Toni's real apps; every test removes what it made in its own teardown, even when it fails, and confirms the removal. Never leave test data behind.
+
 ## Working Style
 
 - **One command at a time.** Never chain shell commands with `&&`, `||`, or `;`. Run each command as a separate Bash tool call. This makes output easier to read and debug.
+
+## Cloud Sessions (claude.ai/code)
+
+Cloud sessions run on an Anthropic-hosted Ubuntu 24.04 VM (Node 20–22 preinstalled, Chrome at `$CHROME_PATH`, network limited to npm/GitHub/apt). This file and `.claude/settings.json` load there; Toni's `~/.claude` does not (hence the standing rules above).
+
+- **Setup is automatic.** The SessionStart hook in `.claude/settings.json` runs `scripts/cloud-setup.sh`, which does nothing unless `CLAUDE_CODE_REMOTE=true`. In the cloud it puts Node 24 (`.node-version`) on `PATH`, installing the official binary from the npm registry (`node-linux-x64`) when the VM lacks it, writes that `PATH` to `$CLAUDE_ENV_FILE` for later commands, and runs `npm ci` in the root and `hackernews-frontend/`, skipped when `node_modules` already matches the lockfile and Node version. Cold run ≈ 30–90 s, warm ≈ 0.1 s (measured on a real cloud VM 2026-11-22: Node v24.22.3, 210 + 50 tests pass, preview screenshots correct); the hook limit is 600 s. `$CLAUDE_ENV_FILE` is read by the harness and is not visible in later shells; check `node -v` instead. Rerun it by hand with `CLAUDE_CODE_REMOTE=true scripts/cloud-setup.sh` if `node -v` is not 24.
+- **Tests, lint and build all run in the VM**: `npm test`, `npm run lint`, `cd hackernews-frontend && npm test`, `npm run lint`, `npm run build`. No credentials or network needed.
+- **Run the app and look at it**: `scripts/preview.sh` builds the frontend, serves a seeded throwaway DB with a test account, and writes logged-out / logged-in / dark screenshots to `preview-shots/`, then stops the server and deletes the DB and account, even on failure. Open the PNGs with the Read tool. `PREVIEW_HOLD=1 scripts/preview.sh` keeps it running and prints the cookie; `scripts/screenshot.sh <url> <out.png> [--cookie token=…]` shoots any page. See [docs/TESTING.md](docs/TESTING.md#looking-at-the-running-app-screenshots).
+- **Deploying = merging to `master`.** CI builds the image and pushes `ghcr.io/tonimelisma/hackernews:latest`; the server pulls it within ~5 minutes and rolls back if unhealthy (gotcha #14). A cloud session pushes the branch, opens a PR, and merges once CI is green. **Use `gh api` (REST), not `gh pr …`**: the cloud's GitHub proxy returns 403 for GraphQL, which `gh pr create/merge/comment` use (verified 2026-11-22). Open: `gh api repos/tonimelisma/hackernews/pulls -f title=… -f head=<branch> -f base=master -f body=…`; checks: `gh api repos/tonimelisma/hackernews/commits/<sha>/check-runs`; merge: `gh api -X PUT repos/tonimelisma/hackernews/pulls/<n>/merge -f merge_method=merge`; comment: `gh api repos/tonimelisma/hackernews/issues/<n>/comments -F body=@file`. The proxy also refuses deleting remote branches, so a branch a cloud session pushed is deleted from Toni's Mac (or on GitHub). It can check the result with `curl https://hackernews.melisma.net/api/v1/stories?timespan=Day` if the network allows that host.
+- **Production stays on Toni's side.** The server takes SSH only through Google's IAP tunnel with Toni's `gcloud` login, so account admin (`scripts/users.js` in the container), logs, backups and DB queries run from his Mac, not from a cloud session (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#account-administration)).
+- **No secrets in the environment.** Cloud environment variables are readable by anyone using the environment; the app needs none for tests or previews (preview generates a random `SECRET`).
 
 ## Definition of Done
 
@@ -121,7 +140,12 @@ hackernews/
 │   ├── import-json-to-sqlite.js # Import JSON → SQLite
 │   ├── migrate.js              # CLI: node scripts/migrate.js [up|rollback|status]
 │   ├── users.js                # CLI: node scripts/users.js [list|add|set-password|revoke-sessions]
-│   └── backup-sqlite.sh        # Daily SQLite backup to GCS
+│   ├── backup-sqlite.sh        # Daily SQLite backup to GCS
+│   ├── cloud-setup.sh          # SessionStart hook: Node 24 + npm ci, cloud sessions only
+│   ├── preview.sh              # Seeded throwaway app + screenshots, cleans up after itself
+│   ├── seed-preview.js         # Sample stories + test account for preview.sh
+│   └── screenshot.sh/.js       # Headless-Chrome screenshot (DevTools protocol)
+├── .claude/settings.json   # SessionStart hook → scripts/cloud-setup.sh
 ├── .github/workflows/ci.yml # CI + image push to GHCR (the server pulls :latest itself)
 ├── .husky/pre-commit       # Pre-commit hook (lint-staged)
 └── docs/                   # LLM-geared documentation
@@ -182,12 +206,12 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile, compose, auth) | 92 |
+| Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile, compose, cloudSetup, auth) | 97 |
 | Backend integration (storyService, api, worker, users) | 113 |
 | Frontend component (App, StoryList, Story) | 39 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 7 |
-| **Total** | **255** |
+| **Total** | **260** |
 
 ## Project Health
 
@@ -197,13 +221,13 @@ All of these must be kept current with every change:
 |----------|-------|---------|
 | Functionality | A- | Core features work; dead scraper code removed |
 | Security | A | Helmet (CSP with script hash), CORS, per-IP login rate limiting, local scrypt password hashes (no third-party credentials handled), JWT in HTTP-only cookie (jose) with server-side revocation (`token_version`), timing-uniform login, SECRET validation |
-| Testing | A- | 255 tests, in-memory SQLite, ~3s backend runs |
+| Testing | A- | 260 tests, in-memory SQLite, ~3s backend runs |
 | Code Quality | A- | Clean codebase, dead code removed, SQLite simplification |
 | Architecture | A- | SQLite eliminates all Firestore hacks (L2 cache, patchStoryCache, Day-merge, padId, stripUndefined) |
 | Documentation | A- | CLAUDE.md + 4 reference docs, all updated |
 | DevOps / CI | A- | Docker app behind shared Caddy reverse proxy on VPS (live), GitHub Actions CI/CD (image built in CI → public GHCR `:latest`; the server pulls it every 5 minutes with health-check rollback), npm audit, ESLint (backend + frontend), pre-commit hooks, daily GCS backups |
 | Performance | A- | Sub-ms SQL queries, react-virtuoso |
-| Dependencies | A- | All at latest (2026-10-31); 0 production or frontend vulnerabilities; 5 low dev-only (`deepmerge` via Jest, no patch exists) |
+| Dependencies | A- | All at latest (2026-11-21); 0 production or frontend vulnerabilities; 5 low dev-only (`deepmerge` via Jest, no patch exists) |
 
 ### Open Issues
 
@@ -250,3 +274,6 @@ All of these must be kept current with every change:
 - **Database migration system**: `services/migrator.js` handles versioned schema migrations. Each migration file exports `up(db)` and `down(db)`. Migrations run in transactions. `initSchema()` in `database.js` is now a wrapper around `runMigrations()`. Migration tests use their own in-memory databases (not shared test setup).
 - **Dockerfile must copy `migrations/`**: The runtime stage copied `bin/routes/services/util` but not `migrations/`, so `loadMigrationFiles()` found nothing in the container and `runMigrations()` ran zero migrations — `schema_migrations` stayed empty and the migration system was silently inert in prod (discovered 2026-06-27 when migration 002 didn't apply on deploy). The tables existed only because `import-json-to-sqlite.js` bakes them into the image. Fix: `COPY migrations ./migrations`. Lesson: anything `services/*` loads from disk at runtime (here, a sibling dir via `__dirname/../migrations`) must be in the final image — verify by checking `schema_migrations` is populated after deploy, not just that the app boots.
 - **ANALYZE drives index choice (the inverse-latency bug)**: Profiling prod (152k rows) showed the *fewest-matches* timespan was the *slowest*: "Day" ran ~125 ms median / 27 s worst, while "All" ran ~2 ms. Cause: no `sqlite_stat1` stats existed, so the planner always scanned `idx_stories_score` top-down and filtered `time > ?` row-by-row, clawing through the whole table to find a few hundred recent rows. A one-time `ANALYZE` (migration 002) lets the planner pick `idx_stories_time` for selective windows and `idx_stories_score` for broad ones — every timespan dropped to ≤7 ms median. Refresh stats periodically (worker does it each cycle) as the table grows. Lesson: with a time-filter + different-column sort + LIMIT, accurate stats matter more than adding indexes. Profile with `process.hrtime.bigint()` around `stmt.all()` and `EXPLAIN QUERY PLAN`, not wall-time.
+- **`stories.time` is milliseconds, not HN's seconds**: `hackernews.js` stores `storyData.time * 1000`, and `getStories` compares against `Date.now()`. Anything that writes stories by hand (fixtures, `scripts/seed-preview.js`) must use ms. The first preview seeder wrote seconds, so every story looked 55 years old and the "Day" page rendered empty with no error (guarded by `tests/unit/cloudSetup.test.js`).
+- **Cloud sessions need Node 24 from the npm registry**: the claude.ai/code VM ships Node 20–22, and its "Limited" network allows npm and GitHub but not necessarily nodejs.org. `scripts/cloud-setup.sh` installs `node-linux-x64@24` (the official binary, republished on npm) into `~/.cache/hackernews-node24` and exports its `PATH` through `$CLAUDE_ENV_FILE`. The VM's own `npm` then runs on Node 24, because npm's shebang resolves `node` from `PATH`.
+- **Slow CPUs expose timing bugs (Linux x86 emulation, 2026-11-21)**: under `docker --platform linux/amd64` on the Mac, App tests printed 14 "not wrapped in act(...)" warnings that never show on the Mac. Two causes: waiting only for a mock to be *called* leaves its promise's `setState` outside `act` (fix: `act(() => mock.mock.results.at(-1).value)`), and a plain `fireEvent.click` leaves `handleLogin`'s post-`await` updates outside it (fix: `await act(async () => fireEvent.click(...))`). The screenshot helper first used a fixed sleep and later network idle alone; both captured spinners. It now waits for network idle *and* no `.spinner-border`.

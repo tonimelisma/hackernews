@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import App from "./App";
 
 // Mock react-virtuoso so all items render synchronously in tests
@@ -264,14 +264,26 @@ describe("App", () => {
     });
   });
 
+  // Lets the promise a mock returned settle inside act(): App's .then handlers
+  // were attached first, so its state updates land in act's scope. Waiting
+  // only for the *call* left them outside act on slow CPUs (the Linux cloud
+  // VM under emulation printed "not wrapped in act(...)" warnings).
+  const settle = (mockFn) =>
+    act(() => mockFn.mock.results.at(-1).value.catch(() => {}));
+
   const submitLogin = async (user = "testuser", pass = "secret-pass") => {
     render(<App />);
     await waitFor(() => {
       expect(storyService.getAll).toHaveBeenCalled();
     });
+    await settle(storyService.getAll);
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: user } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: pass } });
-    fireEvent.click(screen.getByRole("button", { name: /log/i }));
+    // Async act: handleLogin's continuation after `await login()` sets state
+    // a microtask later, which a plain fireEvent leaves outside act.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /log/i }));
+    });
   };
 
   it("sends username and password to the login API", async () => {
@@ -285,6 +297,10 @@ describe("App", () => {
         password: "secret-pass",
       });
     });
+    await settle(loginService.login);
+    // Logging in re-fetches the stories; let that finish too.
+    await waitFor(() => expect(storyService.getAll).toHaveBeenCalledTimes(2));
+    await settle(storyService.getAll);
   });
 
   it.each([
