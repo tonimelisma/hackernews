@@ -29,20 +29,11 @@ HackerNews aggregator with a single Node.js process and a SQLite database, deplo
 | **Backup bucket** | `gs://hackernews-melisma-backup/` (us-central1, Always Free tier) |
 | **Backup cron** | `0 3 * * *` — daily at 3:00 AM UTC |
 
-### SSH into VPS
+### Running Production Jobs
 
-Since 2026-11-21 SSH reaches the server only through Google's IAP tunnel (`--tunnel-through-iap`, used in every command below); port 22 is closed to the internet.
+Production jobs (accounts, logs, health, backups, restore, DB stats) run as the GitHub Actions workflow `.github/workflows/ops.yml`, started from a cloud session with `scripts/ops.sh <job>` and reaching vps-1 as a GCP service account through Workload Identity Federation and the IAP tunnel. Results come back age-encrypted, because this repo's logs are public. See [OPERATIONS.md](OPERATIONS.md) for every job, the public-log rules and the Owner setup.
 
-```bash
-# Interactive shell
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a
-
-# Run a single command
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="<cmd>"
-
-# Copy files to VPS
-gcloud compute scp --tunnel-through-iap --project=melisma-services <local-path> vps-1:<remote-path> --zone=us-central1-a
-```
+Since 2026-11-21 SSH reaches the server only through Google's IAP tunnel; port 22 is closed to the internet. The Docker command blocks below run on the server (the ops jobs wrap them); they double as break-glass commands from Toni's workstation over `gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="<cmd>"` when Actions is unavailable.
 
 ### Docker Commands (run on VPS)
 
@@ -93,31 +84,11 @@ The Caddy container is named `caddy`, not `hackernews-caddy-1`. It owns host por
 
 ### Remote Debugging
 
-```bash
-# Test API from inside container (bypasses Caddy)
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 wget -qO- 'http://localhost:3000/api/v1/stories?timespan=Day&limit=1'"
-
-# Test API via public HTTPS
-curl -s "https://hackernews.melisma.net/api/v1/stories?timespan=Day&limit=1"
-
-# Check container health status
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="docker inspect --format='{{.State.Health.Status}}' hackernews-app-1"
-
-# Check worker sync logs (last sync cycle)
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/hackernews && docker compose logs app 2>&1 | grep -E '(sync|WORKER|fetched|adding)' | tail -20"
-
-# Check memory usage
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="docker stats --no-stream"
-
-# Check disk usage
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="df -h / && du -sh /opt/hackernews"
-
-# Query SQLite directly inside container
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 sqlite3 /data/hackernews.db 'SELECT COUNT(*) FROM stories;'"
-
-# Check SQLite DB size
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="docker exec hackernews-app-1 ls -lh /data/hackernews.db"
-```
+| Question | Job (`scripts/ops.sh …`) | What runs on the server |
+|----------|--------------------------|-------------------------|
+| Is it up? | `health` (or `curl -s "https://hackernews.melisma.net/api/v1/stories?timespan=Day&limit=1"` from the session) | container health, `wget` of the API inside the container, `docker stats`, `free`, `df`, load, timer state, last backup |
+| What did the worker do? | `logs` | `docker logs hackernews-app-1`, its `sync\|WORKER\|fetched\|adding` lines, `docker logs caddy`, `journalctl -t latchkey-update-apps`, `/var/log/hackernews-backup.log` |
+| How big is the DB? | `db-stats` | `sqlite3 /data/hackernews.db` row counts, page stats, file sizes, applied migrations |
 
 ### CI/CD Pipeline and Deploys
 
@@ -125,9 +96,10 @@ Push to `master` triggers: **backend tests → frontend tests → image build in
 
 ```
 ci.yml flow:
+  workflows (actionlint over .github/workflows, shellcheck over ops scripts)
   backend-tests (lint + jest + npm audit --omit=dev)
   frontend-tests (vitest + build + npm audit)
-       ↓ both pass
+       ↓ all pass
   image (only on push to master): buildx linux/amd64 → push
         ghcr.io/tonimelisma/hackernews:<sha> and :latest (GHA layer cache)
 
@@ -139,7 +111,7 @@ on the server (latchkey-update-apps, a systemd timer every 5 minutes):
   ✗ unhealthy → back to the previous image; that image is skipped from then on
 ```
 
-**The server pulls; nothing pushes to it.** Since 2026-11-21 (Toni's lockdown of the shared server, which also runs the Latchkey relay) SSH is reachable only through Google's IAP tunnel, so GitHub Actions can no longer deploy over SSH. The public `:latest` image is the deploy: CI must keep pushing it (guarded by `tests/unit/compose.test.js`), and a push reaches production within about 5 minutes. There are no deploy secrets.
+**The server pulls; nothing pushes to it.** Since 2026-11-21 (Toni's lockdown of the shared server, which also runs the Latchkey relay) SSH is reachable only through Google's IAP tunnel, so GitHub Actions can no longer deploy over SSH. The public `:latest` image is the deploy: CI must keep pushing it (guarded by `tests/unit/compose.test.js`), and a push reaches production within about 5 minutes. There are no deploy secrets. Production *jobs* (not deploys) go through `ops.yml`, see [OPERATIONS.md](OPERATIONS.md).
 
 **The server's compose file is not in this repo.** It is a fixed file owned by the latchkey repo (`deploy/server/host/hackernews-compose.yml` in github.com/tonimelisma/latchkey), so a push here can change the app but never the container's limits on the server. It runs the app as uid 1000 (the image's `node` user) with all capabilities dropped, `no-new-privileges`, a 384 MB memory cap, and the `sqlite-data` volume on `/data`. **The app must keep working as that non-root user, writing only to `/data` and `/tmp`.** This repo's `docker-compose.yml` is for local use only and mirrors those limits.
 
@@ -179,52 +151,28 @@ Multi-stage build:
 
 ### Backups
 
-```bash
-# Manual backup
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="bash /opt/hackernews/scripts/backup-sqlite.sh"
-
-# List backups
-gcloud storage ls -l gs://hackernews-melisma-backup/
-
-# Download a backup
-gcloud storage cp gs://hackernews-melisma-backup/hackernews-20260220.db.gz .
-
-# Restore a backup
-gunzip hackernews-20260220.db.gz
-gcloud compute scp --tunnel-through-iap --project=melisma-services hackernews-20260220.db vps-1:/tmp/restore.db --zone=us-central1-a
-# Restore through sqlite3 as the app's user (a file copied straight into /data would be root-owned and read-only to the app)
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/hackernews && docker compose cp /tmp/restore.db app:/tmp/restore.db && docker compose exec -T app sqlite3 /data/hackernews.db '.restore /tmp/restore.db' && docker compose restart app"
-
-# Check cron is installed
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="crontab -l"
-
-# Check backup logs
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="tail -20 /var/log/hackernews-backup.log"
-```
+| Task | Job (`scripts/ops.sh …`) |
+|------|--------------------------|
+| Manual backup | `backup` (runs the server's `/opt/hackernews/scripts/backup-sqlite.sh`, as cron does) |
+| List backups | `backups-list` |
+| Download a backup | `backups-download --backup hackernews-YYYYMMDD.db.gz` (age-encrypted to the session) |
+| Restore | `restore --backup hackernews-YYYYMMDD.db.gz --confirm "restore hackernews-YYYYMMDD.db.gz"` — integrity check, safety copy `prerestore-<time>.db.gz` uploaded first, sqlite3 `.restore` as the app's user, restart, wait for healthy |
+| Check the cron / backup log | `logs` (backup section) and `health` (`last_backup`) |
 
 Backup process: `sqlite3 .backup` inside container → `docker cp` out → `gzip` → upload with `curl` to the GCS JSON API using the VM service account's token from the metadata server (no `gcloud` on the box — the snap was removed 2026-09-29). Keeps the newest 30 objects; ~32 MB per backup. Cron runs as `tonimelisma` at 03:00 UTC and appends to `/var/log/hackernews-backup.log`, which must exist and be owned by that user (the redirect is evaluated by the shell before the script runs — when the file could not be created, the job silently never ran from at least 2026-02-20 to 2026-09-29).
 
-The `gcloud` commands above run from a workstation, not the VPS.
-
 ### Account Administration
 
-Accounts are local username/password accounts. There is no signup or reset flow in the app — accounts are managed by hand with `scripts/users.js`, run inside the container (`-t`/`-it` give it a TTY so passwords are read without echo; they are never passed as arguments):
+Accounts are local username/password accounts. There is no signup or reset flow in the app — accounts are managed with `scripts/users.js` inside the container, driven by the ops workflow:
 
 ```bash
-# Set or reset a password (browsers already logged in stay logged in)
-gcloud compute ssh --tunnel-through-iap vps-1 --project=melisma-services --zone=us-central1-a --ssh-flag=-t --command="docker exec -it hackernews-app-1 node scripts/users.js set-password <username>"
-
-# Create an account (prompts for the password)
-gcloud compute ssh --tunnel-through-iap vps-1 --project=melisma-services --zone=us-central1-a --ssh-flag=-t --command="docker exec -it hackernews-app-1 node scripts/users.js add <username>"
-
-# List accounts (password set?, session version, hidden-story count)
-gcloud compute ssh --tunnel-through-iap vps-1 --project=melisma-services --zone=us-central1-a --command="docker exec hackernews-app-1 node scripts/users.js list"
-
-# Log an account out of every browser (e.g. lost device, after a forced reset)
-gcloud compute ssh --tunnel-through-iap vps-1 --project=melisma-services --zone=us-central1-a --command="docker exec hackernews-app-1 node scripts/users.js revoke-sessions <username>"
+scripts/ops.sh users-list                              # password set?, session version, hidden count
+scripts/ops.sh users-add --user <username>             # creates it with a generated password
+scripts/ops.sh users-set-password --user <username>    # new generated password; browsers stay logged in
+scripts/ops.sh users-revoke-sessions --user <username> # log out every browser
 ```
 
-Piped (non-TTY) input is also accepted: one line for the password, one for the confirmation. Minimum password length is 8.
+Generated passwords exist only in the workflow and in the age-encrypted results the session decrypts; they are piped to `users.js` on stdin (one line for the password, one for the confirmation; minimum length 8), never passed as arguments. Usernames travel only in the `repository_dispatch` payload, never in the public log.
 
 ### GCP Firewall Rules
 
@@ -262,17 +210,11 @@ HackerNews joins the external Docker network `hackernews-front`, shared only wit
 
 Caddy auto-provisions Let's Encrypt certs. Cert data is stored in the Docker volume originally named `hackernews_caddy-data`, reused by the shared proxy to avoid certificate churn.
 
-```bash
-# Check Caddy logs for cert issues
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/reverse-proxy && docker compose logs caddy | tail -20"
-
-# Force cert renewal (rarely needed)
-gcloud compute ssh --tunnel-through-iap --project=melisma-services vps-1 --zone=us-central1-a --command="cd /opt/reverse-proxy && docker compose restart caddy"
-```
+Caddy's log (cert issues show there) is a section of `scripts/ops.sh logs`. Caddy belongs to the shared server, so restarting it (to force a cert renewal, rarely needed) is a latchkey-repo task, not an ops job here.
 
 ### VPS Service Account Scopes
 
-The VM service account has `storage-rw`, `logging-write`, `monitoring-write`. If you need to change scopes, the VM must be stopped first:
+The VM service account has `storage-rw`, `logging-write`, `monitoring-write` (backup and restore use `storage-rw` through the metadata server). Changing scopes needs the VM stopped, so it is a one-off owner task from a workstation, not an ops job:
 
 ```bash
 gcloud compute instances stop --project=melisma-services vps-1 --zone=us-central1-a
@@ -356,10 +298,17 @@ hackernews/
 │   ├── migrate.js                  # CLI: node scripts/migrate.js [up|rollback|status]
 │   ├── users.js                    # CLI: node scripts/users.js [list|add|set-password|revoke-sessions]
 │   ├── backup-sqlite.sh            # Daily SQLite backup to GCS
+│   ├── ops.sh                      # Cloud session: dispatch an ops job, wait, download + decrypt results
 │   ├── cloud-setup.sh              # SessionStart hook: Node 24 + npm ci in Claude Code cloud sessions only
 │   ├── preview.sh                  # Run the app on a seeded throwaway DB and screenshot it, then clean up
 │   ├── seed-preview.js             # Seeds preview.sh's throwaway DB (sample stories + test account)
 │   └── screenshot.sh / screenshot.js # Headless-Chrome screenshot over the DevTools protocol
+│
+├── ops/                            # Production jobs run by .github/workflows/ops.yml
+│   ├── workflow.js                 # Validates the dispatch payload; filters the public summary line
+│   ├── run.sh                      # Runner side: password generation, IAP SSH / GCS, age encryption
+│   ├── remote.sh                   # Runs on vps-1 as root: users, logs, health, db-stats, backup, restore
+│   └── age-recipient.txt           # age public key results are encrypted to (private key: HN_OPS_AGE_KEY)
 │
 ├── docs/                           # LLM-geared documentation
 │
@@ -368,6 +317,7 @@ hackernews/
 ├── docker-compose.dev.yml         # Local dev: App only on port 3000, no Caddy
 ├── .dockerignore                  # Files excluded from Docker build
 ├── .github/workflows/ci.yml      # GitHub Actions CI + image push (the server pulls :latest)
+├── .github/workflows/ops.yml     # Production jobs on vps-1 via repository_dispatch + WIF
 ├── .husky/pre-commit              # Pre-commit hook (lint-staged → ESLint)
 ├── eslint.config.js               # ESLint flat config (backend)
 ├── CLAUDE.md                       # Governance document + Definition of Done

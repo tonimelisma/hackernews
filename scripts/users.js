@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 // Manual account administration: there is no self-service signup or password
-// reset. In production, run inside the app container, e.g.
-//   docker exec -it hackernews-app-1 node scripts/users.js set-password <username>
+// reset. In production it runs inside the app container, driven by the ops
+// workflow from a cloud session (which generates the password and pipes it in):
+//   scripts/ops.sh users-set-password --user <username>   (docs/OPERATIONS.md)
 // Passwords are always prompted for (hidden on a TTY, one per line when piped),
 // never taken from argv, so they stay out of shell history and `ps`.
 
