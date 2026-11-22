@@ -41,7 +41,7 @@
     "globals": "^17.14.0",
     "husky": "^9.1.7",
     "jest": "^30.5.2",
-    "lint-staged": "^17.6.1",
+    "lint-staged": "^17.6.2",
     "nodemon": "^3.1.14",
     "supertest": "^7.3.2"
   },

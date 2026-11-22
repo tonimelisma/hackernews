@@ -1,0 +1,94 @@
+# Production jobs on vps-1, started from a cloud session with scripts/ops.sh
+# (repository_dispatch "hn-ops"). Reaches GCP through Workload Identity
+# Federation: no stored keys. See docs/OPERATIONS.md.
+#
+# This repo is PUBLIC: this log and its artifacts are public. The log carries
+# only pass/fail and digits-only counts; every result (user list, logs,
+# generated passwords, backups) is age-encrypted to ops/age-recipient.txt
+# before upload. Request values never reach `env:` or `run:` text, which the
+# log would show: ops/workflow.js reads them from the event file.
+name: Ops
+run-name: ops ${{ github.event.client_payload.job || inputs.job }} ${{ github.event.client_payload.request_id }}
+
+on:
+  repository_dispatch:
+    types: [hn-ops]
+  # For the GitHub UI. Inputs are visible on the run page, so user jobs
+  # (which take a username) are repository_dispatch only.
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Job
+        required: true
+        type: choice
+        options: [health, db-stats, logs, users-list, backup, backups-list, backups-download, restore]
+      backup:
+        description: Backup object (backups-download, restore), e.g. hackernews-20261122.db.gz
+        required: false
+        type: string
+      confirm:
+        description: 'restore only: "restore <backup>"'
+        required: false
+        type: string
+      lines:
+        description: Log lines per source (logs, default 200)
+        required: false
+        type: string
+
+permissions: {}
+
+# One production job at a time (a restore must not race a backup).
+concurrency:
+  group: hn-ops
+  cancel-in-progress: false
+
+jobs:
+  ops:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # Workload Identity Federation
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check request
+        id: req
+        run: |
+          echo "WORK=$RUNNER_TEMP/hn-ops" >> "$GITHUB_ENV"
+          node ops/workflow.js request "$RUNNER_TEMP/hn-ops/private"
+
+      - name: Check encryption key
+        run: |
+          if ! grep -q '^age1' ops/age-recipient.txt; then
+            echo "::error::ops/age-recipient.txt has no age public key yet (see Owner setup in CLAUDE.md)."
+            exit 1
+          fi
+          sudo apt-get install -y -qq age > /dev/null
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Run ${{ steps.req.outputs.job }}
+        env:
+          JOB: ${{ steps.req.outputs.job }}
+          WHERE: ${{ steps.req.outputs.where }}
+          BACKUP: ${{ steps.req.outputs.backup }}
+          LINES: ${{ steps.req.outputs.lines }}
+          GENERATE_PASSWORD: ${{ steps.req.outputs.generate_password }}
+        run: bash ops/run.sh
+
+      - name: Upload encrypted results
+        if: always() && steps.req.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.req.outputs.artifact }}
+          path: ${{ env.WORK }}/hn-ops.tar.age
+          if-no-files-found: ignore
+          retention-days: 1
