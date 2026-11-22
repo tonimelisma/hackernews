@@ -227,7 +227,7 @@ All of these must be kept current with every change:
 | Documentation | A- | CLAUDE.md + 4 reference docs, all updated |
 | DevOps / CI | A- | Docker app behind shared Caddy reverse proxy on VPS (live), GitHub Actions CI/CD (image built in CI → public GHCR `:latest`; the server pulls it every 5 minutes with health-check rollback), npm audit, ESLint (backend + frontend), pre-commit hooks, daily GCS backups |
 | Performance | A- | Sub-ms SQL queries, react-virtuoso |
-| Dependencies | A- | All at latest (2026-10-31); 0 production or frontend vulnerabilities; 5 low dev-only (`deepmerge` via Jest, no patch exists) |
+| Dependencies | A- | All at latest (2026-11-21); 0 production or frontend vulnerabilities; 5 low dev-only (`deepmerge` via Jest, no patch exists) |
 
 ### Open Issues
 
