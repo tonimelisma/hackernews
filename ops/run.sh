@@ -24,7 +24,7 @@ mkdir -p "$OUT"
 chmod 700 "$WORK" "$OUT"
 : >"$REPORT"
 
-# shellcheck disable=SC2317 # runs from the EXIT trap
+# shellcheck disable=SC2317,SC2329 # runs from the EXIT trap
 seal() {
   local rc=$?
   echo "exit=$rc" >>"$REPORT"
