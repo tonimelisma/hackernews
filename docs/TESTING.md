@@ -27,12 +27,13 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `tests/unit/migrator.test.js` | Unit | 15 | ensureMigrationsTable, runMigrations (order, skip, auto-create, tables, timestamps), migration 002 ANALYZE/sqlite_stat1 + Day-query plan uses idx_stories_time, migration 003 adds password columns while preserving existing users/hidden and rolls back cleanly, rollback, status |
 | `tests/unit/dockerfile.test.js` | Unit | 5 | Runtime image copies migrations/ (migration system) and scripts/users.js (account admin CLI) but not all of scripts/ (keeps data exports out), plus bin/routes/services/util; `/data` belongs to `node` and the image runs as `USER node` |
 | `tests/unit/compose.test.js` | Unit | 6 | Local compose (mirrors the server's, which lives in the latchkey repo) runs the GHCR image instead of building, as uid 1000 with no capabilities, health-check timeout ≥ 10 s, caps container logs; CI pushes `:sha` and `:latest` and has no SSH deploy job |
+| `tests/unit/cloudSetup.test.js` | Unit | 5 | `.claude/settings.json` runs `scripts/cloud-setup.sh` at SessionStart (timeout ≤ 600 s); the script is a silent no-op unless `CLAUDE_CODE_REMOTE=true`; `.node-version` matches CI and the Dockerfile; `seed-preview.js` refuses the real DB and seeds millisecond story times the Day query returns |
 | `tests/unit/auth.test.js` | Unit | 26 | scrypt hash format/default params, verify correct/wrong/tampered/malformed, per-hash salt, username and new-password validation |
 | `tests/integration/storyService.test.js` | Integration | 26 | storyService queries, getHidden dedup, upsertHidden never creates users, query caps, hiddenIds mutation guard, INDEXED BY regression |
 | `tests/integration/api.test.js` | Integration | 49 | Full HTTP request/response via supertest: local-password login (success, wrong password, unknown user, no-password user, 400 validation incl. old HN payload, no credential logging, per-IP rate limit), sessions (pre-migration cookie stays valid, cookie upgraded to `tv`, simultaneous sessions, revoke-sessions, deleted user) |
 | `tests/integration/users.test.js` | Integration | 24 | userService, `auth.verifyCredentials`, and the `scripts/users.js` CLI (`list`, `add`, `set-password` keeps sessions + history, `revoke-sessions`, validation and usage errors) via its exported `run()` |
 | `tests/integration/worker.test.js` | Integration | 14 | syncOnce() direct tests, compound staleness queries, batch limits, ANALYZE stats refresh per cycle, utility functions, empty getAllStoryIds |
-| **Total** | | **205** | |
+| **Total** | | **210** | |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -173,3 +174,9 @@ CI uploads coverage artifacts (14-day retention) via `actions/upload-artifact@v4
 | `compose.test.js` | "gives the health check at least 10 s before timing out" | Healthy app marked unhealthy: 3 × 5 s timeouts under disk contention (2026-09-29) |
 | `compose.test.js` | "caps container log size" | Unbounded json-file container logs (42 MB after four weeks) |
 | `hackernewsService.test.js` | "skips stories with undefined score in return value" | Worker `updateStories` returning undefined scores for deleted/flagged stories |
+
+## Looking at the Running App (screenshots)
+
+`scripts/preview.sh [out-dir]` builds the frontend, seeds a throwaway SQLite DB (temp dir) with six sample stories and a test account `claude-preview` with a random password, starts `bin/www` on port 3100 with `DISABLE_WORKER=true`, logs in with `curl`, and saves `logged-out.png`, `logged-in.png` and `logged-in-dark.png` (default `./preview-shots/`, gitignored). Its `EXIT` trap stops the server and deletes the temp dir — and with it the test account — on success, failure or Ctrl-C, then confirms the removal (`[preview] cleaned up: …`). `PREVIEW_HOLD=1` keeps the server up for manual checks and prints the session cookie.
+
+`scripts/screenshot.sh <url> <out.png> [--cookie token=<jwt>] [--dark] [--width N] [--height N] [--wait ms]` takes one screenshot through the Chrome DevTools protocol (`scripts/screenshot.js`, Node's built-in `WebSocket`, no Puppeteer). Chrome comes from `$CHROME_PATH`, `/usr/bin/google-chrome` (cloud VM) or the Mac's Google Chrome. It prints page exceptions and `console.error` lines to stderr. Open the PNG with the Read tool to look at it.

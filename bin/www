@@ -97,6 +97,12 @@ function onListening() {
     : 'port ' + addr.port;
   debug('Listening on ' + bind);
 
+  // scripts/preview.sh serves a seeded throwaway DB and must not sync from HN.
+  if (process.env.DISABLE_WORKER === 'true') {
+    console.log("Worker disabled (DISABLE_WORKER=true)");
+    return;
+  }
+
   // Run initial sync and schedule recurring worker
   const { syncOnce } = require("../worker");
   console.log("Starting initial sync...");

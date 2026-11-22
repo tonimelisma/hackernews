@@ -355,7 +355,11 @@ hackernews/
 │   ├── import-json-to-sqlite.js    # Import JSON stories/users/hidden → SQLite
 │   ├── migrate.js                  # CLI: node scripts/migrate.js [up|rollback|status]
 │   ├── users.js                    # CLI: node scripts/users.js [list|add|set-password|revoke-sessions]
-│   └── backup-sqlite.sh            # Daily SQLite backup to GCS
+│   ├── backup-sqlite.sh            # Daily SQLite backup to GCS
+│   ├── cloud-setup.sh              # SessionStart hook: Node 24 + npm ci in Claude Code cloud sessions only
+│   ├── preview.sh                  # Run the app on a seeded throwaway DB and screenshot it, then clean up
+│   ├── seed-preview.js             # Seeds preview.sh's throwaway DB (sample stories + test account)
+│   └── screenshot.sh / screenshot.js # Headless-Chrome screenshot over the DevTools protocol
 │
 ├── docs/                           # LLM-geared documentation
 │
@@ -419,6 +423,7 @@ Each `/login` response includes `X-Login-Request-Id` for browser-to-server log c
 | `SECRET` | Yes | JWT signing secret. Validated on startup in `bin/www` — server exits if missing |
 | `PORT` | No | HTTP listen port (default: 3000) |
 | `SQLITE_PATH` | No | Path to SQLite database file (default: `./data/hackernews.db`) |
+| `DISABLE_WORKER` | No | `true` skips the background HN sync in `bin/www` (used by `scripts/preview.sh`; never set in production) |
 
 ### Config Constants (`util/config.js`)
 
