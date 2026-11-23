@@ -45,4 +45,10 @@ describe("Dockerfile", () => {
     expect(runtimeStage).toMatch(/^COPY\s+--from=builder\s+--chown=node:node\s+\/data\s+\/data/m);
     expect(runtimeStage).toMatch(/^USER\s+node\s*$/m);
   });
+  // Clean builds: the same commit rebuilds on the same base.
+  it("pins every base image by digest", () => {
+    const froms = [...dockerfile.matchAll(/^FROM\s+(\S+)/gm)].map((m) => m[1]);
+    expect(froms.length).toBeGreaterThan(1);
+    for (const from of froms) expect(from).toMatch(/@sha256:[0-9a-f]{64}$/);
+  });
 });

@@ -33,7 +33,7 @@ const main = async () => {
     ["Show HN: A tiny SQLite-backed news reader", "https://example.com/reader", 412, 180],
     ["Why query planners need statistics", "https://example.com/analyze", 356, 97],
     ["The case for boring infrastructure", "https://example.com/boring", 298, 143],
-    ["Ask HN: What's your favorite free-tier VPS setup?", null, 187, 220],
+    ["Ask HN: What's your favorite self-hosting setup?", null, 187, 220],
     ["Headless Chrome screenshots without Puppeteer", "https://example.com/cdp", 121, 34],
     ["Scrypt parameters for small machines", "https://example.com/scrypt", 88, 21],
   ];
