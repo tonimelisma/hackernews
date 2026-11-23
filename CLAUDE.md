@@ -2,7 +2,7 @@
 
 ## Project Summary
 
-HackerNews aggregator: a Node.js/Express backend with a React frontend, deployed on a GCP e2-micro VPS via Docker behind the host-level shared Caddy reverse proxy. The backend scrapes Hacker News stories, stores them in SQLite, and serves them via a REST API. An integrated background worker (setInterval, 15-minute cycle) syncs new stories and updates scores. The frontend displays top stories with filtering by timespan and user-hidden stories. Users log in with local username/password accounts, created and reset manually via `scripts/users.js`. Development and operations are cloud-first: code changes deploy by merging to `master`, and production jobs (accounts, logs, backups, restore) run as the `ops.yml` GitHub Actions workflow started from a cloud session.
+HackerNews aggregator: a Node.js/Express backend with a React frontend, shipped as a Docker image (`ghcr.io/tonimelisma/hackernews`). The backend scrapes Hacker News stories, stores them in SQLite, and serves them via a REST API. An integrated background worker (setInterval, 15-minute cycle) syncs new stories and updates scores. The frontend displays top stories with filtering by timespan and user-hidden stories. Users log in with local username/password accounts, created and reset manually via `scripts/users.js`. All development happens in Claude Code cloud sessions. A release is CI pushing the image on merge to `master`; whatever runs the image pulls it on its own. **This repo knows nothing about the host** (no hostnames, cloud projects, credentials, buckets or server tooling), and no workflow deploys to or reaches into a server.
 
 ## Quick Reference Commands
 
@@ -40,16 +40,9 @@ npm run worker
 # Import JSON data to SQLite
 npm run import
 
-# Account admin on a local DB
+# Account admin (local DB; the same CLI ships in the image: node scripts/users.js …)
 npm run users -- list
 npm run users -- set-password <username>
-
-# Production jobs (cloud session → ops.yml → vps-1; results age-encrypted, see docs/OPERATIONS.md)
-scripts/ops.sh health
-scripts/ops.sh users-list
-scripts/ops.sh users-set-password --user <username>   # generates the password
-scripts/ops.sh logs --lines 200
-scripts/ops.sh backups-list
 
 # Database migrations
 npm run migrate            # Run pending migrations
@@ -71,14 +64,13 @@ Copied from Toni's `~/.claude/CLAUDE.md`, which does not reach cloud sessions:
 
 ## Cloud Sessions (claude.ai/code)
 
-All development and operations happen in Claude Code cloud sessions; Toni's Mac is needed for nothing in this repo (there is no macOS-only work). Cloud sessions run on an Anthropic-hosted Ubuntu 24.04 VM (Node 20–22 preinstalled, Chrome at `$CHROME_PATH`, `age`, `jq` and `gcloud` installed; the Default environment's network is currently unrestricted). This file and `.claude/settings.json` load there; Toni's `~/.claude` does not (hence the standing rules above).
+All development happens in Claude Code cloud sessions; nothing in this repo needs Toni's Mac (there is no macOS-only work). Cloud sessions run on an Anthropic-hosted Ubuntu 24.04 VM (Node 20–22 preinstalled, Chrome at `$CHROME_PATH`; the Default environment's network is currently unrestricted). This file and `.claude/settings.json` load there; Toni's `~/.claude` does not (hence the standing rules above).
 
 - **Setup is automatic.** The SessionStart hook in `.claude/settings.json` runs `scripts/cloud-setup.sh`, which does nothing unless `CLAUDE_CODE_REMOTE=true`. In the cloud it puts Node 24 (`.node-version`) on `PATH`, installing the official binary from the npm registry (`node-linux-x64`) when the VM lacks it, writes that `PATH` to `$CLAUDE_ENV_FILE` for later commands, and runs `npm ci` in the root and `hackernews-frontend/`, skipped when `node_modules` already matches the lockfile and Node version. Cold run ≈ 30–90 s, warm ≈ 0.1 s (measured on a real cloud VM 2026-11-22: Node v24.22.3, all backend and frontend tests pass, preview screenshots correct); the hook limit is 600 s. `$CLAUDE_ENV_FILE` is read by the harness and is not visible in later shells; check `node -v` instead. Rerun it by hand with `CLAUDE_CODE_REMOTE=true scripts/cloud-setup.sh` if `node -v` is not 24.
 - **Tests, lint and build all run in the VM**: `npm test`, `npm run lint`, `cd hackernews-frontend && npm test`, `npm run lint`, `npm run build`. No credentials or network needed.
 - **Run the app and look at it**: `scripts/preview.sh` builds the frontend, serves a seeded throwaway DB with a test account, and writes logged-out / logged-in / dark screenshots to `preview-shots/`, then stops the server and deletes the DB and account, even on failure. Open the PNGs with the Read tool. `PREVIEW_HOLD=1 scripts/preview.sh` keeps it running and prints the cookie; `scripts/screenshot.sh <url> <out.png> [--cookie token=…]` shoots any page. See [docs/TESTING.md](docs/TESTING.md#looking-at-the-running-app-screenshots).
-- **Deploying = merging to `master`.** CI builds the image and pushes `ghcr.io/tonimelisma/hackernews:latest`; the server pulls it within ~5 minutes and rolls back if unhealthy (gotcha #14). A cloud session pushes the branch, opens a PR, and merges once CI is green. **Use `gh api` (REST), not `gh pr …`**: the cloud's GitHub proxy returns 403 for GraphQL, which `gh pr create/merge/comment` use (verified 2026-11-22). Open: `gh api repos/tonimelisma/hackernews/pulls -f title=… -f head=<branch> -f base=master -f body=…`; checks: `gh api repos/tonimelisma/hackernews/commits/<sha>/check-runs`; merge: `gh api -X PUT repos/tonimelisma/hackernews/pulls/<n>/merge -f merge_method=merge`; comment: `gh api repos/tonimelisma/hackernews/issues/<n>/comments -F body=@file`. "Automatically delete head branches" is on, so a merged branch disappears by itself. Smoke-check production after ~5 minutes with `curl -s "https://hackernews.melisma.net/api/v1/stories?timespan=Day&limit=1"` and `scripts/ops.sh health`. The proxy refuses git tags, releases, ref deletion and repo-settings writes; none are part of this repo's process.
-- **Production jobs run in GitHub Actions, started from the session.** `scripts/ops.sh <job>` sends a `repository_dispatch` (`hn-ops`, which the proxy allows), `.github/workflows/ops.yml` reaches vps-1 as a GCP service account through Workload Identity Federation and the IAP tunnel (no stored keys; the proxy blocks port 22 anyway), and the results come back as an age-encrypted artifact that `scripts/ops.sh` downloads (`GET …/actions/artifacts/<id>/zip`, verified through the proxy 2026-11-22), decrypts with `HN_OPS_AGE_KEY` and deletes. Jobs: `users-list`, `users-add`, `users-set-password`, `users-revoke-sessions` (passwords generated in the workflow), `logs`, `health`, `db-stats`, `backup`, `backups-list`, `backups-download`, `restore` (needs `--confirm "restore <backup>"`). **The repo is public, so its workflow logs are too: they show only pass/fail and digits** (gotcha #20). Details: [docs/OPERATIONS.md](docs/OPERATIONS.md). Usable once the Owner setup below is done.
-- **One secret in the environment: `HN_OPS_AGE_KEY`.** Cloud environment variables are readable by anyone using the environment; this one only decrypts ops results. The app itself needs no secrets for tests or previews (preview generates a random `SECRET`).
+- **Releasing = merging to `master`.** CI builds the image and pushes `ghcr.io/tonimelisma/hackernews:latest` and `:<sha>`; that is the end of this repo's job (gotcha #14). A cloud session pushes the branch, opens a PR, and merges once CI is green. **Use `gh api` (REST), not `gh pr …`**: the cloud's GitHub proxy returns 403 for GraphQL, which `gh pr create/merge/comment` use (verified 2026-11-22). Open: `gh api repos/tonimelisma/hackernews/pulls -f title=… -f head=<branch> -f base=master -f body=…`; checks: `gh api repos/tonimelisma/hackernews/commits/<sha>/check-runs`; merge: `gh api -X PUT repos/tonimelisma/hackernews/pulls/<n>/merge -f merge_method=merge`; comment: `gh api repos/tonimelisma/hackernews/issues/<n>/comments -F body=@file`. "Automatically delete head branches" is on, so a merged branch disappears by itself. Optional smoke check of the public site a few minutes later: `curl -s "https://hackernews.melisma.net/api/v1/stories?timespan=Day&limit=1"`. The proxy refuses git tags, releases, ref deletion and repo-settings writes; none are part of this repo's process.
+- **No secrets anywhere.** The repo, CI and the cloud environment hold none: tests and previews need no credentials (preview generates a random `SECRET`), and CI pushes the image with its own `GITHUB_TOKEN`.
 
 ## Definition of Done
 
@@ -131,7 +123,7 @@ hackernews/
 │   └── middleware.js        # Express error handlers
 ├── eslint.config.js        # ESLint flat config (backend)
 ├── Dockerfile              # Multi-stage Docker build (node:24-alpine)
-├── docker-compose.yml      # Local only: CI image with the server's limits (the server's file is in the latchkey repo)
+├── docker-compose.yml      # Local only: CI image under the runtime contract
 ├── hackernews-frontend/    # React frontend (Vite + Vitest)
 │   └── src/
 │       ├── App.jsx         # Main component (stories, auth, filtering)
@@ -147,16 +139,12 @@ hackernews/
 │   ├── import-json-to-sqlite.js # Import JSON → SQLite
 │   ├── migrate.js              # CLI: node scripts/migrate.js [up|rollback|status]
 │   ├── users.js                # CLI: node scripts/users.js [list|add|set-password|revoke-sessions]
-│   ├── backup-sqlite.sh        # Daily SQLite backup to GCS
-│   ├── ops.sh                  # Cloud session: run an ops job, download + decrypt its results
 │   ├── cloud-setup.sh          # SessionStart hook: Node 24 + npm ci, cloud sessions only
 │   ├── preview.sh              # Seeded throwaway app + screenshots, cleans up after itself
 │   ├── seed-preview.js         # Sample stories + test account for preview.sh
 │   └── screenshot.sh/.js       # Headless-Chrome screenshot (DevTools protocol)
 ├── .claude/settings.json   # SessionStart hook → scripts/cloud-setup.sh
-├── ops/                    # Production jobs for ops.yml: workflow.js (validate, filter log), run.sh (runner), remote.sh (vps-1), age-recipient.txt
-├── .github/workflows/ci.yml # CI (actionlint, tests) + image push to GHCR (the server pulls :latest itself)
-├── .github/workflows/ops.yml # Production jobs on vps-1: repository_dispatch → WIF → IAP SSH, age-encrypted results
+├── .github/workflows/ci.yml # CI (actionlint, tests) + image push to GHCR; never deploys
 ├── .husky/pre-commit       # Pre-commit hook (lint-staged)
 └── docs/                   # LLM-geared documentation
 ```
@@ -191,9 +179,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 13. **Static file caching strategy**: `index.html` served with `Cache-Control: no-cache`; hashed `/assets/*` files served with `max-age=1y, immutable`.
 
-14. **Docker deployment — CI builds and pushes, the server pulls**: Multi-stage `Dockerfile` (node:24-alpine). The CI `image` job builds linux/amd64 with buildx and pushes `ghcr.io/tonimelisma/hackernews:<sha>` + `:latest` (public package). There is no deploy job and no deploy secret: since 2026-11-21 the shared server (it also runs the Latchkey relay) accepts SSH only through Google's IAP tunnel, and a systemd timer there (`latchkey-update-apps`, every 5 minutes) pulls `:latest`, restarts the app when the image changed, and goes back to the previous image if the new one isn't healthy within 5 minutes. **CI must keep pushing `:latest`**, or production never updates (guarded by `tests/unit/compose.test.js`). **The server's compose file is not this repo's**: it is a fixed file in the latchkey repo (`deploy/server/host/hackernews-compose.yml`), so a push here changes the app but never the container's limits. It runs the app as **uid 1000 (`node`) with all capabilities dropped and `no-new-privileges`**, on its own Docker network `hackernews-front` (alias `hackernews-app`) shared only with Caddy. **The app must keep working as that non-root user, writing only to `/data` and `/tmp`.** The image's `/data` belongs to `node` and it runs as `USER node`: a fresh volume takes `/data`'s owner from the image, and when it was root-owned the app crashed as uid 1000 with `SQLITE_READONLY_DIRECTORY` (guarded by `tests/unit/dockerfile.test.js`). `/opt/hackernews` on the server is no longer a git checkout; the nightly backup script runs from its existing copy there. This repo's `docker-compose.yml` is for local use only: the CI image with the server's limits (`docker-compose.dev.yml` builds from source). Never build on the server: on 2026-09-29 an on-box build saturated the 30 GB `pd-standard` disk (94% util, 88% iowait). SQLite data lives in the `sqlite-data` volume (the image's baked DB is empty when built in CI). Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
+14. **Release = image push; the runtime contract is the only interface**: Multi-stage `Dockerfile` (node:24-alpine). The CI `image` job builds linux/amd64 with buildx and pushes `ghcr.io/tonimelisma/hackernews:<sha>` + `:latest` (public package). There is no deploy job and no credentials: whatever runs the image pulls it. **CI must keep pushing `:latest`** (guarded by `tests/unit/compose.test.js`, which also fails if any workflow gains ssh, gcloud, WIF or a dispatch trigger). What the image promises is the [runtime contract](docs/ARCHITECTURE.md#runtime-contract): **runs as uid 1000 (`node`) with all capabilities dropped and `no-new-privileges`, writing only to `/data` and `/tmp`**; port 3000; health at `/api/v1/stories?timespan=Day&limit=1`; `SECRET` + `SQLITE_PATH`; admin via `node scripts/users.js` in the container. The image's `/data` belongs to `node`: a fresh volume takes `/data`'s owner from the image, and when it was root-owned the app crashed as uid 1000 with `SQLITE_READONLY_DIRECTORY` (guarded by `tests/unit/dockerfile.test.js`). `docker-compose.yml` runs the CI image under that contract for local checks (`docker-compose.dev.yml` builds from source). Images are built only in CI: an on-box build once saturated a production disk (2026-09-29). The image's baked DB is empty when built in CI; real data lives in a volume on `/data`. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
 
-15. **Daily SQLite backup**: `scripts/backup-sqlite.sh` runs SQLite `.backup` inside the container, compresses with gzip, and uploads to `gs://hackernews-melisma-backup/` with `curl` + the VM service account's metadata-server token (no `gcloud` on the box — the snap was removed). Cron job (user `tonimelisma`) at 3:00 AM UTC daily, appending to `/var/log/hackernews-backup.log`. **That log file must exist and be owned by `tonimelisma`**: the shell evaluates the `>>` redirect before running the script, so when the file could not be created (`/var/log` is root-writable only) the job silently never ran — no scheduled backup from at least 2026-02-20 until the 2026-09-29 fix. Keeps the newest 30 objects. ~32 MB compressed per backup, well within GCP Always Free 5 GB.
+15. **Backups are the host's job**: the data is one SQLite file in `/data`. The image ships `sqlite3`, so a consistent hot copy is `sqlite3 /data/hackernews.db ".backup '<file>'"` inside the container, and a restore is `.restore` run as the `node` user (a file copied straight into `/data` by root would be read-only to the app). Scheduling, storage and retention are outside this repo.
 
 16. **CSP uses script hash (not unsafe-inline)**: The inline dark mode script in `index.html` is allowed via `'sha256-8y8P8Mwo9xa1B5mBjxyt9mk3G0AxFcNMDqIEmr6vUkQ='` in the CSP `script-src` directive. If the inline script content changes (even whitespace), the hash must be recomputed and updated in `app.js`.
 
@@ -201,44 +189,41 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 18. **Query-planner statistics are mandatory (ANALYZE)**: `getStories` runs `WHERE time > ? ORDER BY score DESC LIMIT 500`, which no single index satisfies. Without `sqlite_stat1` stats the planner always scans `idx_stories_score` and filters by time, which is pathological for the *selective* "Day" window (few hundred matches scattered across 150k+ rows) — measured at ~125 ms median / **27 s worst case** on production, and since `better-sqlite3` is synchronous that freezes the whole process. `migrations/002-analyze-statistics.js` runs `ANALYZE`; the worker re-runs it each cycle (~70 ms). **Read path:** `getStories` forces `INDEXED BY idx_stories_time` for Day–Month and `INDEXED BY idx_stories_score` for Year/All — Month score scans hit **16 s** when top scores fall outside the window; Year time scans hit **14–17 s** because ~89% of rows match. See [docs/DATABASE.md](docs/DATABASE.md#query-planner-statistics-analyze).
 
-19. **Local password accounts (no HN involvement)**: `POST /login` takes `{ username, password }` and checks an scrypt hash in `users.password_hash` (`services/auth.js`; format `scrypt$N$r$p$salt$key`, OWASP N=2^14/r=8/p=5 — **not** N=2^17, which needs 128 MiB per hash and pushed the 1 GB e2-micro into swap at 3.4 s/hash). No signup/reset endpoints: accounts are managed with `scripts/users.js` (`list`, `add`, `set-password`, `revoke-sessions`) run in the container by the ops workflow (`scripts/ops.sh users-…`) — the Dockerfile must `COPY scripts` (guarded by `tests/unit/dockerfile.test.js`). Sessions: JWT carries `tv` = `users.token_version`; every authenticated request loads the user row and rejects the cookie if the user is gone or `tv` mismatches. **Cookies without `tv` (issued in the HN-proxy era) count as `tv: 0` — do not remove that default or pre-migration sessions get logged out.** Each browser has an independent cookie, so simultaneous sessions just work; `set-password` deliberately leaves `token_version` alone (no logout), `revoke-sessions` bumps it (logs out every browser). Login never creates users, and neither does `upsertHidden`. Unknown users / NULL passwords hash against a dummy for uniform timing.
-
-20. **Ops workflow logs are public (this repo is public)**: `.github/workflows/ops.yml` may print only pass/fail and the digits-only `HN_OPS_SUMMARY k=<n> …` line, which `ops/workflow.js` filters by regex. Everything else (user list, log lines, error messages, generated passwords, backups) goes into `$WORK/out`, which `ops/run.sh` tars and encrypts with `age` to `ops/age-recipient.txt` and deletes before the upload step; the artifact keeps only `hn-ops.tar.age` for 1 day. Request values are read from `$GITHUB_EVENT_PATH`, never interpolated into `env:` or `run:` (both are printed in the log, and `${{ }}` in `run:` is script injection); usernames are `::add-mask::`ed and accepted only via `repository_dispatch` (`workflow_dispatch` inputs show on the run page). Passwords go to `users.js` on stdin, which is why `remote.sh` travels base64-encoded inside the ssh command. `repository_dispatch` runs `master`'s copy of the workflow, so ops changes take effect only after merge. All guarded by `tests/unit/ops.test.js` and `tests/unit/opsRun.test.js`; every action in every workflow is pinned to a full SHA (also tested), and CI runs actionlint + shellcheck.
+19. **Local password accounts (no HN involvement)**: `POST /login` takes `{ username, password }` and checks an scrypt hash in `users.password_hash` (`services/auth.js`; format `scrypt$N$r$p$salt$key`, OWASP N=2^14/r=8/p=5 — **not** N=2^17, which needs 128 MiB per hash and pushed the 1 GB production host into swap at 3.4 s/hash). No signup/reset endpoints: accounts are managed with `scripts/users.js` (`list`, `add`, `set-password`, `revoke-sessions`) run inside the container (`node scripts/users.js …`, part of the runtime contract) — the Dockerfile must `COPY scripts` (guarded by `tests/unit/dockerfile.test.js`). Sessions: JWT carries `tv` = `users.token_version`; every authenticated request loads the user row and rejects the cookie if the user is gone or `tv` mismatches. **Cookies without `tv` (issued in the HN-proxy era) count as `tv: 0` — do not remove that default or pre-migration sessions get logged out.** Each browser has an independent cookie, so simultaneous sessions just work; `set-password` deliberately leaves `token_version` alone (no logout), `revoke-sessions` bumps it (logs out every browser). Login never creates users, and neither does `upsertHidden`. Unknown users / NULL passwords hash against a dummy for uniform timing.
 
 ## Documentation
 
 All of these must be kept current with every change:
 
-- [Architecture](docs/ARCHITECTURE.md) — system overview, directory structure, data flow, environment variables
+- [Architecture](docs/ARCHITECTURE.md) — system overview, release and runtime contract, directory structure, data flow, environment variables
 - [API Reference](docs/API.md) — REST endpoints, request/response formats
 - [Database Schemas](docs/DATABASE.md) — SQLite tables, indexes, query patterns
 - [Testing Guide](docs/TESTING.md) — test architecture, mocks, running tests, technical details
-- [Operations](docs/OPERATIONS.md) — production jobs via `ops.yml` + `scripts/ops.sh`, public-log rules, Owner setup
 
 ## Test Counts
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile, compose, cloudSetup, auth, ops, opsRun) | 124 |
+| Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile, compose, cloudSetup, auth) | 98 |
 | Backend integration (storyService, api, worker, users) | 113 |
 | Frontend component (App, StoryList, Story) | 39 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 7 |
-| **Total** | **287** |
+| **Total** | **261** |
 
 ## Project Health
 
-**Overall: A** — Working application deployed at https://hackernews.melisma.net with solid test coverage, good documentation, simplified architecture (SQLite), automated Docker deployment, daily backups to GCS.
+**Overall: A** — Working application (live at https://hackernews.melisma.net) with solid test coverage, good documentation, simplified architecture (SQLite), and a credential-free release: CI publishes the image, nothing pushes to a server.
 
 | Category | Grade | Summary |
 |----------|-------|---------|
 | Functionality | A- | Core features work; dead scraper code removed |
-| Security | A | Helmet (CSP with script hash), CORS, per-IP login rate limiting, local scrypt password hashes (no third-party credentials handled), JWT in HTTP-only cookie (jose) with server-side revocation (`token_version`), timing-uniform login, SECRET validation; ops jobs use keyless WIF and publish only digits, with results age-encrypted |
-| Testing | A- | 287 tests, in-memory SQLite, ~3s backend runs |
+| Security | A | Helmet (CSP with script hash), CORS, per-IP login rate limiting, local scrypt password hashes (no third-party credentials handled), JWT in HTTP-only cookie (jose) with server-side revocation (`token_version`), timing-uniform login, SECRET validation; CI holds no cloud credentials and cannot reach any server |
+| Testing | A- | 261 tests, in-memory SQLite, ~3s backend runs |
 | Code Quality | A- | Clean codebase, dead code removed, SQLite simplification |
 | Architecture | A- | SQLite eliminates all Firestore hacks (L2 cache, patchStoryCache, Day-merge, padId, stripUndefined) |
 | Documentation | A- | CLAUDE.md + 4 reference docs, all updated |
-| DevOps / CI | A- | Docker app behind shared Caddy reverse proxy on VPS (live), GitHub Actions CI/CD (image built in CI → public GHCR `:latest`; the server pulls it every 5 minutes with health-check rollback), npm audit, ESLint (backend + frontend), actionlint + shellcheck, SHA-pinned actions, pre-commit hooks, daily GCS backups, production jobs as the `ops.yml` workflow (WIF, no stored keys) |
+| DevOps / CI | A- | GitHub Actions CI (image built in CI → public GHCR `:latest` + `:<sha>`, no deploy step, no credentials), documented runtime contract, npm audit, ESLint (backend + frontend), actionlint, SHA-pinned actions, pre-commit hooks |
 | Performance | A- | Sub-ms SQL queries, react-virtuoso |
 | Dependencies | A- | All at latest (2026-11-22); 0 production or frontend vulnerabilities; 5 low dev-only (`deepmerge` via Jest, no patch exists) |
 
@@ -256,20 +241,9 @@ All of these must be kept current with every change:
 
 - None open.
 
-## Owner Setup
-
-Steps only Toni can do. Until 1–3 are done, `ops.yml` fails at its first GCP or encryption step and uploads nothing; everything else in the repo works without them. Details: [docs/OPERATIONS.md](docs/OPERATIONS.md#owner-setup).
-
-1. **GCP Workload Identity Federation**: run `deploy/gcp-wif-setup.sh` in the latchkey repo. It must trust GitHub OIDC for `tonimelisma/hackernews` only and give this repo's service account IAP tunnel access + OS Login admin on vps-1, `roles/compute.viewer`, `roles/iam.serviceAccountUser` on the VM's service account, and `roles/storage.objectViewer` on `gs://hackernews-melisma-backup`.
-2. **Repository variables** (Actions → Variables, not secrets): `GCP_WIF_PROVIDER` (full provider resource name) and `GCP_SA_EMAIL`. No repository secrets are needed.
-3. **age key**: on the Mac, `brew install age` and `age-keygen`; put the `AGE-SECRET-KEY-1…` line in the claude.ai cloud environment as `HN_OPS_AGE_KEY`. A cloud session then runs `scripts/ops.sh recipient`, commits `ops/age-recipient.txt` and merges it.
-4. **Cloud network** (only if the environment is ever limited; it is unrestricted now): allow `hackernews.melisma.net` (smoke checks) and, for local image builds, `registry-1.docker.io`, `auth.docker.io`, `production.cloudfront.docker.com`, `dl-cdn.alpinelinux.org`.
-
-Then verify from a cloud session: `scripts/ops.sh health`, `scripts/ops.sh db-stats`, `scripts/ops.sh users-list`, `scripts/ops.sh logs --lines 50`, `scripts/ops.sh backups-list` (all read-only).
-
 ## Budget
 
-**Hard $0/month.** Everything runs on free tiers: GCP Always Free e2-micro + 30 GB pd-standard, GCS free tier for backups, GitHub Actions (free for this public repo), public GHCR package. Never add paid infrastructure (faster disks, bigger VMs, paid services) — fix performance by reducing on-box work and footprint instead.
+**Hard $0/month.** This repo uses only GitHub Actions (free for this public repo) and a public GHCR package. The app must stay small enough for a 1 GB, 0.25 vCPU free-tier host on a slow disk — never assume paid infrastructure; fix performance by reducing work and footprint.
 
 ## Key Learnings
 
@@ -286,8 +260,8 @@ Then verify from a cloud session: `scripts/ops.sh health`, `scripts/ops.sh db-st
 - **`errorHandler` must not call `next()`**: Calling `next(error)` after `res.status().json()` triggers "headers already sent" errors if another error handler exists downstream.
 - **Vite build output**: `build.outDir` set to `"build"` in `vite.config.js` to match Express static path in `app.js`. `build/` is gitignored. `build.rolldownOptions.output.codeSplitting` splits `react` and `vendor` (all other `node_modules`) into their own chunks — keeps every chunk under Vite's 500 kB warning (the single bundle hit 524 kB in 2026-09) and lets browsers keep vendor code cached across app-only deploys. CSP `script-src 'self'` covers the extra same-origin chunks.
 - **npm `allowScripts` (npm ≥ 11.19)**: npm now flags dependency install scripts that aren't approved. Both `package.json` files list approved packages by *unversioned* name (`"better-sqlite3": true`, …) — `npm install-scripts approve` writes `name@version` keys, which go stale on every bump, so unpin them. `better-sqlite3` is the one that matters: its install script builds the native SQLite binding (locally and in the Docker image). Check with `npm install-scripts ls`.
-- **JWT/cookie expiry and refresh**: JWT and cookie both expire after 365 days. `GET /me` issues a fresh JWT+cookie on each call (rolling refresh). Since the frontend calls `getMe()` before fetching stories on every page load, active users are effectively never logged out and the nav never flashes the wrong logged-out state first. Tokens survive deployments as long as the `SECRET` env var in the VPS `.env` file stays the same.
-- **HN blocks proxied logins from datacenter IPs (why local accounts exist)**: Login used to POST the user's credentials to `news.ycombinator.com/login` and treat a final `/news` path as success and `/login` as bad credentials. By 2026-09 HN answered every login from the GCP VPS IP with a "Validation required" reCAPTCHA page — which also lands on `/login` — so every login failed as "wrong password" while the same credentials worked in a browser. Diagnosed by probing from inside the container with a fake account and inspecting the body (a plain GET of `/login` was *not* challenged; only the POST). Lesson: a redirect-path heuristic cannot tell "bad password" from "bot wall"; inspect the response body before trusting an auth outcome, and don't build auth on a third party's login form. Replaced with local accounts (gotcha #19); usernames — and therefore all hidden history — carried over unchanged, and existing cookies stayed valid via the `tv`-defaults-to-0 rule.
+- **JWT/cookie expiry and refresh**: JWT and cookie both expire after 365 days. `GET /me` issues a fresh JWT+cookie on each call (rolling refresh). Since the frontend calls `getMe()` before fetching stories on every page load, active users are effectively never logged out and the nav never flashes the wrong logged-out state first. Tokens survive new releases as long as `SECRET` stays the same.
+- **HN blocks proxied logins from datacenter IPs (why local accounts exist)**: Login used to POST the user's credentials to `news.ycombinator.com/login` and treat a final `/news` path as success and `/login` as bad credentials. By 2026-09 HN answered every login from the production datacenter IP with a "Validation required" reCAPTCHA page — which also lands on `/login` — so every login failed as "wrong password" while the same credentials worked in a browser. Diagnosed by probing from inside the container with a fake account and inspecting the body (a plain GET of `/login` was *not* challenged; only the POST). Lesson: a redirect-path heuristic cannot tell "bad password" from "bot wall"; inspect the response body before trusting an auth outcome, and don't build auth on a third party's login form. Replaced with local accounts (gotcha #19); usernames — and therefore all hidden history — carried over unchanged, and existing cookies stayed valid via the `tv`-defaults-to-0 rule.
 - **npm `overrides` for transitive advisories (2026-10)**: GHSA-g3hv-75wg-m249 marks all `minimatch` <11.0.1 vulnerable, but `eslint` 10 pins `^10.2.6`. That failed the frontend CI gate (`npm audit --audit-level=moderate`, dev deps included) with "No fix available". Both `package.json` files force `"minimatch": "^11.0.1"`; the backend also forces `"glob": "^14.0.2"` (GHSA-3g3m-2fjr-6pw4, via Jest's `test-exclude`). ESLint, Jest and coverage all work on the newer majors. Drop each override once upstream ranges catch up: check with `npm ls minimatch glob --all`.
 - **Bootstrap `data-bs-auto-close="outside"`**: Prevents dropdown from closing on clicks inside the menu (e.g., login form). Without it, clicking the Login button closes the dropdown before the user sees the result.
 - **react-virtuoso for list virtualization**: `<Virtuoso useWindowScroll data={...} itemContent={...} />` renders only visible items. In tests, mock with a simple `({ data, itemContent }) => data.map(...)` to render all items synchronously. Must mock in every test file that renders a component using Virtuoso (both StoryList.test.jsx and App.test.jsx).

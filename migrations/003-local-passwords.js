@@ -1,5 +1,5 @@
 // Local username/password accounts, replacing login-by-proxy to Hacker News
-// (HN serves a reCAPTCHA to logins from the VPS's datacenter IP, so every
+// (HN serves a reCAPTCHA to logins from a datacenter IP, so every
 // proxied login failed as "invalid credentials").
 //
 // Purely additive: existing rows keep their username (the key every hidden

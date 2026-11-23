@@ -67,7 +67,7 @@ const seedUser = async (username, password) => {
     .run(username, await auth.hashPassword(password, FAST));
 };
 
-// The login limiter is per client IP (app trusts one proxy hop, like Caddy in
+// The login limiter is per client IP (app trusts one proxy hop, like a reverse proxy in
 // production), so each call gets its own address unless one is pinned.
 let clientCounter = 0;
 const nextClientIp = () => {

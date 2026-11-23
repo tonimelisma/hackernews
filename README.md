@@ -20,9 +20,8 @@ Live at: https://hackernews.melisma.net
 - **Frontend:** React 19 (Vite)
 - **Database:** SQLite (better-sqlite3, WAL mode)
 - **Worker:** Integrated setInterval (15-minute cycle)
-- **Deployment:** Docker app behind shared Caddy reverse proxy on GCP e2-micro. CI pushes the image to `ghcr.io/tonimelisma/hackernews:latest`; the server pulls it every 5 minutes and rolls back if it isn't healthy. The server's compose file lives in the [latchkey](https://github.com/tonimelisma/latchkey) repo; this repo's `docker-compose.yml` is for local use. The app runs there as a non-root user (uid 1000) and may write only to `/data` and `/tmp`
-- **CI:** GitHub Actions (actionlint, lint, test, build and push the image; no deploy step)
-- **Operations:** production jobs (accounts, logs, health, backups, restore) run as the `ops.yml` workflow, started from a Claude Code cloud session with `scripts/ops.sh`; GCP access through Workload Identity Federation, results age-encrypted because this repo's logs are public ([docs/OPERATIONS.md](docs/OPERATIONS.md))
+- **Release:** CI pushes the image to `ghcr.io/tonimelisma/hackernews:latest` (and `:<sha>`); whatever runs it pulls it. This repo knows nothing about the host. The image runs as uid 1000 and writes only to `/data` and `/tmp` ([runtime contract](docs/ARCHITECTURE.md#runtime-contract))
+- **CI:** GitHub Actions (actionlint, lint, test, build and push the image; no deploy step, no cloud credentials)
 
 ## Prerequisites
 
@@ -68,13 +67,12 @@ npm run test:coverage
 cd hackernews-frontend && npm run test:coverage
 ```
 
-287 total tests (237 backend + 50 frontend). Backend tests run in a few seconds using in-memory SQLite.
+261 total tests (211 backend + 50 frontend). Backend tests run in a few seconds using in-memory SQLite.
 
 ## Documentation
 
 - [CLAUDE.md](CLAUDE.md) — Project governance, architecture, gotchas, health, and backlog
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System overview, data flow, and environment variables
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System overview, release and runtime contract, data flow, environment variables
 - [docs/API.md](docs/API.md) — REST API reference
 - [docs/DATABASE.md](docs/DATABASE.md) — SQLite schema, migrations, and query patterns
 - [docs/TESTING.md](docs/TESTING.md) — Test architecture and mocks
-- [docs/OPERATIONS.md](docs/OPERATIONS.md) — Production jobs (ops workflow) and Owner setup

@@ -11,8 +11,7 @@ permissions:
 
 jobs:
   # actionlint (with shellcheck, preinstalled on the runner) over every
-  # workflow, plus shellcheck over the ops scripts. Pinned release, checksum
-  # verified.
+  # workflow. Pinned release, checksum verified.
   workflows:
     runs-on: ubuntu-latest
     env:
@@ -33,9 +32,6 @@ jobs:
       - name: Lint workflows
         run: '"$RUNNER_TEMP/actionlint"'
 
-      - name: Lint ops scripts
-        run: shellcheck ops/*.sh scripts/ops.sh
-
   backend-tests:
     runs-on: ubuntu-latest
 
@@ -50,12 +46,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      # tests/unit/opsRun.test.js encrypts and decrypts with age.
-      - name: Install age
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq age > /dev/null
 
       - name: Lint backend
         run: npm run lint
@@ -133,10 +123,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build here, never on the server: an on-box build saturated its
-      # pd-standard disk (94% util, 88% iowait) on 2026-09-29. There is no
-      # deploy job: the server pulls :latest itself every 5 minutes
-      # (latchkey-update-apps), so :latest must stay in the tags.
+      # Publishing the image is the whole release: whatever runs it pulls
+      # :latest (or a :<sha>), so :latest must stay in the tags.
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
