@@ -48,7 +48,7 @@ docker compose -f docker-compose.dev.yml down
 ### Dockerfile Details
 
 Multi-stage build:
-Both stages use `node:24-alpine` pinned by digest (Dependabot proposes updates).
+Both stages use `node:24-alpine` pinned by digest (Dependabot proposes digest/minor updates; a Node major moves `.node-version`, CI and the Dockerfile together).
 
 1. **Builder stage** (python3/make/g++ for native modules):
    - `npm pkg delete scripts.prepare` to skip husky in Docker

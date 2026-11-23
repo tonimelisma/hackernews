@@ -177,7 +177,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for process diagrams, data flow
 
 13. **Static file caching strategy**: `index.html` served with `Cache-Control: no-cache`; hashed `/assets/*` files served with `max-age=1y, immutable`.
 
-14. **Release = a signed image; the runtime contract is the only interface** ([docs/RELEASE.md](docs/RELEASE.md)): this repo knows nothing about any host and must never mention or couple to one — no hostnames, machines, cloud projects, deploy tooling or credentials. Hosts pull releases however they like. CI (`ci.yml`): the `image` job builds natively for linux/amd64 (`ubuntu-24.04`) and linux/arm64 (`ubuntu-24.04-arm`); on PRs it builds into the local daemon, on master it pushes **untagged by digest** with provenance (`mode=max`) and an SBOM, pulls that exact image back, and in both cases runs `scripts/image-smoke.sh` (uid 1000, `--cap-drop ALL`, `no-new-privileges`, **read-only root**, fresh volume on `/data`, tmpfs `/tmp`: health 200, DB owned by 1000, all migrations applied, `users.js` works, exit 0 on SIGTERM; cleans up after itself). Only if both platforms pass does `release` combine them into one index tagged `:<sha>` and `:latest`, sign it with cosign keyless (the only use of `id-token: write`) and verify the signature. **`:latest` must stay in the tags.** Guarded by `tests/unit/compose.test.js` (fails on ssh/scp, dispatch triggers, secrets other than `GITHUB_TOKEN`, actions outside `actions/` `docker/` `sigstore/`, unpinned actions) and `tests/unit/dockerfile.test.js` (base image pinned by digest; `/data` owned by `node`; `USER node` — a root-owned `/data` crashed the app as uid 1000 with `SQLITE_READONLY_DIRECTORY`, 2026-11-21). Dependabot keeps action SHAs and the base digest fresh. Images are built only in CI, never on a host. `docker-compose.yml` runs the published image under the contract locally; `docker-compose.dev.yml` builds from source. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
+14. **Release = a signed image; the runtime contract is the only interface** ([docs/RELEASE.md](docs/RELEASE.md)): this repo knows nothing about any host and must never mention or couple to one — no hostnames, machines, cloud projects, deploy tooling or credentials. Hosts pull releases however they like. CI (`ci.yml`): the `image` job builds natively for linux/amd64 (`ubuntu-24.04`) and linux/arm64 (`ubuntu-24.04-arm`); on PRs it builds into the local daemon, on master it pushes **untagged by digest** with provenance (`mode=max`) and an SBOM, pulls that exact image back, and in both cases runs `scripts/image-smoke.sh` (uid 1000, `--cap-drop ALL`, `no-new-privileges`, **read-only root**, fresh volume on `/data`, tmpfs `/tmp`: health 200, DB owned by 1000, all migrations applied, `users.js` works, exit 0 on SIGTERM; cleans up after itself). Only if both platforms pass does `release` combine them into one index tagged `:<sha>` and `:latest`, sign it with cosign keyless (the only use of `id-token: write`) and verify the signature. **`:latest` must stay in the tags.** Guarded by `tests/unit/compose.test.js` (fails on ssh/scp, dispatch triggers, secrets other than `GITHUB_TOKEN`, actions outside `actions/` `docker/` `sigstore/`, unpinned actions) and `tests/unit/dockerfile.test.js` (base image pinned by digest; `/data` owned by `node`; `USER node` — a root-owned `/data` crashed the app as uid 1000 with `SQLITE_READONLY_DIRECTORY`, 2026-11-21). Dependabot keeps action SHAs and the base digest fresh, but never proposes a Node major: that changes `.node-version`, CI and the Dockerfile together (guarded by `tests/unit/cloudSetup.test.js`). Images are built only in CI, never on a host. `docker-compose.yml` runs the published image under the contract locally; `docker-compose.dev.yml` builds from source. Graceful shutdown via SIGTERM/SIGINT handlers in `bin/www`.
 
 15. **Backups are the host's job**: the data is one SQLite file in `/data`. The image ships `sqlite3`, so a consistent hot copy is `sqlite3 /data/hackernews.db ".backup '<file>'"` inside the container, and a restore is `.restore` run as the `node` user (a file copied straight into `/data` by root would be read-only to the app). Scheduling, storage and retention are outside this repo.
 
@@ -203,12 +203,12 @@ All of these must be kept current with every change:
 
 | Suite | Tests |
 |-------|-------|
-| Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile, compose, cloudSetup, auth) | 103 |
+| Backend unit (middleware, config, hackernews, database, dbLogger, migrator, dockerfile, compose, cloudSetup, auth) | 104 |
 | Backend integration (storyService, api, worker, users) | 113 |
 | Frontend component (App, StoryList, Story) | 39 |
 | Frontend hook (useTheme) | 4 |
 | Frontend service (storyService, loginService) | 7 |
-| **Total** | **266** |
+| **Total** | **267** |
 
 ## Project Health
 
@@ -218,7 +218,7 @@ All of these must be kept current with every change:
 |----------|-------|---------|
 | Functionality | A- | Core features work; dead scraper code removed |
 | Security | A | Helmet (CSP with script hash), CORS, per-IP login rate limiting, local scrypt password hashes (no third-party credentials handled), JWT in HTTP-only cookie (jose) with server-side revocation (`token_version`), timing-uniform login, SECRET validation; CI holds no deployment credentials and reaches nothing but the registry; releases are cosign-signed with provenance + SBOM |
-| Testing | A- | 266 tests + an image smoke test per platform per build, in-memory SQLite, ~3s backend runs |
+| Testing | A- | 267 tests + an image smoke test per platform per build, in-memory SQLite, ~3s backend runs |
 | Code Quality | A- | Clean codebase, dead code removed, SQLite simplification |
 | Architecture | A- | SQLite eliminates all Firestore hacks (L2 cache, patchStoryCache, Day-merge, padId, stripUndefined) |
 | Documentation | A- | CLAUDE.md + 5 reference docs, all updated |

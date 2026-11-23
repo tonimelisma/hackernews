@@ -42,6 +42,13 @@ describe("cloud session setup", () => {
     expect(new Set(froms)).toEqual(new Set([major]));
   });
 
+  // A Dependabot bump of only the Dockerfile's Node major would split the
+  // image from .node-version and CI (it opened one, #119, on 2026-11-23).
+  it("never lets Dependabot propose a Node major on its own", () => {
+    const cfg = read(".github/dependabot.yml");
+    expect(cfg).toMatch(/package-ecosystem: docker[\s\S]*dependency-name: node\s+update-types: \["version-update:semver-major"\]/);
+  });
+
   // scripts/preview.sh seeds a throwaway DB; the seeder must refuse to write
   // into the real database.
   it("seed-preview refuses to run without a throwaway SQLITE_PATH", () => {

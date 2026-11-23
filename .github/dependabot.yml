@@ -1,6 +1,8 @@
 # Keeps the build's pins fresh: action SHAs in .github/workflows and the
 # base-image digest in the Dockerfile. npm dependencies are updated by the
-# Definition of Done (npx npm-check-updates), not here.
+# Definition of Done (npx npm-check-updates), not here. A Node major upgrade
+# is not a pin refresh: it changes .node-version, CI and the Dockerfile
+# together (tests/unit/cloudSetup.test.js), so Dependabot never proposes one.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -14,3 +16,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
