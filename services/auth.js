@@ -6,7 +6,7 @@ const scrypt = promisify(crypto.scrypt);
 
 // OWASP's scrypt option N=2^14, r=8, p=5: the same work factor as the
 // N=2^17/p=1 option but only 16 MiB of memory per hash instead of 128 MiB.
-// On the 1 GB e2-micro, N=2^17 pushed the box into swap (3.4 s per hash).
+// On a 1 GB machine, N=2^17 pushed it into swap (3.4 s per hash).
 // Parameters are stored in each hash, so they can be raised later without a
 // migration; old hashes keep verifying with the parameters they were made with.
 const SCRYPT_PARAMS = { N: 16384, r: 8, p: 5 };

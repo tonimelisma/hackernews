@@ -25,15 +25,15 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `tests/unit/database.test.js` | Unit | 4 | getDb/setDb, initSchema creates tables/indexes/schema_migrations, idempotent schema init |
 | `tests/unit/dbLogger.test.js` | Unit | 13 | createDbContext: counters, read/write, L1/MISS cache, per-table breakdown, query inline logging |
 | `tests/unit/migrator.test.js` | Unit | 15 | ensureMigrationsTable, runMigrations (order, skip, auto-create, tables, timestamps), migration 002 ANALYZE/sqlite_stat1 + Day-query plan uses idx_stories_time, migration 003 adds password columns while preserving existing users/hidden and rolls back cleanly, rollback, status |
-| `tests/unit/dockerfile.test.js` | Unit | 5 | Runtime image copies migrations/ (migration system) and scripts/users.js (account admin CLI) but not all of scripts/ (dev tooling), plus bin/routes/services/util; `/data` belongs to `node` and the image runs as `USER node` |
-| `tests/unit/compose.test.js` | Unit | 7 | Local compose runs the GHCR image under the runtime contract (no build, uid 1000, no capabilities, health-check timeout ≥ 10 s, capped logs); CI pushes `:sha` and `:latest`; no workflow deploys or reaches a server (no ssh/gcloud/WIF/dispatch); every action pinned to a full SHA |
+| `tests/unit/dockerfile.test.js` | Unit | 6 | Every base image pinned by digest; runtime image copies migrations/ (migration system) and scripts/users.js (account admin CLI) but not all of scripts/ (dev tooling), plus bin/routes/services/util; `/data` belongs to `node` and the image runs as `USER node` |
+| `tests/unit/compose.test.js` | Unit | 11 | Local compose runs the published image under the runtime contract (no build, uid 1000, no capabilities, health-check timeout ≥ 10 s, capped logs); CI builds amd64 + arm64 natively, smoke-tests every image before release, tags `:<sha>` + `:latest` with provenance + SBOM, signs and verifies with cosign, publishes only from master; no workflow uses ssh/scp, dispatch triggers, secrets beyond `GITHUB_TOKEN`, or actions outside `actions/` `docker/` `sigstore/`; `id-token` only in `release`; every action SHA-pinned |
 | `tests/unit/cloudSetup.test.js` | Unit | 5 | `.claude/settings.json` runs `scripts/cloud-setup.sh` at SessionStart (timeout ≤ 600 s); the script is a silent no-op unless `CLAUDE_CODE_REMOTE=true`; `.node-version` matches CI and the Dockerfile; `seed-preview.js` refuses the real DB and seeds millisecond story times the Day query returns |
 | `tests/unit/auth.test.js` | Unit | 26 | scrypt hash format/default params, verify correct/wrong/tampered/malformed, per-hash salt, username and new-password validation |
 | `tests/integration/storyService.test.js` | Integration | 26 | storyService queries, getHidden dedup, upsertHidden never creates users, query caps, hiddenIds mutation guard, INDEXED BY regression |
 | `tests/integration/api.test.js` | Integration | 49 | Full HTTP request/response via supertest: local-password login (success, wrong password, unknown user, no-password user, 400 validation incl. old HN payload, no credential logging, per-IP rate limit), sessions (pre-migration cookie stays valid, cookie upgraded to `tv`, simultaneous sessions, revoke-sessions, deleted user) |
 | `tests/integration/users.test.js` | Integration | 24 | userService, `auth.verifyCredentials`, and the `scripts/users.js` CLI (`list`, `add`, `set-password` keeps sessions + history, `revoke-sessions`, validation and usage errors) via its exported `run()` |
 | `tests/integration/worker.test.js` | Integration | 14 | syncOnce() direct tests, compound staleness queries, batch limits, ANALYZE stats refresh per cycle, utility functions, empty getAllStoryIds |
-| **Total** | | **211** | |
+| **Total** | | **216** | |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -168,12 +168,19 @@ CI uploads coverage artifacts (14-day retention) via `actions/upload-artifact` (
 | `migrator.test.js` | "preserves pre-existing users and hidden history" | Migration 003 must not alter existing account rows |
 | `api.test.js` | "returns 401 for an existing user who has no password yet" | Password-less pre-migration rows must not be loggable-into |
 | `dockerfile.test.js` | "copies the account admin CLI into the runtime image" | Admin CLI missing from runtime image (same class of bug as the migrations/ COPY) |
-| `compose.test.js` | "runs the CI-built image from GHCR instead of building" | On-box build saturated the production disk (2026-09-29) |
-| `compose.test.js` | "builds and pushes the image with :sha and :latest tags" / "never deploys to or reaches into a server" | The repo publishes an image and knows nothing about where it runs (2026-11-23) |
+| `compose.test.js` | "runs the CI-built image from GHCR instead of building" | A build on the running machine saturated its disk (2026-09-29); images are built in CI only |
+| `compose.test.js` | "never deploys to or reaches into anything but the registry" / "checks every image against the runtime contract before it can be released" | The repo publishes a signed image at arm's length and knows nothing about where it runs (2026-11-23) |
+| `dockerfile.test.js` | "pins every base image by digest" | Clean builds: the same commit rebuilds on the same base |
 | `dockerfile.test.js` | "gives /data to the node user and runs as node" | Fresh volume root-owned: app crashed as uid 1000 with `SQLITE_READONLY_DIRECTORY` (2026-11-21) |
 | `compose.test.js` | "gives the health check at least 10 s before timing out" | Healthy app marked unhealthy: 3 × 5 s timeouts under disk contention (2026-09-29) |
 | `compose.test.js` | "caps container log size" | Unbounded json-file container logs (42 MB after four weeks) |
 | `hackernewsService.test.js` | "skips stories with undefined score in return value" | Worker `updateStories` returning undefined scores for deleted/flagged stories |
+
+## Image Smoke Test (runtime contract)
+
+`scripts/image-smoke.sh <image>` runs an image the way a careful host would: `--user 1000:1000 --cap-drop ALL --security-opt no-new-privileges:true --read-only --tmpfs /tmp`, a fresh volume on `/data`, `DISABLE_WORKER=true`. It requires health 200 within 60 s, `/data/hackernews.db` owned by uid 1000, every file in `migrations/` recorded in `schema_migrations`, `node scripts/users.js list` to succeed, and exit code 0 after `docker stop` (SIGTERM). Its `EXIT` trap removes the container and volume, even on failure, and confirms it. CI runs it on both platforms for every PR and, on master, on the exact pushed digest before anything is tagged. Verified 2026-11-23: passes on a local build; fails (`SQLITE_CANTOPEN`, "container exited") when `/data` is root-owned.
+
+In a cloud session, `docker build` needs the proxy's CA inside the build (`/root/.ccr/README.md`); build from a scratch copy of the repo that adds it, never by changing the real Dockerfile.
 
 ## Looking at the Running App (screenshots)
 

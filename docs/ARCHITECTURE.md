@@ -2,7 +2,7 @@
 
 ## System Overview
 
-HackerNews aggregator with a single Node.js process and a SQLite database, shipped as a Docker image (see [Release & Runtime Contract](#release--runtime-contract)).
+HackerNews aggregator with a single Node.js process and a SQLite database, shipped as a signed multi-arch Docker image (see [RELEASE.md](RELEASE.md)).
 
 | Component | Runtime | Entry Point | Purpose |
 |-----------|---------|-------------|---------|
@@ -13,43 +13,20 @@ HackerNews aggregator with a single Node.js process and a SQLite database, shipp
 
 ## Release & Runtime Contract
 
-This repo knows nothing about where the app runs. A release is CI pushing an image; whatever runs the image pulls it on its own. No workflow deploys, holds cloud credentials, or reaches a server (guarded by `tests/unit/compose.test.js`).
-
-### Release
-
-Push to `master` triggers: **actionlint → backend tests → frontend tests → image build → push to GHCR**.
+This repo knows nothing about where the app runs. A release is a signed, multi-arch image that CI publishes on every green `master` commit; hosts pull it however they like. Tags, signature verification, provenance and the runtime contract (uid 1000, read-only root, writes only to `/data` and `/tmp`, port 3000, health check, env, admin CLI, backup) are in [RELEASE.md](RELEASE.md).
 
 ```
 ci.yml flow:
-  workflows (actionlint over .github/workflows)
+  workflows (actionlint)
   backend-tests (lint + jest + npm audit --omit=dev)
   frontend-tests (vitest + build + npm audit)
        ↓ all pass
-  image (only on push to master): buildx linux/amd64 → push
-        ghcr.io/tonimelisma/hackernews:<sha> and :latest (public package, GHA layer cache)
+  image ×2 (linux/amd64 on ubuntu-24.04, linux/arm64 on ubuntu-24.04-arm):
+        PR:     build → scripts/image-smoke.sh
+        master: build → push by digest (+ provenance, SBOM) → pull → scripts/image-smoke.sh
+       ↓ both pass (master only)
+  release: index of both digests → tags :<sha> and :latest → cosign sign (keyless) → cosign verify
 ```
-
-`:latest` is the current release and `:<sha>` pins a commit; CI must keep pushing both (tested). Every action is pinned to a full commit SHA (tested).
-
-### Runtime contract
-
-What the image needs and promises, and nothing more:
-
-| | |
-|---|---|
-| **Image** | `ghcr.io/tonimelisma/hackernews:latest` (or `:<sha>`), linux/amd64, ~160 MB |
-| **User** | Runs as `USER node` (uid 1000). Works with all capabilities dropped and `no-new-privileges` |
-| **Writes** | Only `/data` (SQLite DB, WAL files) and `/tmp`. `/data` is owned by `node` in the image, so a fresh volume gets the right owner (a root-owned `/data` crashed the app with `SQLITE_READONLY_DIRECTORY`) |
-| **Port** | `3000` (`PORT`), plain HTTP; TLS and the public hostname are the host's business. The app trusts one proxy hop for client IPs (login rate limit) |
-| **Health** | `GET /api/v1/stories?timespan=Day&limit=1` returns 200. Allow ≥ 10 s timeout: under disk contention a healthy app took > 5 s |
-| **Env** | `SECRET` (required, JWT signing; changing it logs everyone out), `SQLITE_PATH` (e.g. `/data/hackernews.db`), `NODE_ENV=production`; see [Environment Variables](#environment-variables) |
-| **Shutdown** | SIGTERM/SIGINT: stops the worker, closes the server and DB |
-| **Migrations** | Run automatically on startup (`migrations/` ships in the image) |
-| **Admin CLI** | `node scripts/users.js list \| add <user> \| set-password <user> \| revoke-sessions <user>`, run inside the container; passwords are read from a TTY or stdin, never argv. There is no signup or reset flow in the app |
-| **Data** | One SQLite file. A consistent hot copy: `sqlite3 /data/hackernews.db ".backup '<file>'"` inside the container (`sqlite3` is in the image); restore with `.restore` as the `node` user |
-| **Build** | Never on the host: images are built in CI only (an on-box build once saturated a production disk) |
-
-`docker-compose.yml` runs the CI image under exactly this contract for local checks.
 
 ### Local Docker Testing
 
@@ -57,7 +34,8 @@ What the image needs and promises, and nothing more:
 # Build and run locally from source
 SECRET=anysecret docker compose -f docker-compose.dev.yml up --build
 
-# Or run the CI-built image under the runtime contract (uid 1000, no capabilities)
+# Or run the published image under the runtime contract (uid 1000, no capabilities)
+# (scripts/image-smoke.sh <image> checks any image against the contract)
 SECRET=anysecret docker compose up
 
 # Test it
@@ -70,13 +48,15 @@ docker compose -f docker-compose.dev.yml down
 ### Dockerfile Details
 
 Multi-stage build:
-1. **Builder stage** (node:24-alpine + python3/make/g++ for native modules):
+Both stages use `node:24-alpine` pinned by digest (Dependabot proposes updates).
+
+1. **Builder stage** (python3/make/g++ for native modules):
    - `npm pkg delete scripts.prepare` to skip husky in Docker
    - `npm ci --omit=dev` for backend deps
    - `npm ci` for frontend deps
    - Frontend build (`vite build` → `hackernews-frontend/build/`)
    - Creates an empty `/data` (the schema comes from the migrations on first start)
-2. **Runtime stage** (node:24-alpine + wget + sqlite3):
+2. **Runtime stage** (+ wget + sqlite3):
    - Copies `node_modules`, frontend build and the empty `/data`, which belongs to `node` and the image runs as `USER node` (guarded by `tests/unit/dockerfile.test.js`)
    - Copies only the app source files needed at runtime (`bin`, `routes`, `services`, `util`, `migrations`, plus `scripts/users.js` and `scripts/migrate.js` — not all of `scripts/`, which is dev tooling; guarded by `tests/unit/dockerfile.test.js`)
    - Real data lives in a volume mounted over `/data`
@@ -154,6 +134,7 @@ hackernews/
 │   ├── migrate.js                  # CLI: node scripts/migrate.js [up|rollback|status]
 │   ├── users.js                    # CLI: node scripts/users.js [list|add|set-password|revoke-sessions]
 │   ├── cloud-setup.sh              # SessionStart hook: Node 24 + npm ci in Claude Code cloud sessions only
+│   ├── image-smoke.sh              # Check an image against the runtime contract (CI runs it on every build)
 │   ├── preview.sh                  # Run the app on a seeded throwaway DB and screenshot it, then clean up
 │   ├── seed-preview.js             # Seeds preview.sh's throwaway DB (sample stories + test account)
 │   └── screenshot.sh / screenshot.js # Headless-Chrome screenshot over the DevTools protocol
@@ -164,7 +145,8 @@ hackernews/
 ├── docker-compose.yml             # Local only: the CI image under the runtime contract
 ├── docker-compose.dev.yml         # Local dev: builds from source, app on port 3000
 ├── .dockerignore                  # Files excluded from Docker build
-├── .github/workflows/ci.yml      # GitHub Actions CI (actionlint, tests) + image push to GHCR
+├── .github/workflows/ci.yml      # CI: actionlint, tests, multi-arch image build + contract smoke test, signed release to GHCR
+├── .github/dependabot.yml        # Weekly updates for action SHAs and the base-image digest
 ├── .husky/pre-commit              # Pre-commit hook (lint-staged → ESLint)
 ├── eslint.config.js               # ESLint flat config (backend)
 ├── CLAUDE.md                       # Governance document + Definition of Done
@@ -208,7 +190,7 @@ Express serves the Vite build output from `hackernews-frontend/build/` with a tw
 
 Each `/login` response includes `X-Login-Request-Id` for browser-to-server log correlation. Login outcomes are logged as `[login] requestId=… outcome=…` lines, intentionally omitting passwords, tokens, and usernames.
 
-**History (2026-09):** login used to be proxied to `news.ycombinator.com/login`. HN began answering logins from the production datacenter IP with a "Validation required" reCAPTCHA page, which the proxy misread as invalid credentials, so every login failed. Local accounts replaced it; usernames (and therefore every hidden story) carried over unchanged.
+**History (2026-09):** login used to be proxied to `news.ycombinator.com/login`. HN began answering logins from a datacenter IP with a "Validation required" reCAPTCHA page, which the proxy misread as invalid credentials, so every login failed. Local accounts replaced it; usernames (and therefore every hidden story) carried over unchanged.
 
 ## Environment Variables
 

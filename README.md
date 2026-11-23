@@ -2,8 +2,6 @@
 
 A Hacker News aggregator that filters stories by score across time periods (day/week/month/year/all-time). Users log in with local accounts (username + password, managed by the owner) and hide stories. A background worker syncs stories from the HN API every 15 minutes.
 
-Live at: https://hackernews.melisma.net
-
 ## Features
 
 - Top stories filtered by time period (day, week, month, year, all-time)
@@ -20,8 +18,8 @@ Live at: https://hackernews.melisma.net
 - **Frontend:** React 19 (Vite)
 - **Database:** SQLite (better-sqlite3, WAL mode)
 - **Worker:** Integrated setInterval (15-minute cycle)
-- **Release:** CI pushes the image to `ghcr.io/tonimelisma/hackernews:latest` (and `:<sha>`); whatever runs it pulls it. This repo knows nothing about the host. The image runs as uid 1000 and writes only to `/data` and `/tmp` ([runtime contract](docs/ARCHITECTURE.md#runtime-contract))
-- **CI:** GitHub Actions (actionlint, lint, test, build and push the image; no deploy step, no cloud credentials)
+- **Release:** every green `master` commit publishes a signed (cosign keyless), multi-arch (amd64 + arm64) image `ghcr.io/tonimelisma/hackernews:latest` and `:<sha>`, with provenance and an SBOM. Hosts pull it however they like; this repo knows nothing about them. The image runs as uid 1000 on a read-only root and writes only to `/data` and `/tmp` ([releases and runtime contract](docs/RELEASE.md))
+- **CI:** GitHub Actions (actionlint, lint, tests, image build + runtime-contract smoke test on every PR; no deploy step, no deployment credentials)
 
 ## Prerequisites
 
@@ -69,7 +67,8 @@ cd hackernews-frontend && npm run test:coverage
 ## Documentation
 
 - [CLAUDE.md](CLAUDE.md) — Project governance, architecture, gotchas, health, and backlog
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System overview, release and runtime contract, data flow, environment variables
+- [docs/RELEASE.md](docs/RELEASE.md) — Releases (tags, signatures, provenance) and the runtime contract for hosts
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System overview, CI flow, data flow, environment variables
 - [docs/API.md](docs/API.md) — REST API reference
 - [docs/DATABASE.md](docs/DATABASE.md) — SQLite schema, migrations, and query patterns
 - [docs/TESTING.md](docs/TESTING.md) — Test architecture and mocks
