@@ -75,11 +75,11 @@ Multi-stage build:
    - `npm ci --omit=dev` for backend deps
    - `npm ci` for frontend deps
    - Frontend build (`vite build` → `hackernews-frontend/build/`)
-   - Import JSON data into SQLite (`/data/hackernews.db`)
+   - Creates an empty `/data` (the schema comes from the migrations on first start)
 2. **Runtime stage** (node:24-alpine + wget + sqlite3):
-   - Copies `node_modules`, frontend build, baked SQLite DB; `/data` belongs to `node` and the image runs as `USER node` (guarded by `tests/unit/dockerfile.test.js`)
-   - Copies only the app source files needed at runtime (`bin`, `routes`, `services`, `util`, `migrations`, plus `scripts/users.js` and `scripts/migrate.js` — not all of `scripts/`, which would ship local `scripts/data/` exports; guarded by `tests/unit/dockerfile.test.js`)
-   - CI checkouts have no `scripts/data/*.json`, so the baked DB is empty; real data lives in a volume mounted over `/data`
+   - Copies `node_modules`, frontend build and the empty `/data`, which belongs to `node` and the image runs as `USER node` (guarded by `tests/unit/dockerfile.test.js`)
+   - Copies only the app source files needed at runtime (`bin`, `routes`, `services`, `util`, `migrations`, plus `scripts/users.js` and `scripts/migrate.js` — not all of `scripts/`, which is dev tooling; guarded by `tests/unit/dockerfile.test.js`)
+   - Real data lives in a volume mounted over `/data`
 
 ## Process Diagram
 
@@ -151,8 +151,6 @@ hackernews/
 │   └── integration/                # Tests with in-memory SQLite + supertest
 │
 ├── scripts/                        # Utility scripts
-│   ├── data/                       # Exported JSON data (gitignored)
-│   ├── import-json-to-sqlite.js    # Import JSON stories/users/hidden → SQLite
 │   ├── migrate.js                  # CLI: node scripts/migrate.js [up|rollback|status]
 │   ├── users.js                    # CLI: node scripts/users.js [list|add|set-password|revoke-sessions]
 │   ├── cloud-setup.sh              # SessionStart hook: Node 24 + npm ci in Claude Code cloud sessions only

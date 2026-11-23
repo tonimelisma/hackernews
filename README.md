@@ -46,9 +46,6 @@ npm run watch
 
 # Run frontend dev server (in another terminal)
 cd hackernews-frontend && npm start
-
-# Import seed data (optional)
-npm run import
 ```
 
 ## Testing

@@ -20,14 +20,14 @@ describe("Dockerfile", () => {
   });
 
   // Regression guard: scripts/users.js is the only way to create accounts and
-  // set passwords, and it is run inside the container via `docker exec`.
+  // set passwords, and it is run inside the container (runtime contract).
   it("copies the account admin CLI into the runtime image", () => {
     expect(runtimeStage).toMatch(/^COPY\s+[^\n]*scripts\/users\.js/m);
   });
 
-  // scripts/data/ holds local JSON exports (usernames + hidden lists); they are
-  // only for the builder's import step and must not ship in the runtime image.
-  it("does not copy the whole scripts directory (keeps data exports out)", () => {
+  // scripts/ is mostly dev tooling (preview, screenshots, cloud setup); only
+  // the CLIs the runtime contract names belong in the image.
+  it("does not copy the whole scripts directory", () => {
     expect(runtimeStage).not.toMatch(/^COPY\s+scripts\s/m);
   });
 
@@ -37,8 +37,8 @@ describe("Dockerfile", () => {
     }
   });
 
-  // Regression: the server runs the app as uid 1000 (the image's `node` user)
-  // with all capabilities dropped. A fresh volume takes /data's ownership from
+  // Regression: the runtime contract runs the app as uid 1000 (the image's
+  // `node` user) with all capabilities dropped. A fresh volume takes /data's ownership from
   // the image, so a root-owned /data crashed the app at startup with
   // SQLITE_READONLY_DIRECTORY (found 2026-11-21 in a local run as 1000:1000).
   it("gives /data to the node user and runs as node", () => {

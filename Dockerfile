@@ -7,15 +7,16 @@ COPY hackernews-frontend/package.json hackernews-frontend/package-lock.json ./ha
 RUN cd hackernews-frontend && npm ci
 COPY . .
 RUN cd hackernews-frontend && npm run build
-RUN mkdir -p /data && node scripts/import-json-to-sqlite.js /data/hackernews.db
+RUN mkdir -p /data
 
 FROM node:24-alpine
 RUN apk add --no-cache wget sqlite
 WORKDIR /app
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/hackernews-frontend/build ./hackernews-frontend/build
-# The server runs the app as uid 1000 (node) with no capabilities; a fresh
-# volume takes /data's owner from here, so it must belong to node.
+# Runtime contract: the app runs as uid 1000 (node) with no capabilities; a
+# fresh volume takes /data's owner from here, so it must belong to node. The
+# database file and schema are created by the migrations on first start.
 COPY --from=builder --chown=node:node /data /data
 COPY package.json ./
 COPY app.js worker.js ./

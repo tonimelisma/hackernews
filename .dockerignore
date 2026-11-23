@@ -6,7 +6,6 @@ coverage
 *.md
 .env
 *.db
-.cache
 .github
 .husky
 .claude
