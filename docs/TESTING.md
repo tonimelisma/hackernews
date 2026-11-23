@@ -26,16 +26,14 @@ npm test && cd hackernews-frontend && npm test && cd ..
 | `tests/unit/dbLogger.test.js` | Unit | 13 | createDbContext: counters, read/write, L1/MISS cache, per-table breakdown, query inline logging |
 | `tests/unit/migrator.test.js` | Unit | 15 | ensureMigrationsTable, runMigrations (order, skip, auto-create, tables, timestamps), migration 002 ANALYZE/sqlite_stat1 + Day-query plan uses idx_stories_time, migration 003 adds password columns while preserving existing users/hidden and rolls back cleanly, rollback, status |
 | `tests/unit/dockerfile.test.js` | Unit | 5 | Runtime image copies migrations/ (migration system) and scripts/users.js (account admin CLI) but not all of scripts/ (keeps data exports out), plus bin/routes/services/util; `/data` belongs to `node` and the image runs as `USER node` |
-| `tests/unit/compose.test.js` | Unit | 6 | Local compose (mirrors the server's, which lives in the latchkey repo) runs the GHCR image instead of building, as uid 1000 with no capabilities, health-check timeout ≥ 10 s, caps container logs; CI pushes `:sha` and `:latest` and has no SSH deploy job |
+| `tests/unit/compose.test.js` | Unit | 7 | Local compose runs the GHCR image under the runtime contract (no build, uid 1000, no capabilities, health-check timeout ≥ 10 s, capped logs); CI pushes `:sha` and `:latest`; no workflow deploys or reaches a server (no ssh/gcloud/WIF/dispatch); every action pinned to a full SHA |
 | `tests/unit/cloudSetup.test.js` | Unit | 5 | `.claude/settings.json` runs `scripts/cloud-setup.sh` at SessionStart (timeout ≤ 600 s); the script is a silent no-op unless `CLAUDE_CODE_REMOTE=true`; `.node-version` matches CI and the Dockerfile; `seed-preview.js` refuses the real DB and seeds millisecond story times the Day query returns |
 | `tests/unit/auth.test.js` | Unit | 26 | scrypt hash format/default params, verify correct/wrong/tampered/malformed, per-hash salt, username and new-password validation |
-| `tests/unit/ops.test.js` | Unit | 24 | Ops workflow public-log rules: `ops/workflow.js` payload validation (jobs, usernames = app rule, backup names, exact restore confirm, line bounds, usernames only via `repository_dispatch`, errors never echo values), digits-only summary filter, `ops/remote.sh` rejects bad arguments before calling docker, `ops.yml` uses `repository_dispatch` + WIF vars, every action in every workflow pinned to a SHA, payload never in `env:`/`run:`, only the encrypted bundle uploaded, `ops/age-recipient.txt` format |
-| `tests/unit/opsRun.test.js` | Unit | 3 | `ops/run.sh` end to end against stub `gcloud`/`sudo`/`docker` with the real `remote.sh` and a throwaway age key: generated password reaches `users.js` on stdin and appears only in the encrypted bundle, user names stay out of the log, a failing job fails the run. Needs `age` (CI installs it; skipped where missing) |
 | `tests/integration/storyService.test.js` | Integration | 26 | storyService queries, getHidden dedup, upsertHidden never creates users, query caps, hiddenIds mutation guard, INDEXED BY regression |
 | `tests/integration/api.test.js` | Integration | 49 | Full HTTP request/response via supertest: local-password login (success, wrong password, unknown user, no-password user, 400 validation incl. old HN payload, no credential logging, per-IP rate limit), sessions (pre-migration cookie stays valid, cookie upgraded to `tv`, simultaneous sessions, revoke-sessions, deleted user) |
 | `tests/integration/users.test.js` | Integration | 24 | userService, `auth.verifyCredentials`, and the `scripts/users.js` CLI (`list`, `add`, `set-password` keeps sessions + history, `revoke-sessions`, validation and usage errors) via its exported `run()` |
 | `tests/integration/worker.test.js` | Integration | 14 | syncOnce() direct tests, compound staleness queries, batch limits, ANALYZE stats refresh per cycle, utility functions, empty getAllStoryIds |
-| **Total** | | **237** | |
+| **Total** | | **211** | |
 
 ### Frontend (Vitest + React Testing Library)
 
@@ -151,7 +149,7 @@ cd hackernews-frontend && npm run test:coverage
 
 Both generate `text`, `text-summary`, and `lcov` reports. The `coverage/` directories are gitignored.
 
-CI uploads coverage artifacts (14-day retention) via `actions/upload-artifact@v4`.
+CI uploads coverage artifacts (14-day retention) via `actions/upload-artifact` (SHA-pinned).
 
 ## Regression Tests for Fixed Bugs
 
@@ -170,12 +168,11 @@ CI uploads coverage artifacts (14-day retention) via `actions/upload-artifact@v4
 | `migrator.test.js` | "preserves pre-existing users and hidden history" | Migration 003 must not alter existing account rows |
 | `api.test.js` | "returns 401 for an existing user who has no password yet" | Password-less pre-migration rows must not be loggable-into |
 | `dockerfile.test.js` | "copies the account admin CLI into the runtime image" | Admin CLI missing from runtime image (same class of bug as the migrations/ COPY) |
-| `compose.test.js` | "runs the CI-built image from GHCR instead of building" | On-box build saturated the VPS disk and died with its SSH session (2026-09-29) |
-| `compose.test.js` | "builds and pushes the image with :sha and :latest tags" / "has no SSH deploy job" | Server SSH closed to the internet (IAP only, 2026-11-21); the server pulls `:latest` itself |
+| `compose.test.js` | "runs the CI-built image from GHCR instead of building" | On-box build saturated the production disk (2026-09-29) |
+| `compose.test.js` | "builds and pushes the image with :sha and :latest tags" / "never deploys to or reaches into a server" | The repo publishes an image and knows nothing about where it runs (2026-11-23) |
 | `dockerfile.test.js` | "gives /data to the node user and runs as node" | Fresh volume root-owned: app crashed as uid 1000 with `SQLITE_READONLY_DIRECTORY` (2026-11-21) |
 | `compose.test.js` | "gives the health check at least 10 s before timing out" | Healthy app marked unhealthy: 3 × 5 s timeouts under disk contention (2026-09-29) |
 | `compose.test.js` | "caps container log size" | Unbounded json-file container logs (42 MB after four weeks) |
-| `ops.test.js` / `opsRun.test.js` | "never puts request values into env or run text", "users-add: password generated, passed on stdin, and only ever encrypted" | Public repo: ops logs and artifacts are world-readable (2026-11-22 design) |
 | `hackernewsService.test.js` | "skips stories with undefined score in return value" | Worker `updateStories` returning undefined scores for deleted/flagged stories |
 
 ## Looking at the Running App (screenshots)

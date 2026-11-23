@@ -103,7 +103,7 @@ Uses `INSERT OR REPLACE` — naturally idempotent (hiding the same story twice i
 
 Authenticate with a local account. The password is checked against the scrypt hash in `users.password_hash` (`services/auth.js`). Usernames are case-sensitive.
 
-**Rate limited:** 10 requests per 15-minute window per client IP (via `express-rate-limit`; the app trusts one proxy hop, so the IP comes from Caddy's `X-Forwarded-For`).
+**Rate limited:** 10 requests per 15-minute window per client IP (via `express-rate-limit`; the app trusts one proxy hop, so the IP comes from the reverse proxy's `X-Forwarded-For`).
 
 Each `/login` response includes `X-Login-Request-Id`. The server logs `[login] requestId=… outcome=success|invalid-credentials|bad-request|rate-limited` — never usernames or passwords.
 

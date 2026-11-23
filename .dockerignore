@@ -15,4 +15,3 @@ jest.config.js
 eslint.config.js
 docker-compose.yml
 docker-compose.dev.yml
-Caddyfile

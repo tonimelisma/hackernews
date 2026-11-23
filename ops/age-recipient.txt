@@ -1,6 +1,0 @@
-# age public key that .github/workflows/ops.yml encrypts every result to.
-# The matching private key (AGE-SECRET-KEY-1...) is the HN_OPS_AGE_KEY
-# variable of the claude.ai cloud environment; it never enters this repo.
-# Owner setup: generate the pair, set HN_OPS_AGE_KEY, then run
-# `scripts/ops.sh recipient` in a cloud session to write the public key here.
-# Lines starting with # are comments (age -R ignores them).

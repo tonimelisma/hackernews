@@ -1,13 +1,12 @@
-# Local use only: runs the CI-built image the way the server does. The server
-# does not use this file; its compose file is fixed and lives in the latchkey
-# repo (deploy/server/host/hackernews-compose.yml), so a push here can change
-# the app but never the container's limits there. The limits below mirror it,
-# so a local run shows what would break on the server. To build from source
-# instead, use docker-compose.dev.yml.
+# Local use only: runs the CI-built image under the runtime contract this repo
+# promises (docs/ARCHITECTURE.md#runtime-contract): uid 1000, no capabilities,
+# no-new-privileges, writes only to /data and /tmp. If the app breaks here, it
+# breaks wherever the image runs. To build from source instead, use
+# docker-compose.dev.yml.
 services:
   app:
     # IMAGE_TAG picks a commit's image (its SHA); it defaults to :latest,
-    # which is what the server runs.
+    # the current release.
     image: ghcr.io/tonimelisma/hackernews:${IMAGE_TAG:-latest}
     restart: unless-stopped
     user: "1000:1000"
@@ -26,8 +25,8 @@ services:
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/v1/stories?timespan=Day&limit=1"]
       interval: 30s
-      # 15s, not 5s: the query hits SQLite on a pd-standard disk, and under
-      # I/O contention a healthy app exceeded 5s (false "unhealthy").
+      # 15s, not 5s: on a slow disk under I/O contention a healthy app
+      # exceeded 5s (false "unhealthy").
       timeout: 15s
       retries: 3
       start_period: 60s
