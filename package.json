@@ -12,7 +12,6 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "prepare": "husky",
-    "import": "node scripts/import-json-to-sqlite.js",
     "migrate": "node scripts/migrate.js up",
     "migrate:rollback": "node scripts/migrate.js rollback",
     "migrate:status": "node scripts/migrate.js status",
