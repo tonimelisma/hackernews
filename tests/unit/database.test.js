@@ -6,6 +6,7 @@ describe("services/database", () => {
   });
 
   describe("getDb and setDb", () => {
+    // Validates: HN-035
     it("setDb replaces the instance and getDb returns it", () => {
       const { getDb, setDb } = require("../../services/database");
       const memDb = new Database(":memory:");
@@ -16,6 +17,7 @@ describe("services/database", () => {
   });
 
   describe("initSchema", () => {
+    // Validates: HN-035
     it("creates stories, users, hidden, and schema_migrations tables", () => {
       const { setDb, initSchema } = require("../../services/database");
       const memDb = new Database(":memory:");
@@ -33,6 +35,7 @@ describe("services/database", () => {
       memDb.close();
     });
 
+    // Validates: HN-007, HN-035
     it("creates required indexes", () => {
       const { setDb, initSchema } = require("../../services/database");
       const memDb = new Database(":memory:");
@@ -50,6 +53,7 @@ describe("services/database", () => {
       memDb.close();
     });
 
+    // Validates: HN-035
     it("is idempotent (can run twice)", () => {
       const { setDb, initSchema } = require("../../services/database");
       const memDb = new Database(":memory:");

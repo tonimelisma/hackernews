@@ -8,6 +8,7 @@ describe("storyService", () => {
     vi.clearAllMocks();
   });
 
+  // Validates: HN-041
   it("getAll fetches stories with timespan", async () => {
     const mockData = { data: [{ id: 1, title: "Story" }] };
     axios.get.mockResolvedValue(mockData);
@@ -20,6 +21,7 @@ describe("storyService", () => {
     expect(result).toEqual(mockData);
   });
 
+  // Validates: HN-040
   it("getAll fetches without timespan when not provided", async () => {
     const mockData = { data: [] };
     axios.get.mockResolvedValue(mockData);
@@ -32,6 +34,7 @@ describe("storyService", () => {
     );
   });
 
+  // Validates: HN-043
   it("addHidden posts hidden story ID", async () => {
     axios.post.mockResolvedValue({ data: { hidden: 123 } });
 

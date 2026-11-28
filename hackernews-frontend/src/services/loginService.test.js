@@ -8,6 +8,7 @@ describe("loginService", () => {
     vi.clearAllMocks();
   });
 
+  // Validates: HN-044
   it("login posts credentials and returns data", async () => {
     const mockResponse = { data: { username: "user" } };
     axios.post.mockResolvedValue(mockResponse);
@@ -24,6 +25,7 @@ describe("loginService", () => {
     expect(result).toEqual({ username: "user" });
   });
 
+  // Validates: HN-044
   it("login propagates errors", async () => {
     axios.post.mockRejectedValue(new Error("Network error"));
 
@@ -32,6 +34,7 @@ describe("loginService", () => {
     ).rejects.toThrow("Network error");
   });
 
+  // Validates: HN-021
   it("logout posts and returns data", async () => {
     axios.post.mockResolvedValue({ data: { success: true } });
 
@@ -41,6 +44,7 @@ describe("loginService", () => {
     expect(result).toEqual({ success: true });
   });
 
+  // Validates: HN-040
   it("getMe fetches current user", async () => {
     axios.get.mockResolvedValue({ data: { username: "testuser" } });
 

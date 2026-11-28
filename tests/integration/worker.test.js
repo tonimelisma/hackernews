@@ -34,6 +34,7 @@ const seedStory = (overrides = {}) => {
 
 describe("worker logic (simulated)", () => {
   describe("stale story detection", () => {
+    // Validates: HN-031
     it("finds monthly stories stale for 48h (compound inequality query)", async () => {
       const now = Date.now();
       seedStory({
@@ -69,6 +70,7 @@ describe("worker logic (simulated)", () => {
   });
 
   describe("latest story lookup", () => {
+    // Validates: HN-030
     it("finds the story with highest ID", async () => {
       seedStory({ id: 100, score: 50 });
       seedStory({ id: 500, score: 200 });
@@ -80,6 +82,7 @@ describe("worker logic (simulated)", () => {
       expect(row.id).toBe(500);
     });
 
+    // Validates: HN-030
     it("returns undefined when no stories exist", async () => {
       const { getDb } = require("../../services/database");
       const row = getDb().prepare("SELECT id FROM stories ORDER BY id DESC LIMIT 1").get();
@@ -99,6 +102,7 @@ describe("syncOnce()", () => {
     Remote.updateStories.mockResolvedValue([]);
   });
 
+  // Validates: HN-030
   it("adds missing stories from getAllStoryIds", async () => {
     Remote.getAllStoryIds.mockResolvedValue([300, 200, 100]);
     Remote.checkStoryExists.mockResolvedValue([300, 200, 100]);
@@ -108,6 +112,7 @@ describe("syncOnce()", () => {
     expect(Remote.addStories).toHaveBeenCalledWith([300, 200, 100], expect.any(Object));
   });
 
+  // Validates: HN-030
   it("adds only missing stories when some exist locally", async () => {
     seedStory({ id: 100, score: 50 });
 
@@ -119,6 +124,7 @@ describe("syncOnce()", () => {
     expect(Remote.addStories).toHaveBeenCalledWith([300, 200], expect.any(Object));
   });
 
+  // Validates: HN-030
   it("skips addStories when no missing stories", async () => {
     seedStory({ id: 500, score: 200 });
 
@@ -130,6 +136,7 @@ describe("syncOnce()", () => {
     expect(Remote.addStories).not.toHaveBeenCalled();
   });
 
+  // Validates: HN-031
   it("updates stale stories", async () => {
     const now = Date.now();
     seedStory({
@@ -147,6 +154,7 @@ describe("syncOnce()", () => {
     expect(Remote.updateStories).toHaveBeenCalledWith([100], expect.any(Object));
   });
 
+  // Validates: HN-031
   it("does not update recently updated stories", async () => {
     seedStory({
       id: 100,
@@ -163,6 +171,7 @@ describe("syncOnce()", () => {
     expect(Remote.updateStories).not.toHaveBeenCalled();
   });
 
+  // Validates: HN-031
   it("limits trending batch to WORKER_BATCH_LIMIT", async () => {
     const now = Date.now();
     for (let i = 1; i <= WORKER_BATCH_LIMIT + 50; i++) {
@@ -188,6 +197,7 @@ describe("syncOnce()", () => {
     expect(hasMaxBatch).toBe(true);
   });
 
+  // Validates: HN-030, HN-033
   it("handles getAllStoryIds returning empty array", async () => {
     Remote.getAllStoryIds.mockResolvedValue([]);
 
@@ -200,6 +210,7 @@ describe("syncOnce()", () => {
   // Regression: the worker must refresh query-planner statistics each cycle so
   // sqlite_stat1 stays accurate as the table grows and the "Day" query keeps
   // using idx_stories_time instead of a full idx_stories_score scan.
+  // Validates: HN-032
   it("refreshes query-planner statistics (ANALYZE) at the end of a cycle", async () => {
     for (let i = 1; i <= 50; i++) seedStory({ id: i, score: i, time: Date.now() });
     const { getDb } = require("../../services/database");
@@ -222,6 +233,7 @@ describe("syncOnce()", () => {
 });
 
 describe("utility functions", () => {
+  // Validates: HN-038
   it("formatBytes formats correctly", () => {
     expect(formatBytes(0)).toBe("0 Bytes");
     expect(formatBytes(1024)).toBe("1 KB");
@@ -229,6 +241,7 @@ describe("utility functions", () => {
     expect(formatBytes(1536)).toBe("1.5 KB");
   });
 
+  // Validates: HN-030
   it("sleep resolves after delay", async () => {
     jest.useFakeTimers();
     const promise = sleep(1000);
@@ -237,6 +250,7 @@ describe("utility functions", () => {
     jest.useRealTimers();
   });
 
+  // Validates: HN-031
   it("exports WORKER_BATCH_LIMIT", () => {
     expect(WORKER_BATCH_LIMIT).toBe(500);
   });

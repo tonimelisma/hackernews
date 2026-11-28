@@ -1,5 +1,5 @@
 #!/bin/bash
-# Check a built image against the runtime contract (docs/RELEASE.md), the way
+# Check a built image against the runtime contract (docs/release.md), the way
 # a host would run it: uid 1000, all capabilities dropped, no-new-privileges,
 # read-only root filesystem with only /data (a fresh volume) and /tmp
 # writable. CI runs this on every image before it is published.
@@ -7,6 +7,7 @@
 #   scripts/image-smoke.sh <image>
 #
 # Removes its container and volume on exit, even on failure, and confirms it.
+# Validates: HN-063, HN-065
 set -euo pipefail
 
 IMAGE=${1:?usage: scripts/image-smoke.sh <image>}

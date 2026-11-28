@@ -36,6 +36,7 @@ beforeEach(() => {
 });
 
 describe("App", () => {
+  // Validates: HN-040
   it("waits for login state before fetching stories", async () => {
     loginService.getMe.mockReturnValue(new Promise(() => {}));
 
@@ -45,6 +46,7 @@ describe("App", () => {
     expect(storyService.getAll).not.toHaveBeenCalled();
   });
 
+  // Validates: HN-040
   it("renders navbar with title", async () => {
     render(<App />);
     expect(screen.getByText("Top Hacker News Stories")).toBeInTheDocument();
@@ -53,6 +55,7 @@ describe("App", () => {
     });
   });
 
+  // Validates: HN-040
   it("shows loading spinner while fetching", async () => {
     // Never resolve the promise to keep loading state
     storyService.getAll.mockReturnValue(new Promise(() => {}));
@@ -63,6 +66,7 @@ describe("App", () => {
     expect(screen.getAllByRole("status").length).toBeGreaterThan(0);
   });
 
+  // Validates: HN-040
   it("renders stories after fetch completes", async () => {
     storyService.getAll.mockResolvedValue({
       data: [
@@ -85,6 +89,7 @@ describe("App", () => {
     });
   });
 
+  // Validates: HN-040
   it("fetches stories with Day timespan by default", async () => {
     render(<App />);
 
@@ -93,6 +98,7 @@ describe("App", () => {
     });
   });
 
+  // Validates: HN-041
   it("changes timespan when button is clicked", async () => {
     render(<App />);
 
@@ -109,6 +115,7 @@ describe("App", () => {
     });
   });
 
+  // Validates: HN-040
   it("checks login state via getMe on mount", async () => {
     loginService.getMe.mockResolvedValue({ username: "saveduser" });
 
@@ -119,6 +126,7 @@ describe("App", () => {
     });
   });
 
+  // Validates: HN-042
   it("shows error alert when story fetch fails", async () => {
     storyService.getAll.mockRejectedValue(new Error("network error"));
 
@@ -129,6 +137,7 @@ describe("App", () => {
     });
   });
 
+  // Validates: HN-042
   it("clears error when timespan changes", async () => {
     storyService.getAll.mockRejectedValueOnce(new Error("network error"));
 
@@ -148,6 +157,7 @@ describe("App", () => {
     });
   });
 
+  // Validates: HN-041
   it("highlights active timespan button with btn-primary", async () => {
     render(<App />);
 
@@ -175,6 +185,7 @@ describe("App", () => {
     expect(updatedWeekButtons.some((btn) => btn.classList.contains("btn-primary"))).toBe(true);
   });
 
+  // Validates: HN-043
   it("reverts stories when addHidden API call fails", async () => {
     loginService.getMe.mockResolvedValue({ username: "testuser" });
     storyService.addHidden.mockRejectedValue(new Error("server error"));
@@ -214,6 +225,7 @@ describe("App", () => {
     });
   });
 
+  // Validates: HN-043
   it("does not show hide button when logged out", async () => {
     storyService.getAll.mockResolvedValue({
       data: [
@@ -238,6 +250,7 @@ describe("App", () => {
     expect(screen.queryByLabelText("Hide story")).not.toBeInTheDocument();
   });
 
+  // Validates: HN-044
   it("re-fetches stories after login", async () => {
     loginService.getMe.mockRejectedValue(new Error("not logged in"));
     loginService.login.mockResolvedValue({ username: "testuser" });
@@ -286,6 +299,7 @@ describe("App", () => {
     });
   };
 
+  // Validates: HN-044
   it("sends username and password to the login API", async () => {
     loginService.login.mockResolvedValue({ username: "testuser" });
 
@@ -303,6 +317,7 @@ describe("App", () => {
     await settle(storyService.getAll);
   });
 
+  // Validates: HN-044
   it.each([
     [401, /wrong username or password/i],
     [429, /too many login attempts/i],
@@ -315,6 +330,7 @@ describe("App", () => {
     expect(await screen.findByText(message)).toBeInTheDocument();
   });
 
+  // Validates: HN-044
   it("shows a generic message when login fails without a response", async () => {
     loginService.login.mockRejectedValue(new Error("Network error"));
 
@@ -323,6 +339,7 @@ describe("App", () => {
     expect(await screen.findByText(/login failed/i)).toBeInTheDocument();
   });
 
+  // Validates: HN-044
   it("describes invite-only accounts instead of Hacker News login", async () => {
     render(<App />);
     await waitFor(() => {
@@ -333,6 +350,7 @@ describe("App", () => {
     expect(screen.queryByText(/register there/i)).not.toBeInTheDocument();
   });
 
+  // Validates: HN-044
   it("disables login button while login is in flight", async () => {
     let resolveLogin;
     loginService.login.mockReturnValue(new Promise((resolve) => { resolveLogin = resolve; }));
@@ -368,6 +386,7 @@ describe("App", () => {
     });
   });
 
+  // Validates: HN-041
   it("renders timespan buttons", async () => {
     render(<App />);
 
@@ -381,6 +400,7 @@ describe("App", () => {
     });
   });
 
+  // Validates: HN-041
   it("restores saved timespan from localStorage on load", async () => {
     localStorage.setItem("timespan", JSON.stringify({ value: "Week", timestamp: Date.now() }));
 
@@ -394,6 +414,7 @@ describe("App", () => {
     expect(weekButtons.some((btn) => btn.classList.contains("btn-primary"))).toBe(true);
   });
 
+  // Validates: HN-041
   it("defaults to Day when localStorage timespan is empty", async () => {
     render(<App />);
 
@@ -402,6 +423,7 @@ describe("App", () => {
     });
   });
 
+  // Validates: HN-041
   it("defaults to Day when saved timespan is older than 3 hours", async () => {
     const fourHoursAgo = Date.now() - 4 * 60 * 60 * 1000;
     localStorage.setItem("timespan", JSON.stringify({ value: "Year", timestamp: fourHoursAgo }));
@@ -413,6 +435,7 @@ describe("App", () => {
     });
   });
 
+  // Validates: HN-041
   it("saves timespan to localStorage when changed", async () => {
     render(<App />);
 

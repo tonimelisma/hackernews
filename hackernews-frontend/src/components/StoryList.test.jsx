@@ -24,6 +24,7 @@ const mockStories = [
 ];
 
 describe("StoryList", () => {
+  // Validates: HN-046
   it("renders all stories", () => {
     render(<StoryList stories={mockStories} addHidden={() => {}} />);
 
@@ -32,6 +33,7 @@ describe("StoryList", () => {
     expect(screen.getByTestId("story-3")).toBeInTheDocument();
   });
 
+  // Validates: HN-046
   it("renders empty for empty stories array", () => {
     const { container } = render(
       <StoryList stories={[]} addHidden={() => {}} />

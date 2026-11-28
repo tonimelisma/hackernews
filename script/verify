@@ -1,0 +1,22 @@
+#!/bin/sh
+# Everything CI checks except the image build, in one command; run it before every push. Needs
+# Node 24 (.node-version) and both packages installed (npm ci, here and in hackernews-frontend/).
+# The image jobs need Docker: `scripts/image-smoke.sh <image>` checks a local build the same way.
+set -eu
+cd "$(dirname "$0")/.."
+if command -v actionlint >/dev/null 2>&1; then
+  actionlint
+else
+  echo "verify: actionlint not installed; CI's workflows job runs it"
+fi
+npm run lint
+npm test
+npm audit --audit-level=moderate --omit=dev
+(
+  cd hackernews-frontend
+  npm run lint
+  npm test
+  npm run build
+  npm audit --audit-level=moderate
+)
+script/process-check

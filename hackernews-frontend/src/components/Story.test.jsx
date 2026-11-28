@@ -26,6 +26,7 @@ describe("Story", () => {
     mockAddHidden.mockClear();
   });
 
+  // Validates: HN-045
   it("renders title as a link", () => {
     render(<Story story={mockStory} addHidden={mockAddHidden} />);
 
@@ -37,27 +38,32 @@ describe("Story", () => {
     );
   });
 
+  // Validates: HN-045
   it("renders author name", () => {
     render(<Story story={mockStory} addHidden={mockAddHidden} />);
     // Author text is inside a <small> element mixed with other content
     expect(screen.getByText(/testauthor/)).toBeInTheDocument();
   });
 
+  // Validates: HN-045
   it("renders score", () => {
     render(<Story story={mockStory} addHidden={mockAddHidden} />);
     expect(screen.getByText(/150/)).toBeInTheDocument();
   });
 
+  // Validates: HN-045
   it("renders comment count", () => {
     render(<Story story={mockStory} addHidden={mockAddHidden} />);
     expect(screen.getByText(/42/)).toBeInTheDocument();
   });
 
+  // Validates: HN-045
   it("renders relative time", () => {
     render(<Story story={mockStory} addHidden={mockAddHidden} />);
     expect(screen.getByText(/2 hours ago/)).toBeInTheDocument();
   });
 
+  // Validates: HN-045
   it("renders HN discussion link", () => {
     render(<Story story={mockStory} addHidden={mockAddHidden} />);
 
@@ -69,6 +75,7 @@ describe("Story", () => {
     expect(hnLink.href).toBe("https://news.ycombinator.com/item?id=12345");
   });
 
+  // Validates: HN-043
   it("calls addHidden when hide button is clicked", () => {
     render(<Story story={mockStory} addHidden={mockAddHidden} />);
 
@@ -78,6 +85,7 @@ describe("Story", () => {
     expect(mockAddHidden).toHaveBeenCalledWith(12345);
   });
 
+  // Validates: HN-045
   it("renders favicon from story URL domain", () => {
     render(<Story story={mockStory} addHidden={mockAddHidden} />);
 
@@ -87,6 +95,7 @@ describe("Story", () => {
     expect(favicon.src).toContain("example.com");
   });
 
+  // Validates: HN-045
   it("does not render javascript: URL as clickable link", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const xssStory = { ...mockStory, url: "javascript:alert(1)" };
@@ -98,6 +107,7 @@ describe("Story", () => {
     console.log.mockRestore();
   });
 
+  // Validates: HN-045
   it("renders valid https URL as clickable link", () => {
     render(<Story story={mockStory} addHidden={mockAddHidden} />);
 
@@ -105,6 +115,7 @@ describe("Story", () => {
     expect(title.closest("a")).toHaveAttribute("href", "https://example.com/article");
   });
 
+  // Validates: HN-045
   it("renders HN favicon when story has no URL", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const storyNoUrl = { ...mockStory, url: undefined };
@@ -115,6 +126,7 @@ describe("Story", () => {
     console.log.mockRestore();
   });
 
+  // Validates: HN-043
   it("does not render hide button when addHidden is null", () => {
     render(<Story story={mockStory} addHidden={null} />);
 

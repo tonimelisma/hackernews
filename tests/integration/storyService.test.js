@@ -40,27 +40,32 @@ describe("services/storyService", () => {
       seedStory({ id: 5, score: 50, time: now - 1000 * 60 * 60 * 24 * 400 }); // 400d ago
     });
 
+    // Validates: HN-001
     it("returns stories for Day timespan (last 24h)", async () => {
       const result = await storyService.getStories("Day", 500);
       expect(result).toHaveLength(1);
       expect(result[0].id).toBe(1);
     });
 
+    // Validates: HN-001
     it("returns stories for Week timespan (last 7d)", async () => {
       const result = await storyService.getStories("Week", 500);
       expect(result).toHaveLength(2);
     });
 
+    // Validates: HN-001
     it("returns stories for Month timespan (last 28d)", async () => {
       const result = await storyService.getStories("Month", 500);
       expect(result).toHaveLength(3);
     });
 
+    // Validates: HN-001
     it("returns stories for Year timespan (last 365d)", async () => {
       const result = await storyService.getStories("Year", 500);
       expect(result).toHaveLength(4);
     });
 
+    // Validates: HN-002
     it("returns all stories for All timespan", async () => {
       const result = await storyService.getStories("All", 500);
       expect(result).toHaveLength(5);
@@ -68,6 +73,7 @@ describe("services/storyService", () => {
 
     // Regression: Month used idx_stories_score on prod (16s worst case) when top
     // scores fell outside the window. Year must use score index (~136k rows match).
+    // Validates: HN-007
     it("uses correct INDEXED BY hint per timespan", async () => {
       await db.clearDatabase();
       const { getDb } = require("../../services/database");
@@ -111,23 +117,27 @@ describe("services/storyService", () => {
       expect(allPlan).toMatch(/idx_stories_score/);
     });
 
+    // Validates: HN-003
     it("sorts by score descending", async () => {
       const result = await storyService.getStories("All", 500);
       expect(result[0].score).toBe(500);
       expect(result[4].score).toBe(50);
     });
 
+    // Validates: HN-003
     it("respects limit parameter", async () => {
       const result = await storyService.getStories("All", 2);
       expect(result).toHaveLength(2);
     });
 
+    // Validates: HN-003
     it("respects skip parameter", async () => {
       const result = await storyService.getStories("All", 2, 2);
       expect(result).toHaveLength(2);
       expect(result[0].score).toBe(200);
     });
 
+    // Validates: HN-008
     it("returns correct field projection (no _id)", async () => {
       const result = await storyService.getStories("All", 1);
       const story = result[0];
@@ -138,11 +148,13 @@ describe("services/storyService", () => {
       expect(story.title).toBeDefined();
     });
 
+    // Validates: HN-008
     it("converts time to Date objects", async () => {
       const result = await storyService.getStories("All", 1);
       expect(result[0].time).toBeInstanceOf(Date);
     });
 
+    // Validates: HN-003
     it("returns fresh data on second call", async () => {
       const first = await storyService.getStories("All", 500);
       seedStory({ id: 99, score: 999, time: Date.now() - 48 * 60 * 60 * 1000 });
@@ -150,6 +162,7 @@ describe("services/storyService", () => {
       expect(second).toHaveLength(first.length + 1);
     });
 
+    // Validates: HN-006
     it("Year returns high-scoring old stories even with >500 stories in range", async () => {
       await db.clearDatabase();
 
@@ -181,6 +194,7 @@ describe("services/storyService", () => {
       }
     });
 
+    // Validates: HN-005
     it("filters out hidden stories when hiddenIds provided", async () => {
       const result = await storyService.getStories("All", 500, undefined, undefined, [1, 3]);
       expect(result).toHaveLength(3);
@@ -188,6 +202,7 @@ describe("services/storyService", () => {
       expect(result.map(s => s.id)).not.toContain(3);
     });
 
+    // Validates: HN-005
     it("returns correct count after filtering hidden stories", async () => {
       const result = await storyService.getStories("All", 2, undefined, undefined, [1]);
       expect(result).toHaveLength(2);
@@ -196,17 +211,20 @@ describe("services/storyService", () => {
       expect(result[1].score).toBe(200);
     });
 
+    // Validates: HN-005
     it("returns all stories when hiddenIds is empty", async () => {
       const result = await storyService.getStories("All", 500, undefined, undefined, []);
       expect(result).toHaveLength(5);
     });
 
+    // Validates: HN-005
     it("does not mutate hiddenIds array", async () => {
       const hiddenIds = [2, 1];
       await storyService.getStories("All", 10, 0, null, hiddenIds);
       expect(hiddenIds).toEqual([2, 1]);
     });
 
+    // Validates: HN-008
     it("handles self-post stories with no url field", async () => {
       await db.clearDatabase();
 
@@ -221,6 +239,7 @@ describe("services/storyService", () => {
   });
 
   describe("getHidden", () => {
+    // Validates: HN-013
     it("returns hidden array for existing user", async () => {
       const { getDb } = require("../../services/database");
       const d = getDb();
@@ -232,11 +251,13 @@ describe("services/storyService", () => {
       expect(result.sort()).toEqual([123, 456]);
     });
 
+    // Validates: HN-013
     it("returns empty array when user does not exist", async () => {
       const result = await storyService.getHidden("nonexistent");
       expect(result).toEqual([]);
     });
 
+    // Validates: HN-013
     it("returns hidden IDs without user existing in users table", async () => {
       const { getDb } = require("../../services/database");
       const d = getDb();
@@ -248,6 +269,7 @@ describe("services/storyService", () => {
       expect(result).toEqual([789]);
     });
 
+    // Validates: HN-013
     it("deduplicates concurrent getHidden calls for same user", async () => {
       const { getDb } = require("../../services/database");
       const d = getDb();
@@ -268,6 +290,7 @@ describe("services/storyService", () => {
   describe("upsertHidden", () => {
     // Accounts are created only by scripts/users.js; hiding a story must not
     // silently create a password-less user row.
+    // Validates: HN-011, HN-017
     it("does not create a user row", async () => {
       await storyService.upsertHidden("newuser", 789);
 
@@ -279,6 +302,7 @@ describe("services/storyService", () => {
       expect(hidden.map(r => r.story_id)).toContain(789);
     });
 
+    // Validates: HN-011
     it("adds hidden ID to existing user", async () => {
       const { getDb } = require("../../services/database");
       const d = getDb();
@@ -293,6 +317,7 @@ describe("services/storyService", () => {
       expect(ids).toContain(200);
     });
 
+    // Validates: HN-011
     it("getHidden reflects upsert immediately", async () => {
       const { getDb } = require("../../services/database");
       const d = getDb();
@@ -308,6 +333,7 @@ describe("services/storyService", () => {
       expect(second.sort()).toEqual([100, 200]);
     });
 
+    // Validates: HN-011
     it("is idempotent (no duplicates)", async () => {
       const { getDb } = require("../../services/database");
       const d = getDb();

@@ -12,11 +12,13 @@ describe("docker-compose.yml (local, runtime contract)", () => {
   );
 
   // Images are built in CI only; a host just pulls them.
+  // Validates: HN-064
   it("runs the CI-built image from GHCR instead of building", () => {
     expect(compose).not.toMatch(/^\s*build:/m);
     expect(compose).toMatch(/image:\s*ghcr\.io\/tonimelisma\/hackernews:\$\{IMAGE_TAG:-latest\}/);
   });
 
+  // Validates: HN-064
   it("runs as the non-root node user with no capabilities", () => {
     expect(compose).toMatch(/user:\s*"1000:1000"/);
     expect(compose).toMatch(/cap_drop:\s*\[ALL\]/);
@@ -25,12 +27,14 @@ describe("docker-compose.yml (local, runtime contract)", () => {
 
   // The check queries SQLite; on a slow disk under I/O contention a healthy
   // app took >5 s and was marked unhealthy (2026-09-29).
+  // Validates: HN-064
   it("gives the health check at least 10 s before timing out", () => {
     const match = compose.match(/healthcheck:[\s\S]*?timeout:\s*(\d+)s/);
     expect(match).not.toBeNull();
     expect(Number(match[1])).toBeGreaterThanOrEqual(10);
   });
 
+  // Validates: HN-064
   it("caps container log size", () => {
     expect(compose).toMatch(/max-size:\s*"?\d+m"?/);
     expect(compose).toMatch(/max-file:\s*"?\d+"?/);
@@ -52,17 +56,20 @@ describe("CI workflows (release at arm's length)", () => {
     return next === -1 ? ci.slice(start) : ci.slice(start, start + 1 + next);
   };
 
+  // Validates: HN-060
   it("builds natively for linux/amd64 and linux/arm64", () => {
     expect(job("image")).toMatch(/platform: linux\/amd64\s+runner: ubuntu-24\.04\b/);
     expect(job("image")).toMatch(/platform: linux\/arm64\s+runner: ubuntu-24\.04-arm\b/);
   });
 
+  // Validates: HN-060
   it("checks every image against the runtime contract before it can be released", () => {
     expect(job("image")).toMatch(/run: scripts\/image-smoke\.sh hackernews:candidate/);
     expect(job("release")).toMatch(/needs: \[image\]/);
   });
 
   // Hosts that track releases pull :latest; hosts that pin use :<sha>.
+  // Validates: HN-061
   it("tags each release :<sha> and :latest, with provenance and an SBOM", () => {
     expect(ci).toMatch(/IMAGE: ghcr\.io\/tonimelisma\/hackernews/);
     expect(job("release")).toMatch(/-t "\$IMAGE:\$GITHUB_SHA" -t "\$IMAGE:latest"/);
@@ -70,16 +77,19 @@ describe("CI workflows (release at arm's length)", () => {
     expect(job("image")).toMatch(/sbom: true/);
   });
 
+  // Validates: HN-061
   it("signs every release keylessly and verifies it", () => {
     expect(job("release")).toMatch(/cosign sign --yes "\$IMAGE@\$DIGEST"/);
     expect(job("release")).toMatch(/cosign verify/);
   });
 
+  // Validates: HN-061
   it("publishes only from master pushes", () => {
     expect(job("release")).toMatch(/if: github\.ref == 'refs\/heads\/master' && github\.event_name == 'push'/);
     expect(job("image")).toMatch(/PUBLISH: \$\{\{ github\.ref == 'refs\/heads\/master' && github\.event_name == 'push' \}\}/);
   });
 
+  // Validates: HN-062
   it("never deploys to or reaches into anything but the registry", () => {
     for (const file of files) {
       const wf = read(file);
@@ -93,6 +103,7 @@ describe("CI workflows (release at arm's length)", () => {
     expect(job("release")).toMatch(/id-token: write/);
   });
 
+  // Validates: HN-062
   it("pins every action to a full commit SHA", () => {
     for (const file of files) {
       const uses = [...read(file).matchAll(/uses:\s*(\S+)/g)].map((m) => m[1]);

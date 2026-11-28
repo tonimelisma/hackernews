@@ -1,8 +1,11 @@
 # Architecture
 
+How the code is built and why. Decisions behind the structure are in [adr/](adr/); the API, schema
+and test setup are detailed in [design/](design/).
+
 ## System Overview
 
-HackerNews aggregator with a single Node.js process and a SQLite database, shipped as a signed multi-arch Docker image (see [RELEASE.md](RELEASE.md)).
+HackerNews aggregator with a single Node.js process and a SQLite database, shipped as a signed multi-arch Docker image (see [release.md](release.md)).
 
 | Component | Runtime | Entry Point | Purpose |
 |-----------|---------|-------------|---------|
@@ -13,7 +16,7 @@ HackerNews aggregator with a single Node.js process and a SQLite database, shipp
 
 ## Release & Runtime Contract
 
-This repo knows nothing about where the app runs. A release is a signed, multi-arch image that CI publishes on every green `master` commit; hosts pull it however they like. Tags, signature verification, provenance and the runtime contract (uid 1000, read-only root, writes only to `/data` and `/tmp`, port 3000, health check, env, admin CLI, backup) are in [RELEASE.md](RELEASE.md).
+This repo knows nothing about where the app runs. A release is a signed, multi-arch image that CI publishes on every green `master` commit; hosts pull it however they like. Tags, signature verification, provenance and the runtime contract (uid 1000, read-only root, writes only to `/data` and `/tmp`, port 3000, health check, env, admin CLI, backup) are in [release.md](release.md).
 
 ```
 ci.yml flow:
@@ -139,9 +142,9 @@ hackernews/
 │   ├── seed-preview.js             # Seeds preview.sh's throwaway DB (sample stories + test account)
 │   └── screenshot.sh / screenshot.js # Headless-Chrome screenshot over the DevTools protocol
 │
-├── docs/                           # LLM-geared documentation
+├── docs/                           # Requirements, architecture, ADRs, design notes, lessons (docs/index.md)
 │
-├── Dockerfile                     # Multi-stage Docker build (node:24-alpine, bakes data into image)
+├── Dockerfile                     # Multi-stage Docker build (node:24-alpine)
 ├── docker-compose.yml             # Local only: the CI image under the runtime contract
 ├── docker-compose.dev.yml         # Local dev: builds from source, app on port 3000
 ├── .dockerignore                  # Files excluded from Docker build
@@ -149,7 +152,7 @@ hackernews/
 ├── .github/dependabot.yml        # Weekly updates for action SHAs and the base-image digest
 ├── .husky/pre-commit              # Pre-commit hook (lint-staged → ESLint)
 ├── eslint.config.js               # ESLint flat config (backend)
-├── CLAUDE.md                       # Governance document + Definition of Done
+├── CLAUDE.md                       # Process, invariants and Definition of Done (AGENTS.md links to it)
 └── jest.config.js                  # Backend Jest configuration
 ```
 
@@ -158,7 +161,7 @@ hackernews/
 ### Story Fetch (Frontend → Backend → SQLite)
 1. Frontend waits for `GET /api/v1/me` to settle, then calls `GET /api/v1/stories?timespan=Day`
 2. `routes/api.js` parses timespan, limit, skip
-3. `storyService.getStories()` runs SQL against SQLite with forced `INDEXED BY` hints (see DATABASE.md)
+3. `storyService.getStories()` runs SQL against SQLite with forced `INDEXED BY` hints (see [design/database.md](design/database.md))
 4. SQL query handles everything in one step: time filter + hidden exclusion + score sort + pagination
 5. If authenticated, hidden story IDs are excluded via `WHERE id NOT IN (...)` in the SQL query
 6. Response: JSON array of stories
@@ -170,7 +173,7 @@ hackernews/
    - Check which IDs are missing from SQLite via `checkStoryExists()`
    - Add missing stories via `INSERT OR REPLACE`
    - Update scores for stale stories, tiered by age: 1h/6h/48h, batch limit 500
-   - Run `ANALYZE` to refresh query-planner statistics (keeps per-timespan index choice correct as the table grows; see DATABASE.md)
+   - Run `ANALYZE` to refresh query-planner statistics (keeps per-timespan index choice correct as the table grows; see [design/database.md](design/database.md))
 3. All writes happen in SQLite transactions for performance
 4. Graceful shutdown: SIGTERM/SIGINT clear worker interval, close server and DB
 
@@ -190,7 +193,7 @@ Express serves the Vite build output from `hackernews-frontend/build/` with a tw
 
 Each `/login` response includes `X-Login-Request-Id` for browser-to-server log correlation. Login outcomes are logged as `[login] requestId=… outcome=…` lines, intentionally omitting passwords, tokens, and usernames.
 
-**History (2026-09):** login used to be proxied to `news.ycombinator.com/login`. HN began answering logins from a datacenter IP with a "Validation required" reCAPTCHA page, which the proxy misread as invalid credentials, so every login failed. Local accounts replaced it; usernames (and therefore every hidden story) carried over unchanged.
+Why accounts are local rather than Hacker News logins: [ADR 0003](adr/0003-local-password-accounts.md).
 
 ## Environment Variables
 
@@ -213,3 +216,43 @@ Each `/login` response includes `X-Login-Request-Id` for browser-to-server log c
 ### Frontend (`hackernews-frontend/src/services/`)
 
 The frontend uses relative URLs (`/api/v1/`) for all API calls. In development, Vite's proxy (`vite.config.js`) forwards `/api` requests to the backend on port 3001.
+
+## Constraints the code relies on
+
+- **Database access** ([ADR 0001](adr/0001-sqlite-single-file-database.md)): `getDb()` opens
+  SQLite lazily with WAL and foreign keys and runs pending migrations
+  ([ADR 0006](adr/0006-versioned-migrations-on-startup.md)); `setDb()` injects `:memory:`
+  databases for tests, and `clearDatabase()` in `tests/setup.js` empties every table between
+  tests. `initSchema()` is `runMigrations()`.
+- **One query per story page**: `getStories()` filters by time, excludes hidden IDs, sorts by score
+  and paginates in one statement, with a forced index per timespan
+  ([ADR 0005](adr/0005-query-planner-statistics-and-index-hints.md)). There is no client-side
+  sorting or cache.
+- **Worker**: `worker.js` exports `syncOnce()` (one cycle) and runs `main()` only as a script;
+  `bin/www` runs it at start and every 15 minutes. A cycle fetches about 1200 unique IDs, updates
+  at most 500 stale stories per tier, and ends with `ANALYZE`.
+- **Input validation**: `/stories` maps unknown timespans to All; `/login` accepts only
+  `{ username, password }` passing `auth.isValidUsername()` and a 1–1024 character password;
+  `/hidden` takes a non-negative integer.
+- **Sessions** ([ADR 0003](adr/0003-local-password-accounts.md),
+  [ADR 0004](adr/0004-jose-for-jwt.md)): a JWT `{ username, tv }` in an httpOnly cookie; every
+  authenticated request loads the user row and compares `tv` with `token_version`; a missing `tv`
+  is 0. `GET /me` re-issues the cookie, so active users stay logged in; tokens survive releases as
+  long as `SECRET` stays the same.
+- **Hidden stories** ([ADR 0007](adr/0007-hidden-stories-server-side.md)): server-side only;
+  `getHidden` returns `[]` for unknown users; the client removes a story optimistically and
+  restores it if the POST fails.
+- **Frontend**: `StoryList` renders through `<Virtuoso useWindowScroll>`; the timespan is saved in
+  `localStorage` (`timespan`, `{ value, timestamp }`) and restored when under 3 hours old; the
+  theme follows `prefers-color-scheme` through Bootstrap's `data-bs-theme`, set before first paint
+  by an inline script allowed by its CSP hash ([ADR 0009](adr/0009-csp-script-hash.md)).
+- **Static files**: `index.html` with `Cache-Control: no-cache`; hashed `/assets/*` with
+  `max-age=1y, immutable`.
+- **Logging**: `console.error` for errors, `console.log` for operational lines; per-request
+  `[db]` lines and `[db-query]` lines from `util/dbLogger.js`; `[login] requestId=… outcome=…`
+  lines without usernames, passwords or tokens. `tests/setup.js` silences the console in tests.
+- **Release** ([ADR 0002](adr/0002-signed-image-release-at-arms-length.md)): the repository knows
+  nothing about any host. The signing identity is `ci.yml` on `refs/heads/master`; changing the
+  workflow path or the branch name is coordinated with every host that verifies it.
+- **Footprint** ([ADR 0008](adr/0008-zero-budget-small-machine.md)): $0 running cost, sized for a
+  1 GB, 0.25 vCPU machine on a slow disk.

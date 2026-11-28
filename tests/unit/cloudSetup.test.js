@@ -7,10 +7,11 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
 
 // Claude Code cloud sessions (claude.ai/code) run .claude/settings.json hooks;
 // the SessionStart hook installs Node 24 and node_modules there, and must be a
-// no-op on Toni's Mac and anywhere else.
+// no-op on any other machine.
 describe("cloud session setup", () => {
   const settings = JSON.parse(read(".claude/settings.json"));
 
+  // Validates: HN-070
   it("runs scripts/cloud-setup.sh at SessionStart within the 600 s hook limit", () => {
     const hooks = settings.hooks.SessionStart.flatMap((h) => h.hooks);
     const hook = hooks.find((h) => h.command.includes("scripts/cloud-setup.sh"));
@@ -19,6 +20,7 @@ describe("cloud session setup", () => {
     expect(hook.timeout).toBeLessThanOrEqual(600);
   });
 
+  // Validates: HN-070
   it("exits at once, silently, when CLAUDE_CODE_REMOTE is not true", () => {
     for (const value of [undefined, "false", ""]) {
       const env = { ...process.env, CLAUDE_ENV_FILE: "/nonexistent/env" };
@@ -33,6 +35,7 @@ describe("cloud session setup", () => {
 
   // The cloud VM gets the Node major from .node-version; CI and the Docker
   // image must use the same one.
+  // Validates: HN-071
   it("pins the same Node major as CI and the Dockerfile", () => {
     const major = read(".node-version").trim();
     const ci = [...read(".github/workflows/ci.yml").matchAll(/node-version:\s*(\d+)/g)].map((m) => m[1]);
@@ -44,6 +47,7 @@ describe("cloud session setup", () => {
 
   // A Dependabot bump of only the Dockerfile's Node major would split the
   // image from .node-version and CI (it opened one, #119, on 2026-11-23).
+  // Validates: HN-071
   it("never lets Dependabot propose a Node major on its own", () => {
     const cfg = read(".github/dependabot.yml");
     expect(cfg).toMatch(/package-ecosystem: docker[\s\S]*dependency-name: node\s+update-types: \["version-update:semver-major"\]/);
@@ -51,6 +55,7 @@ describe("cloud session setup", () => {
 
   // scripts/preview.sh seeds a throwaway DB; the seeder must refuse to write
   // into the real database.
+  // Validates: HN-072
   it("seed-preview refuses to run without a throwaway SQLITE_PATH", () => {
     const run = (sqlitePath) => {
       const env = { ...process.env };
@@ -64,6 +69,7 @@ describe("cloud session setup", () => {
 
   // Regression: the seeder first wrote story times in seconds, but the app
   // stores milliseconds (hackernews.js), so the "Day" page was empty.
+  // Validates: HN-072
   it("seed-preview writes stories the Day query returns, and a working account", () => {
     const os = require("os");
     const Database = require("better-sqlite3");

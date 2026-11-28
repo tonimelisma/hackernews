@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SessionStart hook (.claude/settings.json): prepares a Claude Code cloud
 # session (claude.ai/code VM: Ubuntu 24.04, Node 20/21/22 preinstalled, network
-# limited to npm/GitHub/apt). Does nothing anywhere else, e.g. on Toni's Mac.
+# limited to npm/GitHub/apt). Does nothing anywhere else (a laptop, CI).
 #
 #   1. Puts Node <.node-version> (24) on PATH. The VM has no Node 24, and
 #      nodejs.org may be unreachable, so it installs the official binary from

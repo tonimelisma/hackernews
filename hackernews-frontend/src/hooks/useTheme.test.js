@@ -25,6 +25,7 @@ describe("useTheme", () => {
     }));
   });
 
+  // Validates: HN-047
   it("sets light theme when system prefers light", () => {
     matchesDark = false;
     renderHook(() => useTheme());
@@ -33,12 +34,14 @@ describe("useTheme", () => {
     );
   });
 
+  // Validates: HN-047
   it("sets dark theme when system prefers dark", () => {
     matchesDark = true;
     renderHook(() => useTheme());
     expect(document.documentElement.getAttribute("data-bs-theme")).toBe("dark");
   });
 
+  // Validates: HN-047
   it("updates theme when system preference changes", () => {
     matchesDark = false;
     renderHook(() => useTheme());
@@ -50,6 +53,7 @@ describe("useTheme", () => {
     expect(document.documentElement.getAttribute("data-bs-theme")).toBe("dark");
   });
 
+  // Validates: HN-047
   it("removes listener on unmount", () => {
     matchesDark = false;
     renderHook(() => useTheme());

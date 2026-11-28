@@ -35,6 +35,7 @@ const seedStory = (overrides = {}) => {
 
 describe("services/hackernews", () => {
   describe("getAllStoryIds", () => {
+    // Validates: HN-030
     it("fetches and deduplicates IDs from new, top, and best endpoints", async () => {
       axios.get
         .mockResolvedValueOnce({ data: [100, 200, 300] })  // newstories
@@ -47,6 +48,7 @@ describe("services/hackernews", () => {
       expect(result).toHaveLength(6);
     });
 
+    // Validates: HN-033
     it("returns empty array on error", async () => {
       axios.get.mockRejectedValue(new Error("network error"));
 
@@ -60,6 +62,7 @@ describe("services/hackernews", () => {
   });
 
   describe("getItem", () => {
+    // Validates: HN-030
     it("fetches a single item by ID", async () => {
       const mockItem = { id: 123, title: "Test Story" };
       axios.get.mockResolvedValue({ data: mockItem });
@@ -68,6 +71,7 @@ describe("services/hackernews", () => {
       expect(result).toEqual(mockItem);
     });
 
+    // Validates: HN-033
     it("returns undefined on error", async () => {
       axios.get.mockRejectedValue(new Error("not found"));
 
@@ -81,6 +85,7 @@ describe("services/hackernews", () => {
   });
 
   describe("getItems", () => {
+    // Validates: HN-030
     it("fetches multiple items in parallel", async () => {
       const item1 = { id: 1, title: "Story 1" };
       const item2 = { id: 2, title: "Story 2" };
@@ -95,6 +100,7 @@ describe("services/hackernews", () => {
   });
 
   describe("checkStoryExists", () => {
+    // Validates: HN-030
     it("returns IDs of stories not in the database", async () => {
       seedStory({ id: 100 });
 
@@ -102,6 +108,7 @@ describe("services/hackernews", () => {
       expect(result).toEqual([200, 300]);
     });
 
+    // Validates: HN-030
     it("returns empty array when all stories exist", async () => {
       seedStory({ id: 100 });
 
@@ -109,6 +116,7 @@ describe("services/hackernews", () => {
       expect(result).toEqual([]);
     });
 
+    // Validates: HN-038
     it("tracks reads via ctx", async () => {
       seedStory({ id: 100 });
 
@@ -118,6 +126,7 @@ describe("services/hackernews", () => {
       expect(ctx.read).toHaveBeenCalledWith("stories", 1);
     });
 
+    // Validates: HN-038
     it("works without ctx (backward compat)", async () => {
       const result = await hackernews.checkStoryExists([999]);
       expect(result).toEqual([999]);
@@ -125,6 +134,7 @@ describe("services/hackernews", () => {
   });
 
   describe("addStories", () => {
+    // Validates: HN-030
     it("saves new stories to the database", async () => {
       const mockStory = {
         id: 500,
@@ -150,6 +160,7 @@ describe("services/hackernews", () => {
       expect(row.time).toBe(1609459200 * 1000);
     });
 
+    // Validates: HN-008, HN-030
     it("handles stories with undefined kids/url fields", async () => {
       const mockStory = {
         id: 501,
@@ -173,6 +184,7 @@ describe("services/hackernews", () => {
       expect(row.url).toBeNull();
     });
 
+    // Validates: HN-038
     it("tracks writes and queries via ctx", async () => {
       const mockStory = {
         id: 502,
@@ -194,6 +206,7 @@ describe("services/hackernews", () => {
       expect(ctx.query).toHaveBeenCalledTimes(1);
     });
 
+    // Validates: HN-038
     it("works without ctx (backward compat)", async () => {
       const mockStory = {
         id: 503,
@@ -216,6 +229,7 @@ describe("services/hackernews", () => {
   });
 
   describe("updateStories", () => {
+    // Validates: HN-031
     it("updates existing stories in the database", async () => {
       seedStory({ id: 600, score: 10, descendants: 5 });
 
@@ -236,6 +250,7 @@ describe("services/hackernews", () => {
       expect(row.descendants).toBe(20);
     });
 
+    // Validates: HN-038
     it("tracks writes and queries via ctx", async () => {
       seedStory({ id: 800, score: 10, descendants: 5 });
 
@@ -254,6 +269,7 @@ describe("services/hackernews", () => {
       expect(ctx.query).toHaveBeenCalledTimes(1);
     });
 
+    // Validates: HN-038
     it("works without ctx (backward compat)", async () => {
       seedStory({ id: 801, score: 10, descendants: 5 });
 
@@ -266,6 +282,7 @@ describe("services/hackernews", () => {
       expect(row.score).toBe(20);
     });
 
+    // Validates: HN-031
     it("returns array of updated {id, score, descendants}", async () => {
       seedStory({ id: 900, score: 10, descendants: 1 });
       seedStory({ id: 901, score: 20, descendants: 2 });
@@ -281,6 +298,7 @@ describe("services/hackernews", () => {
       expect(result).toContainEqual({ id: 901, score: 250, descendants: 40 });
     });
 
+    // Validates: HN-031
     it("returns empty array when no stories to update", async () => {
       axios.get.mockResolvedValue({ data: null });
 
@@ -288,6 +306,7 @@ describe("services/hackernews", () => {
       expect(result).toEqual([]);
     });
 
+    // Validates: HN-031
     it("skips stories with undefined score in return value", async () => {
       seedStory({ id: 910, score: 50, descendants: 5 });
       seedStory({ id: 911, score: 30, descendants: 2 });

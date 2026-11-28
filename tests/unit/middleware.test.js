@@ -2,6 +2,7 @@ const { unknownEndpoint, errorHandler } = require("../../util/middleware");
 
 describe("middleware", () => {
   describe("unknownEndpoint", () => {
+    // Validates: HN-010
     it("responds with 404 and error message", () => {
       const req = {};
       const res = {
@@ -18,6 +19,7 @@ describe("middleware", () => {
   });
 
   describe("errorHandler", () => {
+    // Validates: HN-009
     it("responds with 500 and error message", () => {
       jest.spyOn(console, "error").mockImplementation(() => {});
 
@@ -38,6 +40,7 @@ describe("middleware", () => {
       console.error.mockRestore();
     });
 
+    // Validates: HN-009
     it("logs the error to console", () => {
       const consoleSpy = jest
         .spyOn(console, "error")

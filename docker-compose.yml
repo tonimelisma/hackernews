@@ -1,5 +1,5 @@
 # Local use only: runs the CI-built image under the runtime contract this repo
-# promises (docs/RELEASE.md): uid 1000, no capabilities,
+# promises (docs/release.md): uid 1000, no capabilities,
 # no-new-privileges, writes only to /data and /tmp. If the app breaks here, it
 # breaks wherever the image runs. To build from source instead, use
 # docker-compose.dev.yml.

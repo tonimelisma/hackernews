@@ -1,0 +1,34 @@
+# Deletes branches whose pull request is over: a cloud session's git proxy refuses branch
+# deletion, so a pull request closed without a merge would leave its branch behind. GitHub deletes
+# merged pull requests' branches itself (delete_branch_on_merge). Runs when a pull request closes
+# and daily; no dispatch triggers, which this repository forbids (ADR 0002). The rules:
+# script/branch-cleanup.
+name: Branch cleanup
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: "41 7 * * *"
+permissions:
+  contents: read
+concurrency:
+  group: branch-cleanup
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    # Not for pull requests from forks: their branches aren't this repository's.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # delete branches
+      pull-requests: read
+    steps:
+      # The default branch's script, never a pull request's version of it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Delete branches whose pull request is closed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: script/branch-cleanup | tee -a "$GITHUB_STEP_SUMMARY"
