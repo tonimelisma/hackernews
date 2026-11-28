@@ -18,7 +18,7 @@ A Hacker News aggregator that filters stories by score across time periods (day/
 - **Frontend:** React 19 (Vite)
 - **Database:** SQLite (better-sqlite3, WAL mode)
 - **Worker:** Integrated setInterval (15-minute cycle)
-- **Release:** every green `master` commit publishes a signed (cosign keyless), multi-arch (amd64 + arm64) image `ghcr.io/tonimelisma/hackernews:latest` and `:<sha>`, with provenance and an SBOM. Hosts pull it however they like; this repo knows nothing about them. The image runs as uid 1000 on a read-only root and writes only to `/data` and `/tmp` ([releases and runtime contract](docs/release.md))
+- **Release:** every green `main` commit publishes a signed (cosign keyless), multi-arch (amd64 + arm64) image `ghcr.io/tonimelisma/hackernews:latest` and `:<sha>`, with provenance and an SBOM. Hosts pull it however they like; this repo knows nothing about them. The image runs as uid 1000 on a read-only root and writes only to `/data` and `/tmp` ([releases and runtime contract](docs/release.md))
 - **CI:** GitHub Actions (actionlint, lint, tests, image build + runtime-contract smoke test on every PR; no deploy step, no deployment credentials)
 
 ## Prerequisites

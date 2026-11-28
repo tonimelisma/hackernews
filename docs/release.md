@@ -10,7 +10,7 @@ any workflow gains ssh/scp, a dispatch trigger, a secret other than
 
 ## What a release is
 
-Every commit merged to `master` whose CI is green is a release. CI:
+Every commit merged to `main` whose CI is green is a release. CI:
 
 1. builds the image natively for **linux/amd64** (`ubuntu-24.04`) and
    **linux/arm64** (`ubuntu-24.04-arm`), from a Dockerfile whose base image is
@@ -21,7 +21,7 @@ Every commit merged to `master` whose CI is green is a release. CI:
    runtime contract below). A failing image never gets a tag;
 4. combines both platforms into one index, tags it, and **signs it** with
    cosign keyless signing (Sigstore; identity = this repo's `ci.yml` on
-   `refs/heads/master`), then verifies the signature the way a host would.
+   `refs/heads/main`), then verifies the signature the way a host would.
 
 Pull requests run steps 1 and 3 without pushing anything.
 
@@ -50,7 +50,7 @@ The package is public: pulling needs no login. Labels on every image:
   ```bash
   cosign verify ghcr.io/tonimelisma/hackernews:latest \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    --certificate-identity https://github.com/tonimelisma/hackernews/.github/workflows/ci.yml@refs/heads/master
+    --certificate-identity https://github.com/tonimelisma/hackernews/.github/workflows/ci.yml@refs/heads/main
   ```
 
   Verify the digest you are about to run, not just the tag: resolve the tag
@@ -60,7 +60,7 @@ The package is public: pulling needs no login. Labels on every image:
   (or `'{{json .SBOM}}'`).
 
 A host that wants to know about releases without polling can watch this
-repo's `master` CI runs; the `release` job's summary names the tag and
+repo's `main` CI runs; the `release` job's summary names the tag and
 digest it published.
 
 ## Runtime contract

@@ -27,7 +27,7 @@ signed multi-arch container image (`ghcr.io/tonimelisma/hackernews`). Architectu
   deployment tooling or credentials. CI publishes a signed image and reaches nothing but the
   registry; no workflow deploys, uses ssh/scp or dispatch triggers, or uses a secret other than
   `GITHUB_TOKEN`. ([ADR 0002](docs/adr/0002-signed-image-release-at-arms-length.md))
-- The signing identity (`.github/workflows/ci.yml` on `refs/heads/master`) and the `:latest` tag
+- The signing identity (`.github/workflows/ci.yml` on `refs/heads/main`) and the `:latest` tag
   are what hosts verify and pull. Never change the workflow path or branch without updating every
   verifying host's policy to accept both during the switch.
   ([ADR 0002](docs/adr/0002-signed-image-release-at-arms-length.md))
@@ -143,10 +143,9 @@ of merged PRs. That information belongs in the PR and its comments.
 
 ## Git, CI and PRs
 
-- One branch per increment, cut from a fresh `origin/master` (the default branch; its rename to
-  `main` is tracked in [#121](https://github.com/tonimelisma/hackernews/issues/121)), named
-  `feat/`, `fix/`, `docs/`, `chore/`, `refactor/` or `perf/` plus a short topic. Never reuse a
-  branch after its PR merged; never name a branch for the tool that wrote it.
+- One branch per increment, cut from a fresh `origin/main`, named `feat/`, `fix/`, `docs/`,
+  `chore/`, `refactor/` or `perf/` plus a short topic. Never reuse a branch after its PR merged;
+  never name a branch for the tool that wrote it.
 - Every change lands through a PR whose body fills `.github/pull_request_template.md`. CI checks
   the body, and that a PR titled `fix...` changes a test.
 - `CI gate` is the one required check: a job that needs every other job. Wait for it
@@ -154,7 +153,7 @@ of merged PRs. That information belongs in the PR and its comments.
 - Squash-merge as soon as `CI gate` is green, without asking: in a cloud session with
   `gh api -X PUT repos/<owner>/<repo>/pulls/<N>/merge -f merge_method=squash -f sha=<head sha>`
   (`script/stage post-merge <PR>` does this); locally with `gh pr merge --auto --squash`.
-- Merging to master releases; nobody tags or publishes by hand.
+- Merging to main releases; nobody tags or publishes by hand.
 - The cloud sessions' GitHub proxy refuses tag pushes, branch deletion and GraphQL: use the REST
   API (`gh api`), and leave branch deletion to GitHub's delete-on-merge and the branch-cleanup
   workflow.
@@ -162,7 +161,7 @@ of merged PRs. That information belongs in the PR and its comments.
 - Cloud sessions are the default place to work; nothing here needs a particular machine. The
   SessionStart hook in `.claude/settings.json` runs `scripts/cloud-setup.sh`, which does nothing
   unless `CLAUDE_CODE_REMOTE=true`.
-- Releases: every push to master whose CI passes is a release. The `image` job builds linux/amd64
+- Releases: every push to main whose CI passes is a release. The `image` job builds linux/amd64
   and linux/arm64 natively, pushes each untagged by digest with provenance and an SBOM, pulls it
   back and runs `scripts/image-smoke.sh`; then `release` tags one index `:<sha>` and `:latest`,
   signs it with cosign keyless and verifies the signature. Releases are identified by commit SHA,
@@ -170,7 +169,7 @@ of merged PRs. That information belongs in the PR and its comments.
   check both images but publish nothing.
 - CI (`.github/workflows/ci.yml`): `workflows` (actionlint), `backend-tests`, `frontend-tests`,
   `image`, `release`, `process` (`script/process-check`, and `script/pr-check` on PRs) and
-  `CI gate`; weekly on master (Wednesday 05:37 UTC). No manual or dispatch triggers (forbidden by
+  `CI gate`; weekly on main (Wednesday 05:37 UTC). No manual or dispatch triggers (forbidden by
   ADR 0002). Branch cleanup: `.github/workflows/branch-cleanup.yml`.
 
 ## Privacy review
