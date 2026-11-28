@@ -84,9 +84,9 @@ describe("CI workflows (release at arm's length)", () => {
   });
 
   // Validates: HN-061
-  it("publishes only from master pushes", () => {
-    expect(job("release")).toMatch(/if: github\.ref == 'refs\/heads\/master' && github\.event_name == 'push'/);
-    expect(job("image")).toMatch(/PUBLISH: \$\{\{ github\.ref == 'refs\/heads\/master' && github\.event_name == 'push' \}\}/);
+  it("publishes only from main pushes", () => {
+    expect(job("release")).toMatch(/if: github\.ref == 'refs\/heads\/main' && github\.event_name == 'push'/);
+    expect(job("image")).toMatch(/PUBLISH: \$\{\{ github\.ref == 'refs\/heads\/main' && github\.event_name == 'push' \}\}/);
   });
 
   // Validates: HN-062

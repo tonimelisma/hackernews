@@ -16,7 +16,7 @@ HackerNews aggregator with a single Node.js process and a SQLite database, shipp
 
 ## Release & Runtime Contract
 
-This repo knows nothing about where the app runs. A release is a signed, multi-arch image that CI publishes on every green `master` commit; hosts pull it however they like. Tags, signature verification, provenance and the runtime contract (uid 1000, read-only root, writes only to `/data` and `/tmp`, port 3000, health check, env, admin CLI, backup) are in [release.md](release.md).
+This repo knows nothing about where the app runs. A release is a signed, multi-arch image that CI publishes on every green `main` commit; hosts pull it however they like. Tags, signature verification, provenance and the runtime contract (uid 1000, read-only root, writes only to `/data` and `/tmp`, port 3000, health check, env, admin CLI, backup) are in [release.md](release.md).
 
 ```
 ci.yml flow:
@@ -26,8 +26,8 @@ ci.yml flow:
        ↓ all pass
   image ×2 (linux/amd64 on ubuntu-24.04, linux/arm64 on ubuntu-24.04-arm):
         PR:     build → scripts/image-smoke.sh
-        master: build → push by digest (+ provenance, SBOM) → pull → scripts/image-smoke.sh
-       ↓ both pass (master only)
+        main:   build → push by digest (+ provenance, SBOM) → pull → scripts/image-smoke.sh
+       ↓ both pass (main only)
   release: index of both digests → tags :<sha> and :latest → cosign sign (keyless) → cosign verify
 ```
 
@@ -252,7 +252,7 @@ The frontend uses relative URLs (`/api/v1/`) for all API calls. In development, 
   `[db]` lines and `[db-query]` lines from `util/dbLogger.js`; `[login] requestId=… outcome=…`
   lines without usernames, passwords or tokens. `tests/setup.js` silences the console in tests.
 - **Release** ([ADR 0002](adr/0002-signed-image-release-at-arms-length.md)): the repository knows
-  nothing about any host. The signing identity is `ci.yml` on `refs/heads/master`; changing the
+  nothing about any host. The signing identity is `ci.yml` on `refs/heads/main`; changing the
   workflow path or the branch name is coordinated with every host that verifies it.
 - **Footprint** ([ADR 0008](adr/0008-zero-budget-small-machine.md)): $0 running cost, sized for a
   1 GB, 0.25 vCPU machine on a slow disk.

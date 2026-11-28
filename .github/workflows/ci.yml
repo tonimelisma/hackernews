@@ -2,16 +2,16 @@ name: CI
 
 on:
   pull_request:
-    branches: [master]
+    branches: [main]
     # `edited`: a description fixed after the push re-runs the checks that read it. Every job runs
     # on it, so the newest `CI gate` on a commit always reflects all the checks.
     types: [opened, synchronize, reopened, edited]
   push:
-    branches: [master]
+    branches: [main]
   schedule:
-    # Weekly full run on master, off the hour, so rot from new toolchains, base images or
+    # Weekly full run on main, off the hour, so rot from new toolchains, base images or
     # advisories shows up. It builds and checks both images but publishes nothing: only pushes
-    # to master release. No manual or dispatch triggers: ADR 0002 forbids them.
+    # to main release. No manual or dispatch triggers: ADR 0002 forbids them.
     - cron: "37 5 * * 3"
 
 permissions:
@@ -114,7 +114,7 @@ jobs:
         working-directory: hackernews-frontend
 
   # Every commit's image is built natively for each platform and checked
-  # against the runtime contract (scripts/image-smoke.sh). On master the
+  # against the runtime contract (scripts/image-smoke.sh). On main the
   # checked image is pushed by digest; `release` then tags and signs it.
   image:
     needs: [workflows, backend-tests, frontend-tests]
@@ -132,7 +132,7 @@ jobs:
       packages: write
     env:
       IMAGE: ghcr.io/tonimelisma/hackernews
-      PUBLISH: ${{ github.ref == 'refs/heads/master' && github.event_name == 'push' }}
+      PUBLISH: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -165,7 +165,7 @@ jobs:
           tags: hackernews:candidate
           cache-from: type=gha,scope=${{ env.SLUG }}
 
-      # master: push untagged, by digest, with provenance and an SBOM. Nobody
+      # main: push untagged, by digest, with provenance and an SBOM. Nobody
       # pulling a tag sees it until `release` has tagged and signed it.
       - name: Build and push by digest
         id: push
@@ -214,13 +214,13 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # A release = every green master commit: one multi-arch index tagged :<sha>
+  # A release = every green main commit: one multi-arch index tagged :<sha>
   # (immutable) and :latest (moving), signed keylessly with cosign (Sigstore,
   # GitHub OIDC). id-token is only for that signature; no other credential
   # exists and nothing here talks to anything but the registry.
   release:
     needs: [image]
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -263,7 +263,7 @@ jobs:
         run: |
           cosign verify "$IMAGE:$GITHUB_SHA" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/ci.yml@refs/heads/master" > /dev/null
+            --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/ci.yml@refs/heads/main" > /dev/null
           echo "Released $IMAGE:$GITHUB_SHA ($DIGEST), also :latest; signature verified." >> "$GITHUB_STEP_SUMMARY"
 
   # Requirements, Validates tags and doc links agree; on PRs, the description has every section.
@@ -281,7 +281,7 @@ jobs:
         run: script/pr-check
 
   # The one required status check. It needs every other job and passes only when each of them
-  # succeeded or was skipped (release is skipped outside pushes to master), so a cancelled or
+  # succeeded or was skipped (release is skipped outside pushes to main), so a cancelled or
   # failed job can never be merged around.
   gate:
     name: CI gate
