@@ -1,14 +1,17 @@
-# Keeps the build's pins fresh: action SHAs in .github/workflows and the
-# base-image digest in the Dockerfile. npm dependencies are updated by the
-# Definition of Done (npx npm-check-updates), not here. A Node major upgrade
-# is not a pin refresh: it changes .node-version, CI and the Dockerfile
-# together (tests/unit/cloudSetup.test.js), so Dependabot never proposes one.
+# Weekly update proposals, one grouped pull request per ecosystem and directory, at most 5 open
+# each. Security updates open right away regardless. Actions are pinned by commit SHA with a
+# `# vX.Y.Z` comment, which Dependabot keeps up to date; the Dockerfile's base image is pinned by
+# digest. A Node major upgrade is not a pin refresh: it changes .node-version, CI and the
+# Dockerfile together (ADR 0010, tests/unit/cloudSetup.test.js), so Dependabot never proposes one.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
     groups:
       actions:
         patterns: ["*"]
@@ -16,6 +19,32 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    groups:
+      docker:
+        patterns: ["*"]
     ignore:
       - dependency-name: node
         update-types: ["version-update:semver-major"]
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    groups:
+      backend-npm:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /hackernews-frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    groups:
+      frontend-npm:
+        patterns: ["*"]

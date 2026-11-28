@@ -11,6 +11,7 @@ describe("util/dbLogger", () => {
     logSpy.mockRestore();
   });
 
+  // Validates: HN-038
   it("starts with all counters at zero", () => {
     const ctx = createDbContext();
     expect(ctx.reads).toBe(0);
@@ -20,6 +21,7 @@ describe("util/dbLogger", () => {
     expect(ctx.collections.size).toBe(0);
   });
 
+  // Validates: HN-038
   it("read() increments reads by docCount", () => {
     const ctx = createDbContext();
     ctx.read("stories", 50);
@@ -27,6 +29,7 @@ describe("util/dbLogger", () => {
     expect(ctx.reads).toBe(150);
   });
 
+  // Validates: HN-038
   it("write() increments writes by docCount", () => {
     const ctx = createDbContext();
     ctx.write("users", 1);
@@ -34,6 +37,7 @@ describe("util/dbLogger", () => {
     expect(ctx.writes).toBe(4);
   });
 
+  // Validates: HN-038
   it("read/write default docCount to 1", () => {
     const ctx = createDbContext();
     ctx.read("stories");
@@ -42,6 +46,7 @@ describe("util/dbLogger", () => {
     expect(ctx.writes).toBe(1);
   });
 
+  // Validates: HN-038
   it("cacheHit() and cacheMiss() increment correctly", () => {
     const ctx = createDbContext();
     ctx.cacheHit();
@@ -51,6 +56,7 @@ describe("util/dbLogger", () => {
     expect(ctx.cacheMisses).toBe(1);
   });
 
+  // Validates: HN-038
   it("tracks tables as a Set (no duplicates)", () => {
     const ctx = createDbContext();
     ctx.read("stories", 10);
@@ -61,6 +67,7 @@ describe("util/dbLogger", () => {
     expect(ctx.collections.has("users")).toBe(true);
   });
 
+  // Validates: HN-038
   it("log() emits a [db] tagged line with per-table breakdown", () => {
     const ctx = createDbContext();
     ctx.read("stories", 42);
@@ -78,6 +85,7 @@ describe("util/dbLogger", () => {
     expect(line).toContain("count=30");
   });
 
+  // Validates: HN-038
   it("log() shows cache=- when no cache activity", () => {
     const ctx = createDbContext();
     ctx.read("hidden", 5);
@@ -87,6 +95,7 @@ describe("util/dbLogger", () => {
     expect(line).toContain("cache=-");
   });
 
+  // Validates: HN-038
   it("tracks L1 and MISS cache types separately", () => {
     const ctx = createDbContext();
     ctx.l1CacheHit();
@@ -101,6 +110,7 @@ describe("util/dbLogger", () => {
     expect(line).toContain("cache=L1:2,MISS:1");
   });
 
+  // Validates: HN-038
   it("shows per-table read/write breakdown in log", () => {
     const ctx = createDbContext();
     ctx.read("stories", 500);
@@ -113,6 +123,7 @@ describe("util/dbLogger", () => {
     expect(line).toContain("writes=stories:1");
   });
 
+  // Validates: HN-038
   it("readsByCollection and writesByCollection expose per-table Maps", () => {
     const ctx = createDbContext();
     ctx.read("stories", 42);
@@ -124,6 +135,7 @@ describe("util/dbLogger", () => {
     expect(ctx.writesByCollection.get("users")).toBe(2);
   });
 
+  // Validates: HN-038
   it("query() emits [db-query] tagged inline log", () => {
     const ctx = createDbContext();
     ctx.query("stories", "ORDER BY score DESC LIMIT 500", 500, 120);
@@ -135,6 +147,7 @@ describe("util/dbLogger", () => {
     expect(line).toContain("ms=120");
   });
 
+  // Validates: HN-038
   it("l1CacheHit and legacy cacheHit both increment L1 counter", () => {
     const ctx = createDbContext();
     ctx.cacheHit();

@@ -14,7 +14,7 @@ Authentication uses HTTP-only cookies. On successful login, the server sets a `t
 
 **Sessions:** each browser holds its own independent cookie — any number of simultaneous sessions are supported, and logging out in one browser (which only clears that browser's cookie) never affects the others. The only way to end every session at once is `node scripts/users.js revoke-sessions <username>`, which bumps `token_version`.
 
-**Accounts** are local username/password accounts, created and reset manually with `scripts/users.js` (see [ARCHITECTURE.md](ARCHITECTURE.md#account-administration)). There is no signup or reset endpoint.
+**Accounts** are local username/password accounts, created and reset manually with `scripts/users.js` (see [Authentication](../architecture.md#authentication-frontend--backend--jwt-cookie) and [ADR 0003](../adr/0003-local-password-accounts.md)). There is no signup or reset endpoint.
 
 Protected endpoints return `401` if no valid cookie is present.
 

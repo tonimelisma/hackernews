@@ -1,0 +1,58 @@
+#!/bin/sh
+# Deletes GitHub branches whose pull request is over: a cloud session can't delete branches (its
+# git proxy refuses), so a branch whose pull request was closed without a merge would stay behind. GitHub deletes a merged pull request's branch itself ("Automatically delete
+# head branches"); this does the rest. Nothing is lost: GitHub keeps every pull request's commits
+# (refs/pull/<n>/head, and the pull request's "Restore branch" button).
+#
+# A branch is deleted only when it has a pull request, none of its pull requests is open, and its
+# tip is the head of a closed one opened by someone who can write to the repository (owner,
+# member, collaborator; anyone can open a pull request from a public repository's branch and close
+# it) and nothing was pushed after it closed. Every other branch is kept and named, with why. The
+# default branch and protected branches are never touched.
+#
+# Run by .github/workflows/branch-cleanup.yml. Needs gh, logged in (GH_TOKEN), and
+# GITHUB_REPOSITORY (owner/name). DRY_RUN=1 only says what it would delete.
+set -eu
+repo=${GITHUB_REPOSITORY:?set GITHUB_REPOSITORY to owner/name}
+owner=${repo%%/*}
+default=$(gh api "repos/$repo" --jq .default_branch)
+gh api --paginate "repos/$repo/branches?per_page=100" --jq '.[] | "\(.commit.sha) \(.protected) \(.name)"' |
+  while read -r sha protected name; do
+    [ "$name" = "$default" ] && continue
+    if [ "$protected" = true ]; then
+      echo "kept $name: protected"
+      continue
+    fi
+    # The name goes into an API path: anything but plain characters ("#" would end the path early
+    # and name another branch) is left for a person.
+    case "$name" in *[!A-Za-z0-9._/-]*)
+      echo "kept $name: an unusual name, delete it by hand"
+      continue
+      ;;
+    esac
+    prs=$(gh api -X GET "repos/$repo/pulls" -f state=all -f per_page=100 -f head="$owner:$name" \
+      --jq '.[] | "\(.state) \(.head.sha) \(.number) \(.author_association)"')
+    if [ -z "$prs" ]; then
+      echo "kept $name: no pull request"
+      continue
+    fi
+    if printf '%s\n' "$prs" | grep -q '^open '; then
+      echo "kept $name: its pull request is open"
+      continue
+    fi
+    n=$(printf '%s\n' "$prs" | awk -v s="$sha" '$2 == s && ($4 == "OWNER" || $4 == "MEMBER" || $4 == "COLLABORATOR") { print $3; exit }')
+    if [ -z "$n" ]; then
+      if printf '%s\n' "$prs" | awk -v s="$sha" '$2 == s { f = 1 } END { exit !f }'; then
+        echo "kept $name: its closed pull request was opened by someone who can't write here"
+      else
+        echo "kept $name: it has commits after its pull request closed"
+      fi
+      continue
+    fi
+    if [ -n "${DRY_RUN:-}" ]; then
+      echo "would delete $name (pull request #$n is closed; its commits stay there)"
+      continue
+    fi
+    gh api -X DELETE "repos/$repo/git/refs/heads/$name" >/dev/null
+    echo "deleted $name (pull request #$n is closed; its commits stay there)"
+  done

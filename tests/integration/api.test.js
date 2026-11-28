@@ -88,6 +88,7 @@ const extractCookieToken = (res) => {
 
 describe("API routes", () => {
   describe("GET /api/v1/stories", () => {
+    // Validates: HN-001
     it("returns stories as JSON", async () => {
       seedStory({ id: 1, score: 200 });
       seedStory({ id: 2, score: 100 });
@@ -99,6 +100,7 @@ describe("API routes", () => {
       expect(res.body[0].score).toBe(200);
     });
 
+    // Validates: HN-001
     it("filters by timespan", async () => {
       seedStory({ id: 1, time: Date.now() }); // recent
       seedStory({
@@ -112,6 +114,7 @@ describe("API routes", () => {
       expect(res.body).toHaveLength(1);
     });
 
+    // Validates: HN-002
     it("defaults to All when no timespan specified", async () => {
       seedStory({ id: 1, time: Date.now() });
       seedStory({
@@ -125,6 +128,7 @@ describe("API routes", () => {
       expect(res.body).toHaveLength(2);
     });
 
+    // Validates: HN-003
     it("respects limit parameter", async () => {
       seedStory({ id: 1 });
       seedStory({ id: 2 });
@@ -136,6 +140,7 @@ describe("API routes", () => {
       expect(res.body).toHaveLength(2);
     });
 
+    // Validates: HN-003
     it("respects skip parameter", async () => {
       seedStory({ id: 1, score: 300 });
       seedStory({ id: 2, score: 200 });
@@ -148,6 +153,7 @@ describe("API routes", () => {
       expect(res.body[0].score).toBe(200);
     });
 
+    // Validates: HN-004
     it("defaults negative limit to config.limitResults", async () => {
       seedStory({ id: 1 });
       seedStory({ id: 2 });
@@ -158,6 +164,7 @@ describe("API routes", () => {
       expect(res.body).toHaveLength(2);
     });
 
+    // Validates: HN-004
     it("defaults zero limit to config.limitResults", async () => {
       seedStory({ id: 1 });
       seedStory({ id: 2 });
@@ -168,6 +175,7 @@ describe("API routes", () => {
       expect(res.body).toHaveLength(2);
     });
 
+    // Validates: HN-002
     it("defaults invalid timespan to All", async () => {
       seedStory({ id: 1 });
 
@@ -177,6 +185,7 @@ describe("API routes", () => {
       expect(res.body).toHaveLength(1);
     });
 
+    // Validates: HN-009
     it("returns 500 when storyService throws", async () => {
       const storyService = require("../../services/storyService");
       const original = storyService.getStories;
@@ -189,6 +198,7 @@ describe("API routes", () => {
       storyService.getStories = original;
     });
 
+    // Validates: HN-005
     it("excludes hidden stories when authenticated", async () => {
       seedStory({ id: 1, score: 300 });
       seedStory({ id: 2, score: 200 });
@@ -209,6 +219,7 @@ describe("API routes", () => {
       expect(res.body.map(s => s.id)).not.toContain(2);
     });
 
+    // Validates: HN-005
     it("returns all stories without auth cookie", async () => {
       seedStory({ id: 1, score: 300 });
       seedStory({ id: 2, score: 200 });
@@ -222,6 +233,7 @@ describe("API routes", () => {
   });
 
   describe("GET /api/v1/hidden", () => {
+    // Validates: HN-013
     it("returns hidden list for authenticated user", async () => {
       const { getDb } = require("../../services/database");
       const d = getDb();
@@ -238,12 +250,14 @@ describe("API routes", () => {
       expect(res.body.sort()).toEqual([123, 456]);
     });
 
+    // Validates: HN-014
     it("returns 401 without token", async () => {
       const res = await request(app).get("/api/v1/hidden");
 
       expect(res.status).toBe(401);
     });
 
+    // Validates: HN-014
     it("returns 401 with invalid token", async () => {
       const res = await request(app)
         .get("/api/v1/hidden")
@@ -254,6 +268,7 @@ describe("API routes", () => {
   });
 
   describe("POST /api/v1/hidden", () => {
+    // Validates: HN-011
     it("adds hidden ID for authenticated user", async () => {
       const { getDb } = require("../../services/database");
       getDb().prepare("INSERT INTO users (username) VALUES (?)").run("testuser");
@@ -268,6 +283,7 @@ describe("API routes", () => {
       expect(res.body).toEqual({ hidden: 789 });
     });
 
+    // Validates: HN-012
     it("returns 400 for non-integer hidden id", async () => {
       seedLegacyUser("testuser");
       const token = await createToken("testuser");
@@ -281,6 +297,7 @@ describe("API routes", () => {
       expect(res.body.error).toBe("invalid story id");
     });
 
+    // Validates: HN-012
     it("returns 400 for negative hidden id", async () => {
       seedLegacyUser("testuser");
       const token = await createToken("testuser");
@@ -294,6 +311,7 @@ describe("API routes", () => {
       expect(res.body.error).toBe("invalid story id");
     });
 
+    // Validates: HN-012
     it("returns 400 for missing hidden id", async () => {
       seedLegacyUser("testuser");
       const token = await createToken("testuser");
@@ -307,6 +325,7 @@ describe("API routes", () => {
       expect(res.body.error).toBe("invalid story id");
     });
 
+    // Validates: HN-014
     it("returns 401 without token", async () => {
       const res = await request(app)
         .post("/api/v1/hidden")
@@ -317,6 +336,7 @@ describe("API routes", () => {
   });
 
   describe("POST /api/v1/login", () => {
+    // Validates: HN-015
     it("returns username and sets cookie for correct password", async () => {
       await seedUser("validuser", "valid-password");
 
@@ -328,6 +348,7 @@ describe("API routes", () => {
       expect(extractCookieToken(res)).toBeTruthy();
     });
 
+    // Validates: HN-015
     it("signs JWT with 365d expiration and the user's token version", async () => {
       await seedUser("expiryuser", "valid-password");
       rawDb().prepare("UPDATE users SET token_version = 4 WHERE username = ?").run("expiryuser");
@@ -340,6 +361,7 @@ describe("API routes", () => {
       expect(payload.exp - payload.iat).toBe(365 * 24 * 60 * 60);
     });
 
+    // Validates: HN-016
     it("returns 401 for a wrong password", async () => {
       await seedUser("validuser", "valid-password");
 
@@ -350,6 +372,7 @@ describe("API routes", () => {
       expect(res.headers["set-cookie"]).toBeUndefined();
     });
 
+    // Validates: HN-016
     it("returns the same 401 for an unknown user", async () => {
       const res = await login({ username: "nobody", password: "whatever-password" });
 
@@ -357,6 +380,7 @@ describe("API routes", () => {
       expect(res.body).toEqual({ error: "invalid credentials" });
     });
 
+    // Validates: HN-016
     it("returns 401 for an existing user who has no password yet", async () => {
       seedLegacyUser("legacy");
 
@@ -366,6 +390,7 @@ describe("API routes", () => {
       expect(res.body).toEqual({ error: "invalid credentials" });
     });
 
+    // Validates: HN-017
     it("never creates users on login", async () => {
       await login({ username: "ghost", password: "whatever-password" });
 
@@ -373,6 +398,7 @@ describe("API routes", () => {
       expect(user).toBeUndefined();
     });
 
+    // Validates: HN-018
     it("does not log usernames or passwords on failure", async () => {
       await seedUser("secretive", "valid-password");
 
@@ -384,6 +410,7 @@ describe("API routes", () => {
       expect(logged).not.toContain("wrong-canary-pw");
     });
 
+    // Validates: HN-073
     it.each([
       ["missing fields", {}],
       ["missing password", { username: "user" }],
@@ -401,6 +428,7 @@ describe("API routes", () => {
       expect(res.body.error).toBe("missing fields");
     });
 
+    // Validates: HN-020
     it("returns 500 on internal error during login", async () => {
       const original = auth.verifyCredentials;
       auth.verifyCredentials = jest.fn().mockRejectedValue(new Error("db failure"));
@@ -412,6 +440,7 @@ describe("API routes", () => {
       auth.verifyCredentials = original;
     });
 
+    // Validates: HN-019
     it("returns 429 after 10 attempts from one IP, without blocking other IPs", async () => {
       const attackerIp = "203.0.113.7";
       const statuses = [];
@@ -428,6 +457,7 @@ describe("API routes", () => {
   });
 
   describe("POST /api/v1/logout", () => {
+    // Validates: HN-021
     it("clears token cookie and returns success", async () => {
       const res = await request(app).post("/api/v1/logout");
 
@@ -441,6 +471,7 @@ describe("API routes", () => {
   });
 
   describe("GET /api/v1/me", () => {
+    // Validates: HN-022
     it("returns username for authenticated user", async () => {
       seedLegacyUser("testuser");
       const token = await createToken("testuser");
@@ -453,6 +484,7 @@ describe("API routes", () => {
       expect(res.body).toEqual({ username: "testuser" });
     });
 
+    // Validates: HN-022
     it("refreshes token cookie on GET /me", async () => {
       seedLegacyUser("refreshuser");
       const token = await createToken("refreshuser");
@@ -467,12 +499,14 @@ describe("API routes", () => {
       expect(setCookie[0]).toMatch(/^token=/);
     });
 
+    // Validates: HN-014
     it("returns 401 without token", async () => {
       const res = await request(app).get("/api/v1/me");
 
       expect(res.status).toBe(401);
     });
 
+    // Validates: HN-014
     it("returns 401 for a token without a username", async () => {
       const token = await new SignJWT({ tv: 0 })
         .setProtectedHeader({ alg: "HS256" })
@@ -488,6 +522,7 @@ describe("API routes", () => {
   // Moving from HN-proxied login to local passwords must not log out anyone
   // who is already signed in, nor touch their hidden-story history.
   describe("sessions", () => {
+    // Validates: HN-023
     it("keeps a pre-migration cookie (no tv claim) valid everywhere", async () => {
       seedStory({ id: 1, score: 300 });
       seedStory({ id: 2, score: 200 });
@@ -510,6 +545,7 @@ describe("API routes", () => {
       expect(hide.status).toBe(200);
     });
 
+    // Validates: HN-022, HN-023
     it("upgrades a pre-migration cookie to a versioned one on GET /me", async () => {
       seedLegacyUser("legacy");
       const legacyToken = await createToken("legacy");
@@ -520,6 +556,7 @@ describe("API routes", () => {
       expect(payload).toMatchObject({ username: "legacy", tv: 0 });
     });
 
+    // Validates: HN-023
     it("keeps the pre-migration cookie valid after the first password is set", async () => {
       seedLegacyUser("legacy");
       const legacyToken = await createToken("legacy");
@@ -532,6 +569,7 @@ describe("API routes", () => {
       expect(res.status).toBe(200);
     });
 
+    // Validates: HN-021
     it("supports simultaneous sessions; logging out one leaves the others", async () => {
       await seedUser("multi", "multi-password");
       const browserA = extractCookieToken(await login({ username: "multi", password: "multi-password" }));
@@ -547,6 +585,7 @@ describe("API routes", () => {
       expect(b.status).toBe(200);
     });
 
+    // Validates: HN-023, HN-028
     it("revoking sessions logs out every existing cookie", async () => {
       seedStory({ id: 1 });
       seedLegacyUser("legacy");
@@ -564,6 +603,7 @@ describe("API routes", () => {
       expect(stories.body.map((s) => s.id)).toEqual([1]);
     });
 
+    // Validates: HN-023
     it("rejects a valid token for a user that no longer exists", async () => {
       const token = await createToken("deleted");
 
@@ -574,6 +614,7 @@ describe("API routes", () => {
   });
 
   describe("Unknown endpoint", () => {
+    // Validates: HN-010
     it("returns 404 for unknown routes", async () => {
       const res = await request(app).get("/api/v1/nonexistent");
 

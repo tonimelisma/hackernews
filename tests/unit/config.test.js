@@ -10,6 +10,7 @@ describe("util/config", () => {
     process.env = originalEnv;
   });
 
+  // Validates: HN-004
   it("exports limitResults", () => {
     const config = require("../../util/config");
     expect(config.limitResults).toBe(500);

@@ -36,6 +36,7 @@ const cli = async (args, answers = []) => {
 };
 
 describe("services/userService", () => {
+  // Validates: HN-037
   it("returns legacy users with no password and token version 0", () => {
     seedLegacyUser("legacy");
     const user = userService.getUser("legacy");
@@ -44,21 +45,25 @@ describe("services/userService", () => {
     expect(user.token_version).toBe(0);
   });
 
+  // Validates: HN-016
   it("returns undefined for unknown users", () => {
     expect(userService.getUser("nobody")).toBeUndefined();
   });
 
+  // Validates: HN-016
   it("matches usernames case-sensitively", () => {
     seedLegacyUser("CaseUser");
     expect(userService.getUser("caseuser")).toBeUndefined();
   });
 
+  // Validates: HN-028
   it("revokeSessions bumps the token version", () => {
     seedLegacyUser("legacy");
     expect(userService.revokeSessions("legacy")).toBe(true);
     expect(userService.getUser("legacy").token_version).toBe(1);
   });
 
+  // Validates: HN-028
   it("setPasswordHash keeps the token version and hidden history", () => {
     seedLegacyUser("legacy", [1, 2, 3]);
     expect(userService.setPasswordHash("legacy", "scrypt$hash")).toBe(true);
@@ -69,6 +74,7 @@ describe("services/userService", () => {
     expect(hidden).toBe(3);
   });
 
+  // Validates: HN-028
   it("setPasswordHash and revokeSessions report unknown users", () => {
     expect(userService.setPasswordHash("nobody", "x")).toBe(false);
     expect(userService.revokeSessions("nobody")).toBe(false);
@@ -76,21 +82,25 @@ describe("services/userService", () => {
 });
 
 describe("auth.verifyCredentials", () => {
+  // Validates: HN-015
   it("returns the user for the correct password", async () => {
     userService.createUser("alice", await auth.hashPassword("alice-password", FAST));
     const user = await auth.verifyCredentials("alice", "alice-password");
     expect(user.username).toBe("alice");
   });
 
+  // Validates: HN-016
   it("returns null for a wrong password", async () => {
     userService.createUser("alice", await auth.hashPassword("alice-password", FAST));
     expect(await auth.verifyCredentials("alice", "wrong-password")).toBeNull();
   });
 
+  // Validates: HN-016
   it("returns null for an unknown user", async () => {
     expect(await auth.verifyCredentials("nobody", "whatever-password")).toBeNull();
   });
 
+  // Validates: HN-016
   it("returns null for a legacy user who has no password yet", async () => {
     seedLegacyUser("legacy");
     expect(await auth.verifyCredentials("legacy", "")).toBeNull();
@@ -100,6 +110,7 @@ describe("auth.verifyCredentials", () => {
 
 describe("scripts/users.js", () => {
   describe("list", () => {
+    // Validates: HN-026
     it("lists accounts with password state and hidden counts", async () => {
       seedLegacyUser("legacy", [1, 2]);
       userService.createUser("alice", await auth.hashPassword("alice-password", FAST));
@@ -111,6 +122,7 @@ describe("scripts/users.js", () => {
       expect(out).toMatch(/legacy\s.*password=NOT SET.*hidden=2/);
     });
 
+    // Validates: HN-026
     it("reports when there are no accounts", async () => {
       const { code, out } = await cli(["list"]);
       expect(code).toBe(0);
@@ -119,6 +131,7 @@ describe("scripts/users.js", () => {
   });
 
   describe("add", () => {
+    // Validates: HN-027
     it("creates an account with a hashed password", async () => {
       const { code } = await cli(["add", "newbie"], ["newbie-password", "newbie-password"]);
 
@@ -129,6 +142,7 @@ describe("scripts/users.js", () => {
       expect(await auth.verifyCredentials("newbie", "newbie-password")).not.toBeNull();
     });
 
+    // Validates: HN-027
     it("refuses to overwrite an existing account", async () => {
       seedLegacyUser("legacy", [1]);
       const { code, err } = await cli(["add", "legacy"], ["some-password", "some-password"]);
@@ -137,12 +151,14 @@ describe("scripts/users.js", () => {
       expect(userService.getUser("legacy").password_hash).toBeNull();
     });
 
+    // Validates: HN-027
     it("rejects an invalid username", async () => {
       const { code, err } = await cli(["add", "bad name"]);
       expect(code).toBe(1);
       expect(err).toMatch(/invalid username/i);
     });
 
+    // Validates: HN-027
     it("rejects a too-short password", async () => {
       const { code, err } = await cli(["add", "newbie"], ["short"]);
       expect(code).toBe(1);
@@ -150,6 +166,7 @@ describe("scripts/users.js", () => {
       expect(userService.getUser("newbie")).toBeUndefined();
     });
 
+    // Validates: HN-027
     it("rejects mismatched confirmation", async () => {
       const { code, err } = await cli(["add", "newbie"], ["newbie-password", "different-password"]);
       expect(code).toBe(1);
@@ -161,6 +178,7 @@ describe("scripts/users.js", () => {
   describe("set-password", () => {
     // The production migration path: the existing account gets its first
     // password without losing hidden history or logging out current sessions.
+    // Validates: HN-028
     it("sets a first password on a legacy account, keeping sessions and history", async () => {
       seedLegacyUser("legacy", [1, 2, 3]);
 
@@ -175,6 +193,7 @@ describe("scripts/users.js", () => {
       expect(hidden).toBe(3);
     });
 
+    // Validates: HN-028
     it("resets an existing password", async () => {
       userService.createUser("alice", await auth.hashPassword("old-password", FAST));
 
@@ -184,6 +203,7 @@ describe("scripts/users.js", () => {
       expect(await auth.verifyCredentials("alice", "new-password")).not.toBeNull();
     });
 
+    // Validates: HN-028
     it("fails for an unknown account", async () => {
       const { code, err } = await cli(["set-password", "nobody"]);
       expect(code).toBe(1);
@@ -192,6 +212,7 @@ describe("scripts/users.js", () => {
   });
 
   describe("revoke-sessions", () => {
+    // Validates: HN-028
     it("bumps the token version", async () => {
       seedLegacyUser("legacy");
       const { code } = await cli(["revoke-sessions", "legacy"]);
@@ -199,18 +220,21 @@ describe("scripts/users.js", () => {
       expect(userService.getUser("legacy").token_version).toBe(1);
     });
 
+    // Validates: HN-028
     it("fails for an unknown account", async () => {
       const { code } = await cli(["revoke-sessions", "nobody"]);
       expect(code).toBe(1);
     });
   });
 
+  // Validates: HN-026
   it("prints usage for an unknown command", async () => {
     const { code, err } = await cli(["frobnicate"]);
     expect(code).toBe(1);
     expect(err).toMatch(/Usage/);
   });
 
+  // Validates: HN-027
   it("requires a username for account commands", async () => {
     const { code, err } = await cli(["set-password"]);
     expect(code).toBe(1);

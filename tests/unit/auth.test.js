@@ -6,6 +6,7 @@ const FAST = { N: 1024, r: 8, p: 1 };
 
 describe("services/auth", () => {
   describe("hashPassword / verifyPassword", () => {
+    // Validates: HN-024
     it("uses production scrypt parameters by default", async () => {
       const hash = await auth.hashPassword("correct horse battery");
       const [scheme, N, r, p] = hash.split("$");
@@ -15,27 +16,32 @@ describe("services/auth", () => {
       expect(Number(p)).toBe(auth.SCRYPT_PARAMS.p);
     });
 
+    // Validates: HN-024
     it("verifies the correct password", async () => {
       const hash = await auth.hashPassword("correct horse battery", FAST);
       expect(await auth.verifyPassword("correct horse battery", hash)).toBe(true);
     });
 
+    // Validates: HN-024
     it("rejects a wrong password", async () => {
       const hash = await auth.hashPassword("correct horse battery", FAST);
       expect(await auth.verifyPassword("correct horse batterY", hash)).toBe(false);
     });
 
+    // Validates: HN-024
     it("salts each hash so equal passwords hash differently", async () => {
       const a = await auth.hashPassword("same password", FAST);
       const b = await auth.hashPassword("same password", FAST);
       expect(a).not.toBe(b);
     });
 
+    // Validates: HN-024
     it("never stores the plaintext password", async () => {
       const hash = await auth.hashPassword("plaintext-canary", FAST);
       expect(hash).not.toContain("plaintext-canary");
     });
 
+    // Validates: HN-024
     it("rejects a tampered hash", async () => {
       const hash = await auth.hashPassword("correct horse battery", FAST);
       const parts = hash.split("$");
@@ -45,6 +51,7 @@ describe("services/auth", () => {
       expect(await auth.verifyPassword("correct horse battery", parts.join("$"))).toBe(false);
     });
 
+    // Validates: HN-024
     it.each([
       [null],
       [undefined],
@@ -58,10 +65,12 @@ describe("services/auth", () => {
   });
 
   describe("isValidUsername", () => {
+    // Validates: HN-025
     it.each(["villahousut", "a", "user_name-1", "x".repeat(32)])("accepts %p", (name) => {
       expect(auth.isValidUsername(name)).toBe(true);
     });
 
+    // Validates: HN-025
     it.each(["", "x".repeat(33), "user<script>", "has space", null, undefined, 42, ["a"]])(
       "rejects %p",
       (name) => {
@@ -71,11 +80,13 @@ describe("services/auth", () => {
   });
 
   describe("isValidNewPassword", () => {
+    // Validates: HN-025
     it("accepts passwords within the length bounds", () => {
       expect(auth.isValidNewPassword("x".repeat(auth.MIN_PASSWORD_LENGTH))).toBe(true);
       expect(auth.isValidNewPassword("x".repeat(auth.MAX_PASSWORD_LENGTH))).toBe(true);
     });
 
+    // Validates: HN-025
     it("rejects too short, too long, or non-string passwords", () => {
       expect(auth.isValidNewPassword("x".repeat(auth.MIN_PASSWORD_LENGTH - 1))).toBe(false);
       expect(auth.isValidNewPassword("x".repeat(auth.MAX_PASSWORD_LENGTH + 1))).toBe(false);

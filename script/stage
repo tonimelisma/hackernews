@@ -1,0 +1,172 @@
+#!/bin/sh
+# The increment's three checkpoints, over the GitHub REST API only (gh api; no GraphQL, which the
+# cloud sessions' proxy refuses).
+#
+#   script/stage start            fetch; latest main runs (push, workflow_run, scheduled), open issues, and
+#                                 review comments nobody replied to on the last 5 merged PRs
+#   script/stage pre-merge <PR>   wait until no run on the PR's head is unfinished, then fail unless
+#                                 the newest `CI gate` check there is green
+#   script/stage post-merge <PR>  squash-merge pinned to the head commit if not merged yet, wait
+#                                 for main's runs (CI, then the release it triggers), then list
+#                                 remote branches other than main and open PRs' heads
+#
+# Needs git and gh (logged in, or GH_TOKEN). The repository is $GH_REPO or origin's owner/name.
+# STAGE_TIMEOUT (seconds, default 3600) bounds each wait; STAGE_POLL (default 20) is the interval.
+set -eu
+
+timeout=${STAGE_TIMEOUT:-3600}
+poll=${STAGE_POLL:-20}
+
+repo=${GH_REPO:-}
+if [ -z "$repo" ]; then
+  url=$(git remote get-url origin)
+  repo=$(printf '%s\n' "$url" | sed -E 's#\.git$##; s#/+$##; s#.*[:/]([^/:]+/[^/]+)$#\1#')
+fi
+case "$repo" in */*) ;; *) echo "stage: cannot tell the repository from origin; set GH_REPO" >&2; exit 2 ;; esac
+api() { gh api -H "Accept: application/vnd.github+json" "$@"; }
+default=$(api "repos/$repo" --jq .default_branch)
+
+# wait_for <description> <command printing "done" when finished>
+wait_for() {
+  what=$1
+  shift
+  start=$(date +%s)
+  while :; do
+    state=$("$@")
+    [ "$state" = done ] && return 0
+    if [ $(($(date +%s) - start)) -ge "$timeout" ]; then
+      echo "stage: timed out after ${timeout}s waiting for $what" >&2
+      return 1
+    fi
+    echo "waiting for $what ($state)"
+    sleep "$poll"
+  done
+}
+
+latest_runs() { # <event>: the newest run of each workflow on the default branch
+  api "repos/$repo/actions/runs?branch=$default&event=$1&per_page=100" --jq '
+    .workflow_runs | group_by(.name) | map(max_by(.run_number)) | .[] |
+    "  \(.name): \(.conclusion // .status) \(.head_sha[0:7]) \(.created_at) \(.html_url)"'
+}
+
+cmd_start() {
+  git fetch --prune --quiet origin
+  echo "== $repo, $default at $(git rev-parse --short "origin/$default")"
+  echo "== latest push runs on $default"
+  latest_runs push
+  echo "== latest runs on $default triggered by other runs (releases)"
+  latest_runs workflow_run
+  echo "== latest scheduled runs on $default"
+  latest_runs schedule
+  echo "== open issues"
+  api "repos/$repo/issues?state=open&per_page=100" --paginate \
+    --jq '.[] | select(.pull_request | not) | "  #\(.number) \(.title)"'
+  echo "== review comments without a reply on the last 5 merged PRs"
+  echo "   (REST cannot see thread resolution: read each one and resolve or answer it)"
+  for n in $(api "repos/$repo/pulls?state=closed&sort=updated&direction=desc&per_page=30" \
+    --jq '[.[] | select(.merged_at)] | sort_by(.merged_at) | reverse | .[0:5] | .[].number'); do
+    api "repos/$repo/pulls/$n/comments?per_page=100" --paginate --jq "
+      [.[] | {id, reply: .in_reply_to_id, user: .user.login, path, body: (.body | split(\"\n\")[0])}]
+      | (map(.reply) | map(select(.))) as \$replied
+      | .[] | select(.reply == null and ((.id | IN(\$replied[])) | not))
+      | \"  #$n \(.user) \(.path): \(.body[0:100])\""
+  done
+  echo "== anything red above is fixed before new work"
+}
+
+gate_state() { # <sha>
+  # A newer run (a description edit re-runs CI) can still be queued while an older gate is
+  # complete: wait until no run on the commit is unfinished, then read the newest gate.
+  busy=$(api "repos/$repo/actions/runs?head_sha=$1&per_page=100" \
+    --jq '[.workflow_runs[] | select(.status != "completed")] | length')
+  if [ "$busy" != 0 ]; then
+    echo "$busy run(s) unfinished"
+    return
+  fi
+  api "repos/$repo/commits/$1/check-runs?check_name=CI%20gate&per_page=100" --jq '
+    if .total_count == 0 then "not started"
+    else (.check_runs | max_by(.started_at)) as $r
+      | if $r.status != "completed" then $r.status else "done" end end'
+}
+
+gate_conclusion() {
+  api "repos/$repo/commits/$1/check-runs?check_name=CI%20gate&per_page=100" \
+    --jq '.check_runs | max_by(.started_at) | "\(.conclusion) \(.html_url)"'
+}
+
+cmd_pre_merge() {
+  pr=$1
+  sha=$(api "repos/$repo/pulls/$pr" --jq .head.sha)
+  wait_for "CI gate on #$pr ($sha)" gate_state "$sha"
+  result=$(gate_conclusion "$sha")
+  echo "CI gate on #$pr: $result"
+  case "$result" in success*) ;; *) exit 1 ;; esac
+}
+
+runs_state() { # <sha> <event>
+  api "repos/$repo/actions/runs?head_sha=$1&event=$2&per_page=100" --jq '
+    .workflow_runs as $r | if ($r | length) == 0 then "not started"
+    elif all($r[]; .status == "completed") then "done"
+    else "\([$r[] | select(.status != "completed") | .name] | join(", ")) running" end'
+}
+
+report_runs() { # <sha> <event>; fails when any run neither succeeded nor was skipped
+  api "repos/$repo/actions/runs?head_sha=$1&event=$2&per_page=100" --jq '.workflow_runs[] |
+    "  \(.name): \(.conclusion) in \(((.updated_at | fromdate) - (.run_started_at | fromdate)))s \(.html_url)"'
+  bad=$(api "repos/$repo/actions/runs?head_sha=$1&event=$2&per_page=100" \
+    --jq '[.workflow_runs[] | select(.conclusion != "success" and .conclusion != "skipped")] | length')
+  [ "$bad" = 0 ]
+}
+
+cmd_post_merge() {
+  pr=$1
+  merged=$(api "repos/$repo/pulls/$pr" --jq .merged)
+  if [ "$merged" != true ]; then
+    sha=$(api "repos/$repo/pulls/$pr" --jq .head.sha)
+    title=$(api "repos/$repo/pulls/$pr" --jq .title)
+    body=$(api "repos/$repo/pulls/$pr" --jq '.body // ""')
+    # A squash merge drops commit trailers, so the merge message carries the
+    # attribution trailer explicitly (STAGE_TRAILER overrides the default).
+    trailer=${STAGE_TRAILER-"Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"}
+    msg=$body
+    [ -n "$trailer" ] && msg=$(printf '%s\n\n%s' "$body" "$trailer")
+    api -X PUT "repos/$repo/pulls/$pr/merge" -f merge_method=squash -f sha="$sha" \
+      -f commit_title="$title (#$pr)" -f commit_message="$msg" --jq .message
+  fi
+  merge_sha=$(api "repos/$repo/pulls/$pr" --jq .merge_commit_sha)
+  echo "#$pr merged as $merge_sha"
+  wait_for "CI on $default at $merge_sha" runs_state "$merge_sha" push
+  echo "== push runs"
+  ok=true
+  report_runs "$merge_sha" push || ok=false
+  # A release triggered by CI (workflow_run) shows up a few seconds after CI finishes.
+  start=$(date +%s)
+  while [ "$(runs_state "$merge_sha" workflow_run)" = "not started" ] && [ $(($(date +%s) - start)) -lt 90 ]; do
+    sleep 10
+  done
+  if [ "$(runs_state "$merge_sha" workflow_run)" != "not started" ]; then
+    wait_for "release on $merge_sha" runs_state "$merge_sha" workflow_run
+    echo "== runs triggered by CI"
+    report_runs "$merge_sha" workflow_run || ok=false
+  fi
+  api "repos/$repo/releases?per_page=1" --jq '.[] | "latest release: \(.tag_name) \(.html_url)"' || true
+  echo "== remote branches besides $default and open PRs' heads"
+  open=$(api "repos/$repo/pulls?state=open&per_page=100" --paginate --jq '.[].head.ref')
+  extra=0
+  for b in $(api "repos/$repo/branches?per_page=100" --paginate --jq '.[].name'); do
+    [ "$b" = "$default" ] && continue
+    printf '%s\n' "$open" | grep -qx "$b" && continue
+    echo "  $b"
+    extra=$((extra + 1))
+  done
+  [ "$extra" = 0 ] && echo "  none"
+  git fetch --prune --quiet origin || true
+  $ok
+}
+
+case "${1:-}" in
+  start) cmd_start ;;
+  pre-merge) [ $# -eq 2 ] || { echo "usage: $0 pre-merge <PR>" >&2; exit 2; }; cmd_pre_merge "$2" ;;
+  post-merge) [ $# -eq 2 ] || { echo "usage: $0 post-merge <PR>" >&2; exit 2; }; cmd_post_merge "$2" ;;
+  *) echo "usage: $0 start | pre-merge <PR> | post-merge <PR>" >&2; exit 2 ;;
+esac

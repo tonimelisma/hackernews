@@ -15,6 +15,7 @@ describe("services/migrator", () => {
   });
 
   describe("ensureMigrationsTable", () => {
+    // Validates: HN-035
     it("creates schema_migrations table", () => {
       ensureMigrationsTable(db);
       const tables = db.prepare(
@@ -25,6 +26,7 @@ describe("services/migrator", () => {
   });
 
   describe("runMigrations", () => {
+    // Validates: HN-035
     it("runs pending migrations in order", () => {
       runMigrations(db);
       const applied = db.prepare("SELECT version, name FROM schema_migrations ORDER BY version").all();
@@ -33,6 +35,7 @@ describe("services/migrator", () => {
       expect(applied[0].name).toBe("001-initial-schema");
     });
 
+    // Validates: HN-035
     it("skips already-applied migrations", () => {
       runMigrations(db);
       const firstApplied = db.prepare("SELECT applied_at FROM schema_migrations WHERE version = 1").get();
@@ -41,6 +44,7 @@ describe("services/migrator", () => {
       expect(secondApplied.applied_at).toBe(firstApplied.applied_at);
     });
 
+    // Validates: HN-035
     it("creates schema_migrations table automatically", () => {
       runMigrations(db);
       const tables = db.prepare(
@@ -49,6 +53,7 @@ describe("services/migrator", () => {
       expect(tables).toHaveLength(1);
     });
 
+    // Validates: HN-035
     it("creates application tables via migration 001", () => {
       runMigrations(db);
       const tables = db.prepare(
@@ -59,6 +64,7 @@ describe("services/migrator", () => {
       expect(tables).toContain("hidden");
     });
 
+    // Validates: HN-035
     it("records migration with timestamp", () => {
       runMigrations(db);
       const record = db.prepare("SELECT * FROM schema_migrations WHERE version = 1").get();
@@ -70,6 +76,7 @@ describe("services/migrator", () => {
     // scans idx_stories_score across the whole table (measured ~27s worst case
     // on production). Migration 002 runs ANALYZE so sqlite_stat1 ships with the
     // schema and the planner can pick idx_stories_time for selective windows.
+    // Validates: HN-007, HN-032
     it("generates query-planner statistics via migration 002 (sqlite_stat1)", () => {
       runMigrations(db);
       const statTable = db.prepare(
@@ -83,6 +90,7 @@ describe("services/migrator", () => {
     // Regression: with skewed data (selective recent window across many rows),
     // ANALYZE must let the planner switch the "Day" query to idx_stories_time
     // instead of a full idx_stories_score scan.
+    // Validates: HN-007
     it("lets the planner use idx_stories_time for the Day query after ANALYZE", () => {
       runMigrations(db);
       const now = Date.now();
@@ -125,6 +133,7 @@ describe("services/migrator", () => {
 
     const userColumns = () => db.prepare("PRAGMA table_info(users)").all().map((c) => c.name);
 
+    // Validates: HN-037
     it("adds password_hash, token_version and created_at to users", () => {
       runMigrations(db);
       expect(userColumns()).toEqual(
@@ -134,6 +143,7 @@ describe("services/migrator", () => {
       expect(applied.name).toBe("003-local-passwords");
     });
 
+    // Validates: HN-037
     it("preserves pre-existing users and hidden history", () => {
       migrateTo(2);
       db.prepare("INSERT INTO users (username) VALUES (?)").run("villahousut");
@@ -148,6 +158,7 @@ describe("services/migrator", () => {
       expect(hidden).toBe(50);
     });
 
+    // Validates: HN-036
     it("rolls back to the original users table, keeping rows", () => {
       runMigrations(db);
       db.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)").run("alice", "scrypt$x");
@@ -158,6 +169,7 @@ describe("services/migrator", () => {
   });
 
   describe("rollbackMigration", () => {
+    // Validates: HN-036
     it("rolls back last applied migration", () => {
       runMigrations(db);
       const latest = db.prepare(
@@ -168,11 +180,13 @@ describe("services/migrator", () => {
       expect(result.version).toBe(latest);
     });
 
+    // Validates: HN-036
     it("returns null when no migrations to roll back", () => {
       const result = rollbackMigration(db);
       expect(result).toBeNull();
     });
 
+    // Validates: HN-036
     it("removes record from schema_migrations on rollback", () => {
       runMigrations(db);
       const before = db.prepare("SELECT count(*) c FROM schema_migrations").get().c;
@@ -187,6 +201,7 @@ describe("services/migrator", () => {
   });
 
   describe("getMigrationStatus", () => {
+    // Validates: HN-035
     it("shows applied and pending status correctly", () => {
       const statusBefore = getMigrationStatus(db);
       expect(statusBefore.length).toBeGreaterThanOrEqual(1);

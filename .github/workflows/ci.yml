@@ -1,10 +1,18 @@
 name: CI
 
 on:
-  push:
-    branches: [master]
   pull_request:
     branches: [master]
+    # `edited`: a description fixed after the push re-runs the checks that read it. Every job runs
+    # on it, so the newest `CI gate` on a commit always reflects all the checks.
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [master]
+  schedule:
+    # Weekly full run on master, off the hour, so rot from new toolchains, base images or
+    # advisories shows up. It builds and checks both images but publishes nothing: only pushes
+    # to master release. No manual or dispatch triggers: ADR 0002 forbids them.
+    - cron: "37 5 * * 3"
 
 permissions:
   contents: read
@@ -257,3 +265,33 @@ jobs:
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/ci.yml@refs/heads/master" > /dev/null
           echo "Released $IMAGE:$GITHUB_SHA ($DIGEST), also :latest; signature verified." >> "$GITHUB_STEP_SUMMARY"
+
+  # Requirements, Validates tags and doc links agree; on PRs, the description has every section.
+  process:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # pr-check diffs the pull request's base and head
+          persist-credentials: false
+      - name: process-check
+        run: script/process-check
+      - name: pr-check
+        if: github.event_name == 'pull_request'
+        run: script/pr-check
+
+  # The one required status check. It needs every other job and passes only when each of them
+  # succeeded or was skipped (release is skipped outside pushes to master), so a cancelled or
+  # failed job can never be merged around.
+  gate:
+    name: CI gate
+    if: always()
+    needs: [workflows, backend-tests, frontend-tests, image, release, process]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' >/dev/null
